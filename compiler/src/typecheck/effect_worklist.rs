@@ -5,7 +5,7 @@ use super::*;
 
 #[derive(Clone, Debug)]
 pub(super) struct EffectSummary {
-    pub(super) row: (Vec<crate::ast::Effect>, bool),
+    pub(super) row: (Vec<crate::ast::Effect>, bool, Vec<crate::ast::Effect>),
     pub(super) dependencies: HashSet<FunctionId>,
 }
 
@@ -21,7 +21,11 @@ impl Checker<'_> {
                 }
                 let mut derivation = EffectDerivation::new(self, function);
                 derivation.walk_statements(&definition.body);
-                let row = (derivation.effects(), derivation.suspends);
+                let row = (
+                    derivation.effects(),
+                    derivation.suspends,
+                    derivation.result_effects.clone(),
+                );
                 let dependencies = std::mem::take(&mut derivation.dependencies);
                 drop(derivation);
                 self.derived_effects.insert(function, row);
@@ -51,7 +55,7 @@ impl Checker<'_> {
             } else {
                 // Dirty recursive components have no old summary to sustain a removed effect.
                 // Explicit callees still expose their declared bounds, never these empty rows.
-                summaries.insert(id, (Vec::new(), false));
+                summaries.insert(id, (Vec::new(), false, Vec::new()));
                 pending.insert(id);
                 queue.push_back(id);
             }
@@ -69,7 +73,11 @@ impl Checker<'_> {
             let definition = &self.hir.functions[function];
             let mut derivation = EffectDerivation::with_summaries(self, function, &summaries);
             derivation.walk_statements(&definition.body);
-            let row = (derivation.effects(), derivation.suspends);
+            let row = (
+                derivation.effects(),
+                derivation.suspends,
+                derivation.result_effects.clone(),
+            );
             let targets = std::mem::take(&mut derivation.dependencies);
             drop(derivation);
             if let Some(previous) = dependencies.insert(function, targets.clone()) {
@@ -84,9 +92,13 @@ impl Checker<'_> {
             summaries.insert(function, row);
             // A first derivation can remove the old published row while remaining equal to
             // the temporary empty row. Cached consumers must hear about that removal too.
-            let published_changed =
-                summaries[&function] != (definition.effects.clone(), definition.suspends);
-            if !definition.effects_explicit && (changed || (first && published_changed)) {
+            let published_changed = summaries[&function]
+                != (
+                    definition.effects.clone(),
+                    definition.suspends,
+                    definition.result_effects.clone(),
+                );
+            if changed || (!definition.effects_explicit && first && published_changed) {
                 crate::compiler::profile::count("effects.summary_changed");
                 let mut affected = callers
                     .get(&function)
@@ -99,7 +111,12 @@ impl Checker<'_> {
                     // A cached body observed the incoming HIR contract, not the temporary empty
                     // row used to recompute a dirty callee. Preserve it if that contract held.
                     if cached.contains(&caller)
-                        && summaries[&function] == (definition.effects.clone(), definition.suspends)
+                        && summaries[&function]
+                            == (
+                                definition.effects.clone(),
+                                definition.suspends,
+                                definition.result_effects.clone(),
+                            )
                     {
                         continue;
                     }
@@ -166,6 +183,19 @@ mod tests {
             actual.sort();
             expected.sort();
             assert_eq!(actual, expected, "{}", function.name);
+            let mut actual = function
+                .result_effects
+                .iter()
+                .map(|effect| format!("{effect:?}"))
+                .collect::<Vec<_>>();
+            let mut expected = fresh.hir.functions[id]
+                .result_effects
+                .iter()
+                .map(|effect| format!("{effect:?}"))
+                .collect::<Vec<_>>();
+            actual.sort();
+            expected.sort();
+            assert_eq!(actual, expected, "{} deferred effects", function.name);
             assert_eq!(
                 function.suspends, fresh.hir.functions[id].suspends,
                 "{}",

@@ -6,6 +6,11 @@
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 impl Bool {
+    /// Returns `true` or `false` as text without consuming this value.
+    pub func as_string(self) -> String [read self] {
+        branch { self -> "true" _ -> "false" }
+    }
+
     /// Explicitly copies this scalar value.
     pub func copy(self) -> self [read self] { self }
 

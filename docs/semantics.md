@@ -43,6 +43,11 @@ Literals, operators, calls, constructors, branches, closures, and computed membe
 A value may be materialized in temporary storage when a context needs a place, but that does not
 change the expression's category or extend the temporary's lifetime.
 
+Triple-quoted string substitutions evaluate each `%name%` or `%{expression}%` once in source
+order, call the result's visible `as_string()` method, and concatenate its String result. Conversion uses ordinary
+call borrowing and effect rules; it does not implicitly move the substituted binding. Literal
+decoding and boundary-line handling follow [the string syntax](language-design.md#interpolated-strings).
+
 ## 2. Names, types, and contracts
 
 **S-03 — Static meaning.** Names, types, overload choices, ownership modes, and effect contracts
@@ -299,7 +304,7 @@ than at lexical scope end; a fresh loan after mutation does not revive the old l
 
 **S-15 — Permissions.** Access permissions are ordered `read < mut < reshape`; `consume` is
 separate. A permission on a root covers its descendants, not vice versa. `suspend` is a callable
-property, not a group permission. `mut owner` permits extracting and replacing an owned descendant,
+property, not a group permission. `mut owner` and `reshape owner` permit extracting and replacing an owned descendant,
 but does not permit consuming the owner itself.
 
 Inferred effects are the callable's contract. An explicit contract must cover the body's required
@@ -456,6 +461,10 @@ Record destructuring witnesses are in [record tests](../tests/record_destructuri
 [the portable fixture](../tests/fixtures/programs/record_destructuring.fos), and
 [backend parity tests](../tests/backend_parity.rs).
 
+Borrowed enum payload and nested record-pattern origins are covered by
+[enum reference tests](../tests/enum_payload_references.rs) and the corresponding
+VM/native [fixture](../tests/fixtures/programs/enum_payload_references.fos).
+
 ## 12. Open decisions and implementation gaps
 
 Remaining work is organized in the [roadmap](roadmap.md). The main semantic limits are:
@@ -468,6 +477,12 @@ Remaining work is organized in the [roadmap](roadmap.md). The main semantic limi
   callable relationships are not proved. See [analysis precision](analysis-precision.md).
 - Generic sequence head/rest adapters can copy tails; structural conformance and slicing do not
   promise zero-copy traversal.
+- Native calls cannot yet adapt a concrete reference to an erased contract-reference
+  parameter. For example, passing a concrete enum to a helper whose contract-typed
+  parameter exposes its storage group in the result can fail native IR verification.
+  Calls through an already established contract view and reference-returning enum methods
+  do not require that conversion. This is a reference-argument adaptation gap, separate
+  from pattern payload projection.
 
 Resolving an open decision requires a documented rule, implementation, and conformance tests.
 Fixing an implementation violation should restore the contract without redefining the violating

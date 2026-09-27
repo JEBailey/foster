@@ -288,6 +288,14 @@ fn lower_native_pattern(
     backend: &NativeBackend<'_>,
 ) -> Result<(ClifValue, Vec<ClifValue>), FosterError> {
     let layouts = objects.layouts;
+    let borrowed = super::dereference_native_type(subject.ty, backend.ir)? != subject.ty;
+    let subject = if borrowed && !matches!(pattern.unspanned(), Pattern::Binding(_)) {
+        let (value, ty) =
+            super::native_reference_receiver(builder, module, subject.value, subject.ty, backend)?;
+        PatternSubject { value, ty }
+    } else {
+        subject
+    };
     let true_value = |builder: &mut FunctionBuilder<'_>| builder.ins().iconst(types::I8, 1);
     match pattern.unspanned() {
         Pattern::IsType {
@@ -581,15 +589,20 @@ fn lower_native_pattern(
                     .physical
                     .record_field(layout, slot.index)
                     .ok_or_else(|| native_error("record pattern has no physical field"))?;
-                let value =
-                    load_physical_value(builder, module, subject.value, field.offset, field.value);
+                let (value, ty) = pattern_projection(
+                    builder,
+                    module,
+                    subject.value,
+                    field.offset,
+                    field.value,
+                    &slot.ty,
+                    borrowed,
+                    backend,
+                )?;
                 let (field_matched, mut field_bindings) = lower_native_pattern(
                     builder,
                     module,
-                    PatternSubject {
-                        value,
-                        ty: native_type_from_value_layout(field.value),
-                    },
+                    PatternSubject { value, ty },
                     pattern,
                     objects,
                     runtime_literal_indices,
@@ -645,10 +658,21 @@ fn lower_native_pattern(
             builder.switch_to_block(payload_block);
             let mut matched = true_value(builder);
             let mut bindings = Vec::new();
-            for (pattern, field) in fields.iter().zip(&physical.fields) {
-                let value =
-                    load_physical_value(builder, module, subject.value, field.offset, field.value);
-                let field_type = native_type_from_value_layout(field.value);
+            for ((pattern, field), logical_type) in fields
+                .iter()
+                .zip(&physical.fields)
+                .zip(&alternative.payload)
+            {
+                let (value, field_type) = pattern_projection(
+                    builder,
+                    module,
+                    subject.value,
+                    field.offset,
+                    field.value,
+                    logical_type,
+                    borrowed,
+                    backend,
+                )?;
                 let (field_matched, mut field_bindings) = lower_native_pattern(
                     builder,
                     module,
@@ -695,6 +719,35 @@ fn lower_native_pattern(
             Ok((parameters[0], parameters[1..].to_vec()))
         }
         Pattern::Spanned { .. } => unreachable!(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pattern_projection(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    object: ClifValue,
+    offset: u32,
+    storage: ValueLayout,
+    ty: &crate::codegen::types::ExecutableType,
+    borrowed: bool,
+    backend: &NativeBackend<'_>,
+) -> Result<(ClifValue, NativeType), FosterError> {
+    if borrowed && !matches!(ty, crate::codegen::types::ExecutableType::Reference(_)) {
+        let layout = backend
+            .ir
+            .layouts
+            .pointer(ty, crate::codegen::layout::Ownership::Borrowed)
+            .ok_or_else(|| native_error("borrowed pattern projection has no pointer layout"))?;
+        Ok((
+            builder.ins().iadd_imm_u(object, i64::from(offset)),
+            NativeType::Object(layout),
+        ))
+    } else {
+        Ok((
+            load_physical_value(builder, module, object, offset, storage),
+            native_type_from_value_layout(storage),
+        ))
     }
 }
 

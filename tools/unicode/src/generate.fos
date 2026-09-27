@@ -461,7 +461,7 @@ func conformance(db: Database) -> String {
     full_fixture(output, db.full_lower, "lower")
     full_fixture(output, db.full_upper, "upper")
     full_fixture(output, db.fold, "case_fold")
-    output.append("    42\n}\n\nfunc verify_simple(input: String, expected: String, mode: Int) -> () {\n    let points = input.code_points()\n    let targets = expected.code_points()\n    assert(points.length == targets.length)\n    let index = 0\n    loop {\n        break if index == points.length\n        let point = points[index]\n        let actual = branch {\n            mode == 0 -> point.simple_lower()\n            mode == 1 -> point.simple_upper()\n            _ -> point.simple_title()\n        }\n        assert(actual == targets[index])\n        index = index + 1\n    }\n}\n")
+    output.append("    42\n}\n\nfunc verify_simple(input: String, expected: String, mode: Int) -> () {\n    let points = input.code_points()\n    let targets = expected.code_points()\n    assert(points.length == targets.length)\n    let index = 0\n    while index != points.length {\n        let point = points[index]\n        let actual = branch {\n            mode == 0 -> point.simple_lower()\n            mode == 1 -> point.simple_upper()\n            _ -> point.simple_title()\n        }\n        assert(actual == targets[index])\n        index = index + 1\n    }\n}\n")
     (move output).finish()
 }
 
@@ -473,7 +473,7 @@ func publish(path: String, generated: String, check: Bool) -> () {
         _ -> branch fs::write_text(path, generated) {
             Result.Ok(_) -> ()
             Result.Error(error) -> {
-                assert(false, "cannot write " + path + ": " + error.message)
+                panic("cannot write " + path + ": " + error.message)
             }
         }
     }
@@ -483,7 +483,7 @@ func ensure_directory(path: String) -> () {
     branch fs::create_directory_all(path) {
         Result.Ok(_) -> ()
         Result.Error(error) -> {
-            assert(false, "cannot create " + path + ": " + error.message)
+            panic("cannot create " + path + ": " + error.message)
         }
     }
 }
@@ -508,7 +508,7 @@ pub func run(args: List<String>) -> Int {
                 return 0
             }
             _ -> {
-                assert(false, "unknown argument " + argument)
+                panic("unknown argument " + argument)
             }
         }
         index = index + 1

@@ -77,25 +77,22 @@ func text(tree: Contract, node: Int, key: String) -> String {
 }
 func spelling(tree: Contract, node: Int) -> String {
     let ty = tree.member(node, "type")
-    let desugared = text(tree, ty, "desugaredQualType")
-    branch {
-        desugared.empty? -> text(tree, ty, "qualType") _ -> move desugared
-    }
+    text(tree, ty, "desugaredQualType").if_empty([ref tree] () -> text(tree, ty, "qualType"))
 }
 func comment(tree: Contract, node: Int) -> String {
-    let output = ""
+    let output = StringBuilder.empty()
     for child in tree.array(node, "inner", false) {
         let kind = text(tree, child, "kind")
         branch {
             kind == "TextComment" -> {
-                output = output + text(tree, child, "text")
+                output.append(text(tree, child, "text"))
             }
             kind.ends_with?("Comment") -> {
-                output = output + comment(tree, child) + "\n"
+                output.append("""%{comment(tree, child)}%\n""")
             }
         }
     }
-    output.trim()
+    (move output).finish().trim()
 }
 func trailing_text(source: Bytes, offset: Int) -> String {
     return "" if offset < 0 || offset >= source.length
@@ -104,9 +101,9 @@ func trailing_text(source: Bytes, offset: Int) -> String {
         end = end + 1
     }
     let suffix = String.from_utf8(source.slice(offset, end)).unwrap_or("").trim()
-    if suffix.starts_with?(";") suffix = suffix.slice(1, suffix.length).trim()
-    return suffix.slice(2, suffix.length).trim() if suffix.starts_with?("//")
-    return suffix.slice(2, suffix.length).split("*/")[0].copy().trim() if suffix.starts_with?("/*") && suffix.contains?("*/")
+    suffix = suffix.strip_prefix(";").trim()
+    return suffix.strip_prefix("//").trim() if suffix.starts_with?("//")
+    return suffix.strip_prefix("/*").split("*/")[0].copy().trim() if suffix.starts_with?("/*") && suffix.contains?("*/")
     ""
 }
 func location_number(tree: Contract, node: Int, key: String) -> Int {
@@ -309,12 +306,12 @@ func import_header(config: Options) {
     let output = bridge::absolute(config.output)
     bridge::make_parent(output)
     let shim_path = bridge::artifact(output, ".import.h")
-    let shim = ""
+    let shim = StringBuilder.empty()
     for header in config.headers {
         assert(!header.contains?("\"") && !header.contains?("\n") && !header.contains?("\r"), "header path cannot contain quotes or newlines")
-        shim = shim + "#include \"" + header + "\"\n"
+        shim.append("""#include "%header%"\n""")
     }
-    bridge::write_file(shim_path, shim)
+    bridge::write_file(shim_path, (move shim).finish())
     let arguments = ["--target=x86_64-pc-windows-msvc", "-x", "c", "-std=c11", "-fparse-all-comments", "-fsyntax-only", "-Xclang", "-ast-dump=json"]
     for include in config.includes {
         arguments.push("-I")
@@ -339,15 +336,18 @@ func import_header(config: Options) {
     }
     let manifest = generated.manifest.copy().trim()
     manifest = manifest.slice(0, manifest.length - 1)
-    manifest = manifest + ",\n\"sources\":" + json_strings(config.sources)
-    manifest = manifest + ",\n\"libraries\":" + json_strings(config.libraries)
-    manifest = manifest + ",\n\"include_directories\":" + json_strings(config.includes) + "\n}\n"
-    manifest = manifest.trim()
-    manifest = manifest.slice(0, manifest.length - 1) + ",\n\"constants\":" + extracted.values + "\n}\n"
+    manifest = """
+%manifest%,
+"sources":%{json_strings(config.sources)}%,
+"libraries":%{json_strings(config.libraries)}%,
+"include_directories":%{json_strings(config.includes)}%,
+"constants":%{extracted.values}%
+}\n
+"""
     let manifest_path = bridge::artifact(output, ".bindings.json")
     bridge::write_file(manifest_path, manifest)
     let document = bridge::decode_json(manifest)
-    println("Imported " + document.array(0, "operations", true).length.as_string() + " functions, " + document.array(0, "records", false).length.as_string() + " value records, and " + document.array(0, "constants", false).length.as_string() + " constants.")
+    println("""Imported %{document.array(0, "operations", true).length}% functions, %{document.array(0, "records", false).length}% value records, and %{document.array(0, "constants", false).length}% constants.""")
     let report = generated.report + extracted.report
     bridge::write_file(bridge::artifact(output, ".unsupported.txt"), report)
     if !report.empty? {

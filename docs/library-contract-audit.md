@@ -46,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **130 public type declarations**.
+The library exposes **150 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -61,6 +61,8 @@ The library exposes **130 public type declarations**.
 | [core.functions.Predicate](../library/core/functions.fos) | Callable alias |
 | [core.functions.Consumer](../library/core/functions.fos) | Callable alias |
 | [core.functions.Supplier](../library/core/functions.fos) | Callable alias |
+| [core.future.Future](../library/core/future.fos) | None; consuming, suspending completion contract |
+| [core.future.RemoteFuture](../library/core/future.fos) | `Future<T>` |
 | [core.int.Int](../library/core/int.fos) | `Copy` |
 | [core.list.List](../library/core/list.fos) | `Sequence<T>`, `Collection<T>` |
 | [core.list.ListReadError](../library/core/list.fos) | None |
@@ -97,6 +99,11 @@ The library exposes **130 public type declarations**.
 | [std.cursor.Cursor](../library/std/cursor.fos) | `Iterator<T>` |
 | [std.cursor.ListCursor](../library/std/cursor.fos) | `Cursor<T>` |
 | [std.cursor.BytesCursor](../library/std/cursor.fos) | `Cursor<Byte>` |
+| [std.ffi.CError](../library/std/ffi.fos) | None |
+| [std.ffi.CArguments](../library/std/ffi.fos) | None |
+| [std.ffi.CValue](../library/std/ffi.fos) | None |
+| [std.ffi.CBridge](../library/std/ffi.fos) | None |
+| [std.ffi.CResource](../library/std/ffi.fos) | None; private `deinit` performs owned cleanup |
 | [std.fs.File](../library/std/fs.fos) | `Resource<paths::Path>`, `ReadWrite<IoError>`, `TextWriter<IoError>`, `PositionedReadable<IoError>`, `Appendable<IoError>`, `Sized<IoError>` |
 | [std.io.IoError](../library/std/io.fos) | None |
 | [std.host.FileProvider](../library/std/host.fos) | None |
@@ -111,12 +118,25 @@ The library exposes **130 public type declarations**.
 | [std.io.Duplex](../library/std/io.fos) | `Reader<E>`, `Writer<E>` |
 | [std.iter.Iterator](../library/std/iter.fos) | None |
 | [std.iter.Iterable](../library/std/iter.fos) | None |
+| [std.json.JsonErrorKind](../library/std/json.fos) | None |
+| [std.json.JsonError](../library/std/json.fos) | None |
+| [std.json.JsonParseOptions](../library/std/json.fos) | None |
+| [std.json.JsonWriteOptions](../library/std/json.fos) | None |
+| [std.json.JsonNumber](../library/std/json.fos) | `Copy` |
+| [std.json.JsonMember](../library/std/json.fos) | `Copy` |
+| [std.json.JsonValue](../library/std/json.fos) | `Copy` |
 | [std.net.tcp.NetworkError](../library/std/net/tcp.fos) | None |
 | [std.net.tcp.TcpEndpoint](../library/std/net/tcp.fos) | `ResourceIdentifier` |
 | [std.net.tcp.Connection](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Duplex<NetworkError>`, `TextWriter<NetworkError>`, `Closable<NetworkError>`, `ReadReady<NetworkError>`, `WriteReady<NetworkError>` |
 | [std.net.tcp.Listener](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Accepting<Connection, NetworkError>`, `Closable<NetworkError>`, `ReadReady<NetworkError>` |
 | [std.path.Path](../library/std/path.fos) | `ResourceIdentifier` |
 | [std.process.Arguments](../library/std/process.fos) | None |
+| [std.process.ProcessError](../library/std/process.fos) | None |
+| [std.process.ExitStatus](../library/std/process.fos) | None |
+| [std.process.ProcessStatus](../library/std/process.fos) | None |
+| [std.process.ProcessOutput](../library/std/process.fos) | None |
+| [std.process.SpawnOptions](../library/std/process.fos) | None |
+| [std.process.Process](../library/std/process.fos) | `Future<Result<ProcessOutput, ProcessError>>`; private `deinit` performs owned cleanup |
 | [std.random.distribution.Distribution](../library/std/random/distribution.fos) | None |
 | [std.random.distribution.UniformInt](../library/std/random/distribution.fos) | `Distribution<Int>` |
 | [std.random.distribution.UniformFloat](../library/std/random/distribution.fos) | `Distribution<Float>` |

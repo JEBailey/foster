@@ -47,7 +47,7 @@ EOF, and the Foster-written `stream::copy` algorithm.
 
 `result_propagation.fos` demonstrates `try`: a successful `Result` value is unwrapped while an
 error is returned immediately, even when the operation and enclosing function have different
-success types.
+success types. Its endpoint and error messages use triple-quoted interpolation.
 
 `linked_list.fos` implements an owned generic linked list as a recursive variant, including
 constant-time prepend/pop, reverse, map, fold, and conversion to the built-in list type.
@@ -89,7 +89,8 @@ cargo run --bin foster -- run examples/showcase/ownership_closures.fos
 ## Package examples
 
 `json_parser/` is a multi-file package demonstrating module imports, recursive descent parsing,
-generic `Option<T>` results, Unicode escapes, and deterministic rendering.
+custom `ParseResult<T>` outcomes, `try<ParseOk>` propagation, record destructuring, Unicode
+escapes, and remote parsing workers. Branches over borrowed outcomes retain explicit matching.
 
 `modules/` demonstrates nested module paths and module-level function access.
 

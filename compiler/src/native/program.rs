@@ -148,6 +148,10 @@ fn prepare_shared(
                 .iter()
                 .map(|field| field.ty.clone())
                 .collect::<Vec<_>>(),
+            LayoutKind::Variant { alternatives, .. } => alternatives
+                .iter()
+                .flat_map(|alternative| alternative.payload.iter().cloned())
+                .collect(),
             _ => Vec::new(),
         })
         .collect::<BTreeSet<_>>();

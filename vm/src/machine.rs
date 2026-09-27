@@ -1039,12 +1039,8 @@ impl Machine {
                     bindings,
                 } => {
                     let mut values = Vec::new();
-                    let matched = match_pattern(
-                        &self.program,
-                        pattern,
-                        &read(frame, *subject)?,
-                        &mut values,
-                    )?;
+                    let matched =
+                        match_pattern(&self.program, pattern, &bind(frame, *subject), &mut values)?;
                     if matched {
                         for (register, value) in bindings.iter().copied().zip(values) {
                             write(frame, register, value)?;

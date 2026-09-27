@@ -178,7 +178,15 @@ pub(super) fn callable_effects(
                         .iter()
                         .any(|parameter| hir.locals[parameter.local].name == effect.target.root))
         })
-        .cloned()
+        .map(|effect| {
+            let mut effect = effect.clone();
+            effect.capture = !definition.parameters.iter().any(|parameter| {
+                hir.locals[parameter.local].name == effect.target.root
+                    || matches!(&parameter.ty, Some(crate::ast::TypeExpr::Reference { group, .. })
+                        if group == &effect.target.root)
+            });
+            effect
+        })
         .collect()
 }
 
@@ -196,6 +204,34 @@ pub(super) fn effect_kind_name(kind: crate::ast::EffectKind) -> &'static str {
         crate::ast::EffectKind::Reshape => "reshape",
         crate::ast::EffectKind::Consume => "consume",
     }
+}
+
+pub(super) fn callable_effects_are_subset(
+    actual: &[crate::ast::Effect],
+    expected: &[crate::ast::Effect],
+    parameters: &[crate::types::Parameter<Ty>],
+) -> bool {
+    actual.iter().all(|effect| {
+        if effects_are_subset(std::slice::from_ref(effect), expected) {
+            return true;
+        }
+        // An environment capability covers borrowed captures, but never grants
+        // extra access to explicit arguments or permission to consume captures.
+        if !effect.capture
+            || effect.kind == crate::ast::EffectKind::Consume
+            || parameters.iter().any(|parameter| {
+                reference_group(&parameter.ty).as_deref() == Some(effect.target.root.as_str())
+            })
+        {
+            return false;
+        }
+        let environment = crate::ast::Effect {
+            capture: false,
+            kind: effect.kind,
+            target: crate::ast::GroupPath::root("captures"),
+        };
+        effects_are_subset(std::slice::from_ref(&environment), expected)
+    })
 }
 
 pub(super) fn effects_are_subset(
@@ -230,9 +266,16 @@ pub(super) fn effects_are_subset(
                             crate::ast::EffectKind::Consume
                         )
                         | (crate::ast::EffectKind::Consume, crate::ast::EffectKind::Mut)
+                        | (
+                            crate::ast::EffectKind::Consume,
+                            crate::ast::EffectKind::Reshape
+                        )
                 )
                 && !(actual.kind == crate::ast::EffectKind::Consume
-                    && expected.kind == crate::ast::EffectKind::Mut
+                    && matches!(
+                        expected.kind,
+                        crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
+                    )
                     && actual.target == expected.target)
         })
     })

@@ -1,0 +1,15 @@
+import core.list
+import core.string
+import std.iter.map
+func main() -> Int {
+    let seen = []
+    let values = [1, 2].iterator().map([ref seen] (value: Int) -> {
+        let text = "hello"
+        seen.push(text.copy())
+        text.copy()
+    }).collect()
+    for text in values {
+        assert(text.copy() == "hello")
+    }
+    42
+}

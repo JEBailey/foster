@@ -49,8 +49,7 @@ impl IanaDatabase {
         let encoded = data::names().bytes
         let names = []
         let index = 0
-        loop {
-            break if index == encoded.length
+        while index != encoded.length {
             names.push(name_at(encoded, index))
             index = index + 44
         }
@@ -96,8 +95,7 @@ func zone_table(index: Int) -> Bytes {
 /// Decodes the name portion of one fixed-width index record.
 func name_at(encoded: Bytes, position: Int) -> String {
     let end = position
-    loop {
-        break if end == position + 40 || encoded[end].int == 32
+    while end != position + 40 && encoded[end].int != 32 {
         end = end + 1
     }
     String.from_utf8(encoded.slice(position, end)).unwrap_or("")
@@ -107,8 +105,7 @@ func name_at(encoded: Bytes, position: Int) -> String {
 func lookup(encoded: Bytes, identifier: String) -> Int {
     let low = 0
     let high = encoded.length / 44
-    loop {
-        break if low >= high
+    while low < high {
         let middle = low + (high - low) / 2
         let name = name_at(encoded, middle * 44)
         return unsigned_number(encoded, middle * 44 + 40, 4) if name == identifier
@@ -127,8 +124,7 @@ func lookup(encoded: Bytes, identifier: String) -> Int {
 /// Compares ASCII zone names using bytewise lexicographic order.
 func less(left: Bytes, right: Bytes) -> Bool {
     let index = 0
-    loop {
-        break if index == left.length || index == right.length
+    while index != left.length && index != right.length {
         let a = left[index].int
         let b = right[index].int
         return a < b if a != b
@@ -141,8 +137,7 @@ func less(left: Bytes, right: Bytes) -> Bool {
 func unsigned_number(encoded: Bytes, start: Int, width: Int) -> Int {
     let value = 0
     let index = start
-    loop {
-        break if index == start + width
+    while index != start + width {
         value = value * 10 + encoded[index].int - 48
         index = index + 1
     }
@@ -153,8 +148,7 @@ func unsigned_number(encoded: Bytes, start: Int, width: Int) -> Int {
 func number(encoded: Bytes, start: Int, width: Int) -> Int {
     let value = 0
     let index = start + 1
-    loop {
-        break if index == start + width
+    while index != start + width {
         value = value * 10 - (encoded[index].int - 48)
         index = index + 1
     }
@@ -187,8 +181,7 @@ func transition_offset(table: Bytes, index: Int) -> Int {
 func upper_bound(table: Bytes, ticks: Int) -> Int {
     let low = 0
     let high = count(table)
-    loop {
-        break if low >= high
+    while low < high {
         let middle = low + (high - low) / 2
         branch {
             transition(table, middle) <= ticks -> {
@@ -222,8 +215,7 @@ func checked_offset(seconds: Int) -> Offset {
     branch Offset.from_seconds(seconds) {
         Result.Ok(value) -> value
         Result.Error(_) -> {
-            assert(false, "invalid generated IANA offset")
-            Offset.utc()
+            panic("invalid generated IANA offset")
         }
     }
 }
@@ -241,8 +233,7 @@ func date(year: Int, month: Int, day: Int) -> Date {
     branch Date.from(year, month, day) {
         Result.Ok(value) -> value
         Result.Error(_) -> {
-            assert(false, "invalid generated IANA rule date")
-            Date.from_epoch_day(0)
+            panic("invalid generated IANA rule date")
         }
     }
 }
@@ -288,8 +279,7 @@ func future_offset(table: Bytes, ticks: Int) -> Int {
     let year = center - 1
     let latest = -12622780800
     let selected = standard
-    loop {
-        break if year > center + 1
+    while year <= center + 1 {
         let start = rule_transition(table, 3, year, standard)
         let end = rule_transition(table, 8, year, daylight)
         if start <= normalized && start > latest {
@@ -310,8 +300,7 @@ func instant(ticks: Int, nanos: Int) -> Instant {
     branch Instant.from_parts(ticks, nanos) {
         Result.Ok(value) -> value
         Result.Error(_) -> {
-            assert(false, "invalid local nanoseconds")
-            Instant.epoch()
+            panic("invalid local nanoseconds")
         }
     }
 }
@@ -320,8 +309,7 @@ func instant(ticks: Int, nanos: Int) -> Instant {
 func offsets(table: Bytes) -> List<Int> {
     let values = [field(table, 0), field(table, 1), field(table, 2)]
     let index = 0
-    loop {
-        break if index == count(table)
+    while index != count(table) {
         let value = transition_offset(table, index)
         if !values.contains?(value) {
             values.push(value)
@@ -338,8 +326,7 @@ func resolve_local(table: Bytes, local: DateTime) -> LocalResolution {
     let candidates = []
     let choices = offsets(table)
     let index = 0
-    loop {
-        break if index == choices.length
+    while index != choices.length {
         let value = wall - choices[index]
         if offset_seconds(table, value) == choices[index] && !candidates.contains?(value) {
             candidates.push(value)
@@ -370,8 +357,7 @@ func resolve_local(table: Bytes, local: DateTime) -> LocalResolution {
 /// Identifies a forward jump containing the given nonexistent local second.
 func gap_transition(table: Bytes, wall: Int) -> Int {
     let index = upper_bound(table, wall - 86400)
-    loop {
-        break if index == count(table)
+    while index != count(table) {
         let edge = transition(table, index)
         break if edge > wall + 86400
         let before = branch {
@@ -386,14 +372,12 @@ func gap_transition(table: Bytes, wall: Int) -> Int {
     let year = center - 1
     let standard = field(table, 1)
     let daylight = field(table, 2)
-    loop {
-        break if year > center + 1
+    while year <= center + 1 {
         let start = rule_transition(table, 3, year, standard)
         let end = rule_transition(table, 8, year, daylight)
         return wall + (start - normalized) if daylight > standard && normalized >= start + standard && normalized < start + daylight
         return wall + (end - normalized) if standard > daylight && normalized >= end + daylight && normalized < end + standard
         year = year + 1
     }
-    assert(false, "unresolved IANA local-time gap")
-    0
+    panic("unresolved IANA local-time gap")
 }

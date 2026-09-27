@@ -44,6 +44,26 @@
           "match": "'(?:\\\\[nrt'\\\"\\\\]|[^'\\r\\n])'"
         },
         {
+          "name": "string.quoted.triple.foster",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            { "name": "constant.character.escape.foster", "match": "\\\\[nrt\\\"\\\\]" },
+            { "name": "constant.character.escape.foster", "match": "%%" },
+            {
+              "name": "meta.interpolation.foster",
+              "begin": "%\\{",
+              "end": "\\}%",
+              "patterns": [
+                { "include": "#interpolation-braces" },
+                { "include": "$self" }
+              ]
+            },
+            { "name": "variable.other.interpolation.foster", "match": "%[\\p{L}_][\\p{L}\\p{N}_?]*%" },
+            { "name": "invalid.illegal.escape.foster", "match": "\\\\." }
+          ]
+        },
+        {
           "name": "string.quoted.double.foster",
           "begin": "\"",
           "end": "\"",
@@ -52,6 +72,14 @@
             { "name": "invalid.illegal.escape.foster", "match": "\\\\." }
           ]
         }
+      ]
+    },
+    "interpolation-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        { "include": "#interpolation-braces" },
+        { "include": "$self" }
       ]
     },
     "numbers": {

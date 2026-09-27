@@ -74,9 +74,7 @@ impl Scanner {
                 self.line = self.line + 1
                 self.column = 1
             }
-            _ -> {
-                self.column = self.column + 1
-            }
+            _ -> { self.column = self.column + 1 }
         }
         c
     }
@@ -89,6 +87,103 @@ impl Scanner {
     func text(self, start: Int) -> String {
         String.from_code_points(self.chars.slice(start, self.index))
     }
+    // Retain the raw interior: interpolation and escape decoding belong to the parser.
+    func interpolated(self, line: Int, column: Int) -> String {
+        self.advance()
+        self.advance()
+        self.advance()
+        let start = self.index
+        while self.index < self.chars.length {
+            if self.peek(0) == '%' && self.peek(1) == '%' {
+                self.advance()
+                self.advance()
+                continue
+            }
+            if self.peek(0) == '%' && self.peek(1) == '{' {
+                self.advance()
+                self.advance()
+                self.interpolation_expression()
+                if !self.error.empty? return ""
+                continue
+            }
+            if self.peek(0) == '%' && identifier_start(self.peek(1)) {
+                self.advance()
+                while self.index < self.chars.length && identifier_part(self.peek(0)) { self.advance() }
+                if self.peek(0) == '%' self.advance()
+                continue
+            }
+            if self.peek(0) == '"' && self.peek(1) == '"' && self.peek(2) == '"' {
+                let value = self.text(start)
+                self.advance()
+                self.advance()
+                self.advance()
+                return move value
+            }
+            let point = self.advance()
+            if point == '\\' && self.index < self.chars.length self.advance()
+        }
+        self.fail("unterminated triple-quoted string", line, column)
+        ""
+    }
+
+    // Skip expression syntax without treating quotes, comments, or record braces as delimiters.
+    func interpolation_expression(self) -> () {
+        let braces = 0
+        let comment = 0
+        while self.index < self.chars.length {
+            let c = self.peek(0)
+            let next = self.peek(1)
+            if comment > 0 {
+                branch {
+                    c == '/' && next == '*' -> {
+                        comment = comment + 1
+                        self.advance()
+                        ()
+                    }
+                    c == '*' && next == '/' -> {
+                        comment = comment - 1
+                        self.advance()
+                        ()
+                    }
+                }
+                self.advance()
+                continue
+            }
+            if c == '}' && next == '%' && braces == 0 {
+                self.advance()
+                self.advance()
+                return ()
+            }
+            branch {
+                c == '/' && next == '*' -> {
+                    comment = 1
+                    self.advance()
+                    self.advance()
+                    ()
+                }
+                c == '/' && next == '/' -> {
+                    while self.index < self.chars.length && self.peek(0) != '\n' { self.advance() }
+                }
+                c == '"' && next == '"' && self.peek(2) == '"' -> {
+                    self.interpolated(self.line, self.column)
+                    ()
+                }
+                c == '"' || c == '\'' -> {
+                    self.quoted(c, self.line, self.column)
+                    ()
+                }
+                _ -> {
+                    if c == '{' braces = braces + 1
+                    if c == '}' braces = braces - 1
+                    self.advance()
+                    ()
+                }
+            }
+            if !self.error.empty? return ()
+        }
+        self.fail("expected `}%` after interpolation expression", self.line, self.column)
+    }
+
     func quoted(self, quote: CodePoint, line: Int, column: Int) -> String {
         self.advance()
         let content_start = self.index
@@ -166,7 +261,7 @@ impl Scanner {
                 break
             }
         }
-        (move value).finish()
+        value.finish()
     }
 }
 
@@ -176,9 +271,7 @@ func normalize_block(text: String) -> String [consume text] {
     let pending = 0
     let started = false
     for raw in lines {
-        let line = (move raw).trim_start()
-        if line.starts_with?("*") line = (line.scalar_rest()).trim_start()
-        line = line.trim_end()
+        let line = (move raw).trim_start().strip_prefix("*").trim()
         branch {
             line.byte_length() == 0 -> {
                 pending = pending + 1
@@ -293,6 +386,10 @@ pub func scan(source: String) -> Scan {
                     }
                 }
             }
+            c == '"' && scanner.peek(1) == '"' && scanner.peek(2) == '"' -> {
+                kind = "InterpolatedString"
+                text = scanner.interpolated(line, column)
+            }
             c == '"' || c == '\'' -> {
                 kind = branch c {
                     '"' -> "String"
@@ -365,32 +462,16 @@ pub func scan(source: String) -> Scan {
             _ -> {
                 scanner.advance()
                 kind = punctuation(c)
-                branch {
-                    c == '|' && next == '|' -> {
-                        kind = "DoublePipe"
-                    }
-                    c == '&' && next == '&' -> {
-                        kind = "DoubleAmpersand"
-                    }
-                    c == ':' && next == ':' -> {
-                        kind = "DoubleColon"
-                    }
-                    c == '-' && next == '>' -> {
-                        kind = "Arrow"
-                    }
-                    c == '=' && next == '=' -> {
-                        kind = "EqualEqual"
-                    }
-                    c == '!' && next == '=' -> {
-                        kind = "BangEqual"
-                    }
-                    c == '<' && next == '=' -> {
-                        kind = "LessEqual"
-                    }
-                    c == '>' && next == '=' -> {
-                        kind = "GreaterEqual"
-                    }
-                    _ -> ()
+                kind = branch {
+                    c== '|' && next == '|' -> "DoublePipe"
+                    c == '&' && next == '&' -> "DoubleAmpersand"
+                    c == ':' && next == ':' -> "DoubleColon"
+                    c == '-' && next == '>' -> "Arrow"
+                    c == '=' && next == '=' -> "EqualEqual"
+                    c == '!' && next == '=' -> "BangEqual"
+                    c == '<' && next == '=' -> "LessEqual"
+                    c == '>' && next == '=' -> "GreaterEqual"
+                    _ -> kind
                 }
                 if kind != punctuation(c) scanner.advance()
                 if kind == "" {
@@ -514,6 +595,23 @@ test "comments nest and documentation normalizes decoration" {
     assert(result.tokens[2].kind == "ModuleDocComment")
     assert(result.tokens[2].text == "module")
     assert(result.tokens[4].text == "item")
+}
+
+test "triple quoted strings retain interpolation and interior quote text" {
+    let result = scan("\"\"\"\nhello %name% \"quoted\"\n\"\"\"\nnext")
+    assert(result.error.empty?)
+    assert(result.tokens[0].kind == "InterpolatedString")
+    assert(result.tokens[0].text == "\nhello %name% \"quoted\"\n")
+    assert(result.tokens[2].line == 4)
+    let invalid = scan("\"\"\"unfinished")
+    assert(invalid.error == "unterminated triple-quoted string")
+    let nested = scan("\"\"\"%{branch { true -> \"\"\"nested\"\"\" _ -> \"}%\" }}%\"\"\"\nnext")
+    assert(nested.error.empty?)
+    assert(nested.tokens.length == 4)
+    assert(nested.tokens[2].line == 2)
+    let commented = scan("\"\"\"%{1 /* \"\"\" }% */ + 2}%\"\"\"")
+    assert(commented.error.empty?)
+    ()
 }
 
 test "quoted escapes preserve decoded values" {

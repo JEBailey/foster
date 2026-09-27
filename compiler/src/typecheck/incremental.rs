@@ -50,7 +50,15 @@ pub struct BodyCache {
     shapes: HashMap<FunctionId, Shape>,
     entries: HashMap<String, BodyResult>,
     failures: HashMap<String, BodyFailure>,
-    contracts: HashMap<String, (SourceKey, Vec<crate::ast::Effect>, bool)>,
+    contracts: HashMap<
+        String,
+        (
+            SourceKey,
+            Vec<crate::ast::Effect>,
+            bool,
+            Vec<crate::ast::Effect>,
+        ),
+    >,
     pub stats: AnalysisStats,
 }
 
@@ -70,6 +78,7 @@ struct Shape {
 struct Contract {
     signature: Signature,
     effects: Vec<crate::ast::Effect>,
+    result_effects: Vec<crate::ast::Effect>,
     suspends: bool,
 }
 
@@ -177,7 +186,7 @@ impl BodyCache {
                 (!self
                     .contracts
                     .get(&shape.key)
-                    .is_some_and(|(source, _, _)| source == &shape.source))
+                    .is_some_and(|(source, _, _, _)| source == &shape.source))
                 .then_some(*id)
             })
             .collect::<HashSet<_>>();
@@ -245,10 +254,12 @@ impl BodyCache {
         for (id, function) in hir.functions.iter_mut() {
             if !function.effects_explicit
                 && !dirty.contains(&id)
-                && let Some((_, effects, suspends)) = self.contracts.get(&self.shapes[&id].key)
+                && let Some((_, effects, suspends, result_effects)) =
+                    self.contracts.get(&self.shapes[&id].key)
             {
                 function.effects = effects.clone();
                 function.suspends = *suspends;
+                function.result_effects = result_effects.clone();
             }
         }
         self.stats.pipeline_runs += 1;
@@ -264,6 +275,7 @@ impl BodyCache {
                         shape.source.clone(),
                         function.effects.clone(),
                         function.suspends,
+                        function.result_effects.clone(),
                     ),
                 );
             }
@@ -492,6 +504,7 @@ impl Checker<'_> {
         Some(Contract {
             signature: self.body_input(function)?,
             effects: self.hir.functions[function].effects.clone(),
+            result_effects: self.hir.functions[function].result_effects.clone(),
             suspends: self.hir.functions[function].suspends,
         })
     }

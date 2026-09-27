@@ -1,5 +1,6 @@
 import core.result
 import core.int
+import core.string
 
 func read_port(configured: Bool) -> Result<Int, String> {
     branch configured {
@@ -10,14 +11,16 @@ func read_port(configured: Bool) -> Result<Int, String> {
 
 func endpoint(configured: Bool) -> Result<String, String> {
     let port = try read_port(configured)
-    Result.Ok("localhost:" + port.as_string())
+    Result.Ok("""localhost:%port%""")
 }
 
 func render(outcome: Result<String, String>) -> String {
     branch outcome {
         Result.Ok(value) -> value
-        Result.Error(error) -> "error: " + error
+        Result.Error(error) -> """error: %error%"""
     }
 }
 
-func main() -> String { render(endpoint(true)) }
+func main() -> String {
+    render(endpoint(true))
+}

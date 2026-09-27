@@ -80,23 +80,25 @@ func select_at<T>(values: List<T>, index: Int, prefix: List<T>) -> Selection<T> 
 
 /// Constructs a typed sequence-randomization error.
 func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
-    Result.Error(RandomError { operation, value, message })
+    Result.Error(RandomError {
+        operation, value, message
+    })
 }
 
 /// Returns a typed empty integer list for generic choice tests.
-func empty_integers() -> List<Int> { [] }
+func empty_integers() -> List<Int> {
+    []
+}
 
 test "choice reports empty input and returns a present list member" {
     let source = LehmerRandom.from_seed(42)
     branch choose_with(source, [10, 20, 30]) {
         Result.Error(_) -> {
-            assert(false, "choice failed")
-            ()
+            panic("choice failed")
         }
         Result.Ok(choice) -> branch choice {
             Option.None -> {
-                assert(false, "nonempty choice returned none")
-                ()
+                panic("nonempty choice returned none")
             }
             Option.Some(value) -> {
                 assert(value == 10 || value == 20 || value == 30)
@@ -106,14 +108,12 @@ test "choice reports empty input and returns a present list member" {
     }
     branch choose_with(source, empty_integers()) {
         Result.Error(_) -> {
-            assert(false, "empty choice failed")
-            ()
+            panic("empty choice failed")
         }
         Result.Ok(choice) -> branch choice {
             Option.None -> ()
             Option.Some(_) -> {
-                assert(false, "empty choice did not return none")
-                ()
+                panic("empty choice did not return none")
             }
         }
     }
@@ -123,8 +123,7 @@ test "shuffle and sample preserve membership without replacement" {
     let source = LehmerRandom.from_seed(7)
     branch shuffle_with(source, [1, 2, 3, 4]) {
         Result.Error(_) -> {
-            assert(false, "shuffle failed")
-            ()
+            panic("shuffle failed")
         }
         Result.Ok(values) -> {
             assert(values.length == 4)
@@ -134,8 +133,7 @@ test "shuffle and sample preserve membership without replacement" {
     }
     branch sample_with(source, [1, 2, 3, 4], 3) {
         Result.Error(_) -> {
-            assert(false, "sample failed")
-            ()
+            panic("sample failed")
         }
         Result.Ok(values) -> {
             assert(values.length == 3)

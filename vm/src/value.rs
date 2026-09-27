@@ -588,10 +588,15 @@ impl Slot {
 enum ProjectionPath {
     Index(usize),
     Field(String),
+    Payload(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PlaceProjection {
+    Payload {
+        alternative: String,
+        index: usize,
+    },
     Index {
         index: usize,
         root_generation: u64,
@@ -616,6 +621,23 @@ impl PartialEq for PlaceHandle {
 }
 
 impl PlaceHandle {
+    pub(crate) fn payload(&self, alternative: &str, index: usize) -> Self {
+        let mut place = self.clone();
+        place.projections.push(PlaceProjection::Payload {
+            alternative: alternative.into(),
+            index,
+        });
+        place
+    }
+
+    pub(crate) fn pattern_field(&self, name: &str) -> Self {
+        let mut place = self.clone();
+        place
+            .projections
+            .push(PlaceProjection::Field { name: name.into() });
+        place
+    }
+
     fn whole(origin: &Rc<Slot>) -> Self {
         Self {
             origin: Rc::downgrade(origin),
@@ -728,6 +750,7 @@ fn projection_path(projections: &[PlaceProjection]) -> Vec<ProjectionPath> {
         .map(|projection| match projection {
             PlaceProjection::Index { index, .. } => ProjectionPath::Index(*index),
             PlaceProjection::Field { name } => ProjectionPath::Field(name.clone()),
+            PlaceProjection::Payload { index, .. } => ProjectionPath::Payload(*index),
         })
         .collect()
 }
@@ -738,6 +761,23 @@ fn project_value(
     origin: &Slot,
 ) -> Result<Value, RuntimeError> {
     match projection {
+        PlaceProjection::Payload { alternative, index } => {
+            let Value::Variant {
+                alternative: actual,
+                payload,
+                ..
+            } = value
+            else {
+                return Err(RuntimeError::runtime("payload projection requires an enum"));
+            };
+            if actual.as_ref() != alternative.as_str() {
+                return Err(RuntimeError::runtime("borrowed enum case has changed"));
+            }
+            payload
+                .get(*index)
+                .cloned()
+                .ok_or_else(|| RuntimeError::runtime("enum payload no longer exists"))
+        }
         PlaceProjection::Field { name } => {
             let Value::Record { fields, .. } = value else {
                 return Err(RuntimeError::runtime("field projection requires a record"));
@@ -799,6 +839,23 @@ fn update_projected(
         return update(current);
     };
     match projection {
+        PlaceProjection::Payload { alternative, index } => {
+            let Value::Variant {
+                alternative: actual,
+                payload,
+                ..
+            } = current
+            else {
+                return Err(RuntimeError::runtime("payload projection requires an enum"));
+            };
+            if actual.as_ref() != alternative.as_str() {
+                return Err(RuntimeError::runtime("borrowed enum case has changed"));
+            }
+            let field = payload
+                .get_mut(*index)
+                .ok_or_else(|| RuntimeError::runtime("enum payload no longer exists"))?;
+            update_projected(field, remaining, origin, update)
+        }
         PlaceProjection::Field { name } => {
             let Value::Record { fields, .. } = current else {
                 return Err(RuntimeError::runtime("field projection requires a record"));
@@ -1489,6 +1546,49 @@ mod tests {
 
         let error = place.read().unwrap_err();
         assert!(error.message.contains("borrowed place has expired"));
+    }
+
+    #[test]
+    fn enum_payload_places_write_through_and_reject_changed_cases() {
+        let origin = Slot::new(Value::Variant {
+            variant: None,
+            type_name: "Choice".into(),
+            alternative: "Stored".into(),
+            payload: vec![Value::Integer(40)].into(),
+        });
+        let payload = Slot::place(&origin).payload("Stored", 0);
+        payload.write(Value::Integer(42)).unwrap();
+        let Value::Variant {
+            payload: values, ..
+        } = origin.read().unwrap()
+        else {
+            panic!("enum expected")
+        };
+        assert_eq!(values[0], Value::Integer(42));
+        origin
+            .write(Value::Variant {
+                variant: None,
+                type_name: "Choice".into(),
+                alternative: "Empty".into(),
+                payload: vec![].into(),
+            })
+            .unwrap();
+        assert!(
+            payload
+                .read()
+                .unwrap_err()
+                .message
+                .contains("case has changed")
+        );
+        assert!(
+            payload
+                .write(Value::Integer(0))
+                .unwrap_err()
+                .message
+                .contains("case has changed")
+        );
+        drop(origin);
+        assert!(payload.read().unwrap_err().message.contains("expired"));
     }
 
     #[test]

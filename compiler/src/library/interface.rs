@@ -161,6 +161,7 @@ pub(super) fn build(
                     })
                 {
                     effects.push(ast::Effect {
+                        capture: false,
                         kind: ast::EffectKind::Consume,
                         target: ast::GroupPath::root(format!("p{i}")),
                     });
@@ -243,6 +244,7 @@ fn effects(source: &[symbols::Effect]) -> Result<Vec<ast::Effect>, FosterError> 
         .iter()
         .map(|effect| {
             Ok(ast::Effect {
+                capture: false,
                 kind: match effect.kind.as_str() {
                     "read" => ast::EffectKind::Read,
                     "mut" => ast::EffectKind::Mut,
@@ -751,6 +753,7 @@ pub(super) fn validate_function(
                 .any(|e| e.kind == ast::EffectKind::Consume && e.target.root == format!("p{i}"))
         {
             expected_effects.push(ast::Effect {
+                capture: false,
                 kind: ast::EffectKind::Consume,
                 target: ast::GroupPath::root(format!("p{i}")),
             });

@@ -2,6 +2,81 @@
 use foster::{native, vm};
 
 #[test]
+fn borrowed_map_callback_on_both_backends() {
+    check(
+        "borrowed-map-callback",
+        include_str!("fixtures/programs/borrowed_map_callback.fos"),
+        Ok("42"),
+    );
+    check(
+        "borrowed-map-strings",
+        include_str!("fixtures/programs/borrowed_map_callback_strings.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn interpolated_strings_on_both_backends() {
+    check(
+        "interpolated-strings",
+        include_str!("fixtures/programs/interpolated_strings.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn string_if_empty_on_both_backends() {
+    check(
+        "string-if-empty",
+        r#"
+import core.string
+type Text = { value: String }
+func main() -> Int {
+    let source = Text { value: "fallback" }
+    let text = "λ🙂"
+    assert(text.if_empty(() -> panic("unexpected fallback")) == text)
+    assert(" ".if_empty(() -> panic("whitespace is nonempty")) == " ")
+    assert("".if_empty([ref source] () -> source.value.copy()) == "fallback")
+    assert(source.value == "fallback" && text == "λ🙂")
+    assert("".if_empty(() -> "") == "")
+    let fallback = () -> "reusable"
+    assert("".if_empty(fallback) == "reusable")
+    assert(fallback() == "reusable")
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn string_strip_prefix_on_both_backends() {
+    check(
+        "string-strip-prefix",
+        r#"
+import core.string
+func main() -> Int {
+    let text = "const const Int"
+    let prefix = "const "
+    assert(text.strip_prefix(prefix) == "const Int")
+    assert(text == "const const Int" && prefix == "const ")
+    assert("Int".strip_prefix("longer") == "Int")
+    assert("Int".strip_prefix("Int") == "")
+    assert("Int".strip_prefix("") == "Int")
+    assert("".strip_prefix("x") == "")
+    assert("".strip_prefix("") == "")
+    assert("const Int".strip_prefix("Const ") == "const Int")
+    assert("λ🙂text".strip_prefix("λ🙂") == "text")
+    assert("étail".strip_prefix("e") == "́tail")
+    assert("éclair".strip_prefix("é") == "éclair")
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn if_statements_on_both_backends() {
     check(
         "if-statements",
@@ -775,6 +850,33 @@ fn collection_contracts_preserve_concrete_implementations() {
     check(
         "collection-contracts",
         include_str!("fixtures/programs/collection_contracts.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn map_contract_borrows_preserve_storage() {
+    check(
+        "map-contract-borrow",
+        include_str!("fixtures/programs/map_contract_borrow.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn contract_reference_receivers_preserve_storage() {
+    check(
+        "contract-reference-receivers",
+        include_str!("fixtures/programs/contract_reference_receivers.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn enum_payload_references_preserve_storage() {
+    check(
+        "enum-payload-references",
+        include_str!("fixtures/programs/enum_payload_references.fos"),
         Ok("42"),
     );
 }

@@ -936,6 +936,7 @@ impl Checker<'_> {
             result: Box::new(self.collection_iterator(element, function)?),
             erased: false,
             effects: vec![crate::ast::Effect {
+                capture: false,
                 kind: crate::ast::EffectKind::Read,
                 target: crate::ast::GroupPath::root("self"),
             }],
@@ -949,6 +950,7 @@ impl Checker<'_> {
             result: Box::new(result),
             erased: false,
             effects: vec![crate::ast::Effect {
+                capture: false,
                 kind: crate::ast::EffectKind::Read,
                 target: crate::ast::GroupPath::root("self"),
             }],
@@ -1403,7 +1405,11 @@ impl Checker<'_> {
             .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
             .collect::<Vec<_>>();
         let receiver = parameters.remove(0);
-        self.unify(receiver.ty, Ty::Variant(variant, arguments), caller)?;
+        let receiver = match receiver.ty {
+            Ty::Reference(_, value) => *value,
+            value => value,
+        };
+        self.unify(receiver, Ty::Variant(variant, arguments), caller)?;
         self.check_constraints_with_bindings(caller, method, &generics)?;
         let result = self.instantiate(signature.result, &mut generics);
         Ok(Ty::Callable {
@@ -1567,7 +1573,9 @@ pub(super) fn substitute_groups(ty: Ty, substitutions: &HashMap<String, String>)
             effects: effects
                 .into_iter()
                 .map(|mut effect| {
-                    if let Some(group) = substitutions.get(&effect.target.root) {
+                    if effect.target.root != "captures"
+                        && let Some(group) = substitutions.get(&effect.target.root)
+                    {
                         effect.target.root = group.clone();
                     }
                     effect

@@ -6,7 +6,16 @@ const grammarPath = path.join(__dirname, "..", "syntaxes", "foster.tmLanguage.js
 const grammar = JSON.parse(fs.readFileSync(grammarPath, "utf8"));
 const literals = grammar.repository.strings.patterns;
 const codePoint = new RegExp(`^(?:${literals[0].match})$`);
-const stringEscape = new RegExp(`^(?:${literals[1].patterns[0].match})$`);
+const ordinaryString = literals.find((item) => item.name === "string.quoted.double.foster");
+const stringEscape = new RegExp(`^(?:${ordinaryString.patterns[0].match})$`);
+const tripleString = literals.find((item) => item.name === "string.quoted.triple.foster");
+assert.equal(tripleString.begin, '"""');
+assert.equal(tripleString.end, '"""');
+assert.ok(literals.indexOf(tripleString) < literals.indexOf(ordinaryString));
+const expressionSubstitution = tripleString.patterns.find((item) => item.name === "meta.interpolation.foster");
+assert.match("%{escape(text)}%", new RegExp(expressionSubstitution.begin));
+assert.match("%{escape(text)}%", new RegExp(expressionSubstitution.end));
+assert.ok(expressionSubstitution.patterns.some((item) => item.include === "#interpolation-braces"));
 const operators = grammar.repository.operators.patterns;
 const logicalOperator = operators.find(
   (operator) => operator.name === "keyword.operator.logical.foster",

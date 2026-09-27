@@ -217,7 +217,7 @@ fn validate_type_groups(
             validate_type_groups(result, declared, function)?;
             for effect in effects {
                 let root = effect.target.root.as_str();
-                if root != "self" && !declared.contains(root) {
+                if root != "self" && root != "captures" && !declared.contains(root) {
                     return Err(FosterError::runtime(format!(
                         "function `{function}` uses undeclared effect group `{root}`"
                     )));
@@ -258,6 +258,7 @@ pub(crate) fn infer_ref_capture_effects(hir: &mut PackageHir) {
                 })
                 .unwrap_or_else(|| local.name.clone());
             let effect = ast::Effect {
+                capture: false,
                 kind: capture_effect_kind(hir, function, capture.local),
                 target: ast::GroupPath::root(target),
             };

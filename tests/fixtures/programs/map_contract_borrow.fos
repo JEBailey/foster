@@ -1,0 +1,51 @@
+import core.option
+import std.collections.map
+import std.collections.hash_map
+import std.collections.hashing
+
+type Item = {
+    value: Int, text: String
+}
+
+func lookup(values: Map<String, Item>, key: String) -> Option<ref[values] Item> {
+    values.borrow(key)
+}
+
+func exercise(values: Map<String, Item>) -> () {
+    branch lookup(values, "missing") {
+        Option.Some(_) -> panic("unexpected entry")
+        Option.None -> ()
+    }
+    branch lookup(values, "answer") {
+        Option.Some(item) -> {
+            assert(item.text == "kept alive")
+            item.value = item.value + 2
+            ()
+        }
+        Option.None -> panic("missing entry")
+    }
+}
+
+func main() -> Int {
+    let ordered = Map.empty().put("answer", Item {
+        value: 40, text: "kept alive"
+    })
+    let hashed = HashMap.empty(hashing::text).put("answer", Item {
+        value: 40, text: "kept alive"
+    })
+    exercise(ordered)
+    exercise(hashed)
+    branch ordered.borrow("answer") {
+        Option.Some(item) -> {
+            assert(item.value == 42 && item.text == "kept alive")
+        }
+        Option.None -> panic("missing ordered entry")
+    }
+    branch hashed.borrow("answer") {
+        Option.Some(item) -> {
+            assert(item.value == 42 && item.text == "kept alive")
+        }
+        Option.None -> panic("missing hashed entry")
+    }
+    42
+}

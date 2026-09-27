@@ -177,7 +177,7 @@ impl Checker<'_> {
                         )
                     });
                 if !modes_compatible
-                    || !effects_are_subset(&b_effects, &a_effects)
+                    || !callable_effects_are_subset(&b_effects, &a_effects, &b_params)
                     || (!a_erased && b_erased)
                     || (!a_suspends && b_suspends)
                 {

@@ -211,6 +211,10 @@ pub(super) fn reachable_instances(
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Some(receiver) = parameter_types.first() {
+                    let receiver = match receiver {
+                        ExecutableType::Reference(value) => value.as_ref(),
+                        receiver => receiver,
+                    };
                     receiver.infer_specialization(ty, &mut substitutions);
                 }
                 for (parameter, argument) in parameter_types.iter().skip(1).zip(argument_types) {
@@ -564,7 +568,9 @@ pub(super) fn contract_candidates(
                 }
                 let signature = &environment.function_types[function];
                 let receiver_type = if matches!(layout.kind, LayoutKind::Record { record, .. } if Some(record) == environment.program.metadata.string_record) { NativeType::String } else { NativeType::Object(layout.id) };
-                (signature.parameters.first() == Some(&receiver_type)
+                (signature.parameters.first().is_some_and(|ty| {
+                    super::dereference_native_type(*ty, environment).is_ok_and(|ty| ty == receiver_type)
+                })
                     && signature.parameters.len() == argument_types.len() + 1
                     && signature.parameters[1..].iter().zip(argument_types).all(|(expected, actual)| contract_argument_matches(*actual, *expected, environment)))
                 .then_some(*function)

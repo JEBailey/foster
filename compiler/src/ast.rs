@@ -180,6 +180,9 @@ pub enum TypeExpr {
 pub struct Effect {
     pub kind: EffectKind,
     pub target: GroupPath,
+    /// Type-checker provenance: this callable effect comes from its environment,
+    /// rather than an explicit argument. Source effect annotations start false.
+    pub capture: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash)]

@@ -26,6 +26,8 @@ pub(super) fn lower(
     backend: &NativeBackend<'_>,
 ) -> Result<ClifValue, FosterError> {
     let environment = backend.ir;
+    let receiver_reference =
+        (dereference_native_type(receiver_type, environment)? != receiver_type).then_some(receiver);
     let (receiver, receiver_type) =
         native_reference_receiver(builder, module, receiver, receiver_type, backend)?;
     let mut candidates = contract_candidates(slot, receiver_type, argument_types, environment)?
@@ -177,8 +179,31 @@ pub(super) fn lower(
         builder.ins().brif(matches, selected, &[], next, &[]);
         builder.switch_to_block(selected);
         let value = if let Some(method) = candidate.method {
-            backend.objects.retain(builder, payload, candidate.layout);
-            let mut lowered = vec![payload];
+            let method_receiver = if dereference_native_type(candidate.receiver, environment)?
+                != candidate.receiver
+            {
+                // Borrow the caller's storage, not a retained object value or a
+                // temporary slot: the method may return a reference into it.
+                if opaque(receiver_type, environment.layouts) {
+                    let NativeType::Object(layout) = receiver_type else {
+                        unreachable!()
+                    };
+                    let PhysicalKind::Opaque { value_offset, .. } =
+                        environment.physical_layouts.get(layout).kind
+                    else {
+                        unreachable!()
+                    };
+                    builder.ins().iadd_imm_u(receiver, i64::from(value_offset))
+                } else {
+                    receiver_reference.ok_or_else(|| {
+                        native_error("reference-taking contract receiver has no storage address")
+                    })?
+                }
+            } else {
+                backend.objects.retain(builder, payload, candidate.layout);
+                payload
+            };
+            let mut lowered = vec![method_receiver];
             lowered.extend_from_slice(arguments);
             let target =
                 module.declare_func_in_func(backend.functions[&method.function], builder.func);

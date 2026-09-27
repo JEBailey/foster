@@ -17,8 +17,7 @@ func verify_simple(input: String, expected: String, mode: Int) -> () {
     let targets = expected.code_points()
     assert(points.length == targets.length)
     let index = 0
-    loop {
-        break if index == points.length
+    while index != points.length {
         let point = points[index]
         let actual = branch {
             mode == 0 -> point.simple_lower()

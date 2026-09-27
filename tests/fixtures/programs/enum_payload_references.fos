@@ -1,0 +1,134 @@
+pub type Item = {
+    pub value: Int, pub text: String
+}
+pub type BorrowItem = {
+    pub func borrow(self) -> ref[self] Item
+}
+pub enum Choice = Empty | Stored(Item) & BorrowItem
+impl Choice {
+    pub func borrow(self) -> ref[self] Item {
+        branch self {
+            Choice.Empty -> panic("empty choice")
+            Choice.Stored(item) -> ref item
+        }
+    }
+}
+type Holder = {
+    item: Item
+}
+enum Outer = Empty | Stored(Holder)
+func field(value: Outer) -> ref[value] Item {
+    branch value {
+        Outer.Empty -> panic("empty outer")
+        Outer.Stored(holder) -> ref holder.item
+    }
+}
+enum Wrapped = Empty | Wrap(Choice)
+func nested(value: Wrapped) -> ref[value] Item {
+    branch value {
+        Wrapped.Wrap(Choice.Stored(item)) -> ref item
+        _ -> panic("empty nested choice")
+    }
+}
+func classify(value: ref[value] Wrapped) -> Int {
+    branch value {
+        Wrapped.Wrap(Choice.Stored({
+            value: 42
+        })) -> 42
+        _ -> 0
+    }
+}
+enum Number = Empty | Present(Int)
+func scalar(value: Number) -> ref[value] Int {
+    branch value {
+        Number.Empty -> panic("empty number")
+        Number.Present(number) -> ref number
+    }
+}
+func read_number(value: ref[value] Int) -> Int {
+    value
+}
+func increment(value: ref[value] Int) -> () {
+    value = value + 2
+    ()
+}
+func selected_field(value: Choice) -> ref[value] Int {
+    branch value {
+        Choice.Stored({
+            value: number
+        }) -> ref number
+        Choice.Empty -> panic("empty choice")
+    }
+}
+func via_contract(value: BorrowItem) -> Int {
+    let item = value.borrow()
+    item.value = item.value + 1
+    item.value
+}
+func replace_item(value: ref[value] Item) -> () {
+    value = Item {
+        value: 42, text: "replaced"
+    }
+    ()
+}
+enum Carrier<T> = Empty | Stored(T)
+func existing_reference(value: Carrier<ref[value] Item>) -> ref[value] Item {
+    branch value {
+        Carrier.Stored(item) -> ref item
+        Carrier.Empty -> panic("empty carrier")
+    }
+}
+func main() -> Int {
+    let choice = Choice.Stored(Item {
+        value: 40, text: "alive"
+    })
+    let direct = choice.borrow()
+    direct.value = direct.value + 1
+    assert(via_contract(choice) == 42)
+    assert(choice.borrow().text == "alive")
+    replace_item(choice.borrow())
+    assert(choice.borrow().text == "replaced")
+    let selected = selected_field(choice)
+    assert(read_number(selected) == 42)
+    let outer = Outer.Stored(Holder {
+        item: Item {
+            value: 40, text: "field"
+        }
+    })
+    let item = field(outer)
+    item.value = item.value + 2
+    assert(field(outer).value == 42)
+    let wrapped = Wrapped.Wrap(Choice.Stored(Item {
+        value: 40, text: "nested"
+    }))
+    let nested_item = nested(wrapped)
+    nested_item.value = nested_item.value + 2
+    assert(nested(wrapped).value == 42)
+    assert(classify(ref wrapped) == 42)
+    let empty = Wrapped.Empty
+    let inner_empty = Wrapped.Wrap(Choice.Empty)
+    assert(classify(ref empty) == 0)
+    assert(classify(ref inner_empty) == 0)
+    let number = Number.Present(40)
+    let borrowed = scalar(number)
+    increment(borrowed)
+    assert(read_number(scalar(number)) == 42)
+    let original = Item {
+        value: 40, text: "reference"
+    }
+    let carrier = Carrier.Stored(ref original)
+    let reference = existing_reference(carrier)
+    reference.value = reference.value + 2
+    assert(original.value == 42)
+    let captured = [ref choice] () -> {
+        branch choice {
+            Choice.Stored(item) -> item.value
+            Choice.Empty -> 0
+        }
+    }
+    assert(captured() == 42)
+    branch choice {
+        Choice.Stored(item) -> item.value
+        Choice.Empty -> 0
+    }
+}

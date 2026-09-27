@@ -1,0 +1,19 @@
+import core.list
+import std.iter.map
+
+func main() -> Int {
+    let visited = []
+    let pending = [20, 22].iterator().map([ref visited] (value: Int) -> {
+        visited.push(value)
+        value
+    })
+    assert(visited.empty?)
+    let values = pending.collect()
+    assert(visited.length == 2)
+    let empty = [].iterator().map([ref visited] (value: Int) -> {
+        visited.push(value)
+        value
+    }).collect()
+    assert(empty.empty? && visited.length == 2)
+    values[0] + values[1]
+}

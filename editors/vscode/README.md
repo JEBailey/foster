@@ -4,6 +4,8 @@ This extension registers `.fos` files, provides Foster syntax highlighting and e
 and launches the Foster language server. Language features include:
 
 - package-wide compiler errors and warnings with open-buffer overlays;
+- multiline method chains remain available for semantic checking, so unresolved methods report
+  the missing member rather than a syntax error and cascading missing-function errors;
 - clickable related locations for secondary compiler diagnostic labels, including error fallback paths;
 - document symbols from the current parse, without waiting for semantic checking;
 - go-to-definition across imported modules, selected function and concrete method overloads,
@@ -35,6 +37,9 @@ comments, control keywords such as `try`, logical operators including `not`, mod
 qualification, code-point literals,
 effect clauses, sequence types, structural intersections, and union/variant type members.
 
+Conditional statements use `if condition action` or `if condition { ... }`.
+Postfix `if` is reserved for `return`, `break`, and `continue`.
+
 ## Installation
 
 Marketplace and VSIX releases include the Foster compiler, language server, and core-library
@@ -48,7 +53,7 @@ Open a saved `.fos` file and use one of these commands from the Command Palette:
 - **Foster: Run Current File** executes the active file as a standalone program.
 - **Foster: Run Current Package** searches upward, within the current workspace folder, for the
   nearest directory containing `foster.toml` and executes that project. Packages without a
-  manifest continue to fall back to the nearest directory containing `main.fos`.
+    manifest continue to fall back to the nearest directory containing `main.fos`.
 
 The ▶ button in the editor title runs the current file. Foster saves modified Foster files and
 manifests before launching and shows compiler output in the shared Foster task terminal. Use the

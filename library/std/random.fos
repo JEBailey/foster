@@ -56,7 +56,9 @@ pub type SystemRandom = & RandomSource & secure::EntropySource & {
 impl SystemRandom {
     /// Constructs an operating-system-backed random source.
     pub func new() -> SystemRandom {
-        SystemRandom { marker: :system_random }
+        SystemRandom {
+            marker: :system_random
+        }
     }
 
     /// Returns exactly `count` bytes of operating-system entropy.
@@ -75,7 +77,9 @@ impl SystemRandom {
     }
 
     /// Returns the largest value produced by `SystemRandom.next`.
-    pub func maximum(self) -> Int { 2147483647 }
+    pub func maximum(self) -> Int {
+        2147483647
+    }
 }
 
 /// Draws an unbiased integer in `[0, count)` and advances `source`.
@@ -135,12 +139,16 @@ func range_width(start: Int, end: Int, capacity: Int) -> Int {
 
 /// Returns `width` when it fits the source capacity, or minus one otherwise.
 func bounded_width(width: Int, capacity: Int) -> Int {
-    branch { width <= capacity -> width _ -> -1 }
+    branch {
+        width <= capacity -> width _ -> -1
+    }
 }
 
 /// Constructs a typed random error for any failed result shape.
 func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
-    Result.Error(RandomError { operation, value, message })
+    Result.Error(RandomError {
+        operation, value, message
+    })
 }
 
 /// Deterministic source used to exercise generic random operations.
@@ -153,21 +161,26 @@ impl RandomTestSource {
     /// Returns the current test value and advances cyclically.
     func next(self) -> Result<Int, RandomError> [mut self.value, read self.maximum_value] {
         let value = self.value
-        self.value = branch { value >= self.maximum_value -> 0 _ -> value + 1 }
+        self.value = branch {
+            value >= self.maximum_value -> 0 _ -> value + 1
+        }
         Result.Ok(value)
     }
 
     /// Returns the configured test-source maximum.
-    func maximum(self) -> Int { self.maximum_value }
+    func maximum(self) -> Int {
+        self.maximum_value
+    }
 }
 
 test "uniform integer operations use half-open bounds and validate requests" {
     // Six and seven are rejected for a count of three, proving modulo bias is avoided.
-    let source = RandomTestSource { value: 6, maximum_value: 7 }
+    let source = RandomTestSource {
+        value: 6, maximum_value: 7
+    }
     branch below_with(source, 3) {
         Result.Error(_) -> {
-            assert(false, "valid bounded draw failed")
-            ()
+            panic("valid bounded draw failed")
         }
         Result.Ok(value) -> {
             assert(value == 0)
@@ -176,8 +189,7 @@ test "uniform integer operations use half-open bounds and validate requests" {
     }
     branch between_with(source, -2, 2) {
         Result.Error(_) -> {
-            assert(false, "valid signed range failed")
-            ()
+            panic("valid signed range failed")
         }
         Result.Ok(value) -> {
             assert(value >= -2 && value < 2)
@@ -187,9 +199,15 @@ test "uniform integer operations use half-open bounds and validate requests" {
     assert(below_with(source, 0).error?())
     assert(between_with(source, 3, 3).error?())
     assert(between_with(source, -10, 10).error?())
-    assert(below_with(RandomTestSource { value: 0, maximum_value: -1 }, 1).error?())
-    assert(below_with(RandomTestSource { value: 0, maximum_value: 9223372036854775807 }, 1).error?())
-    assert(below_with(RandomTestSource { value: 8, maximum_value: 7 }, 3).error?())
+    assert(below_with(RandomTestSource {
+        value: 0, maximum_value: -1
+    }, 1).error?())
+    assert(below_with(RandomTestSource {
+        value: 0, maximum_value: 9223372036854775807
+    }, 1).error?())
+    assert(below_with(RandomTestSource {
+        value: 8, maximum_value: 7
+    }, 3).error?())
     ()
 }
 
@@ -197,8 +215,7 @@ test "system randomness returns bounded values and requested bytes" {
     let source = SystemRandom.new()
     branch source.bytes(16) {
         Result.Error(_) -> {
-            assert(false, "system entropy was unavailable")
-            ()
+            panic("system entropy was unavailable")
         }
         Result.Ok(value) -> {
             assert(value.length == 16)
@@ -207,8 +224,7 @@ test "system randomness returns bounded values and requested bytes" {
     }
     branch below_with(source, 20) {
         Result.Error(_) -> {
-            assert(false, "system bounded draw failed")
-            ()
+            panic("system bounded draw failed")
         }
         Result.Ok(value) -> {
             assert(value >= 0 && value < 20)
@@ -217,8 +233,7 @@ test "system randomness returns bounded values and requested bytes" {
     }
     branch below(1) {
         Result.Error(_) -> {
-            assert(false, "system convenience draw failed")
-            ()
+            panic("system convenience draw failed")
         }
         Result.Ok(value) -> {
             assert(value == 0)
@@ -227,8 +242,7 @@ test "system randomness returns bounded values and requested bytes" {
     }
     branch between(-3, -2) {
         Result.Error(_) -> {
-            assert(false, "system signed convenience draw failed")
-            ()
+            panic("system signed convenience draw failed")
         }
         Result.Ok(value) -> {
             assert(value == -3)

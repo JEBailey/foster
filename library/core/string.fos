@@ -49,6 +49,13 @@ pub type String = & Copy & Sequence<String> & Collection<String> & {
     /// Returns an independent text value; immutable byte storage may be shared.
     pub func copy(self) -> self [read self]
 
+    /// Returns the same text as an independent value, borrowing the source.
+    pub func as_string(self) -> String [read self]
+
+    /// Copies nonempty text, or calls `fallback` exactly once when empty.
+    /// Borrows both inputs; whitespace is nonempty and the fallback result may be empty.
+    pub func if_empty(self, fallback: Supplier<String>) -> String [read fallback, read self]
+
     // Required public operations; implementations live in impl blocks.
     /// Returns the first grapheme cluster, or `None` when the string is empty.
     pub func first(self) -> Option<String> [read self]
@@ -58,6 +65,9 @@ pub type String = & Copy & Sequence<String> & Collection<String> & {
     pub func reverse(self) -> String [read self]
     /// Returns whether the text begins with `prefix`; an empty prefix always matches.
     pub func starts_with?(self, prefix: String) -> Bool [read prefix, read self]
+    /// Removes one exact leading `prefix`, returning unchanged text if absent or empty.
+    /// Borrows both inputs. Matching is case-sensitive without normalization and may split a grapheme cluster.
+    pub func strip_prefix(self, prefix: String) -> String [read prefix, read self]
     /// Returns whether the text ends with `suffix`; an empty suffix always matches.
     pub func ends_with?(self, suffix: String) -> Bool [read self, read suffix]
     /// Returns whether `fragment` occurs as an exact substring.
@@ -114,6 +124,9 @@ pub type String = & Copy & Sequence<String> & Collection<String> & {
 }
 
 impl String {
+    /// Returns the same text as an independent value, borrowing the source.
+    pub func as_string(self) -> String [read self] { self.copy() }
+
     /// Returns an independent text value; immutable byte storage may be shared.
     pub func copy(self) -> self [read self] {
         self + ""
@@ -257,6 +270,23 @@ impl String {
     /// Returns whether the text begins with `prefix`; an empty prefix always matches.
     pub func starts_with?(self, prefix: String) -> Bool {
         matches_at(self.bytes, prefix.bytes, 0)
+    }
+
+    /// Removes one exact leading `prefix`, returning unchanged text if absent or empty.
+    /// Borrows both inputs. Matching is case-sensitive without normalization and may split a grapheme cluster.
+    pub func strip_prefix(self, prefix: String) -> String {
+        return self.copy() if prefix.empty? || !self.starts_with?(prefix)
+        let data = self.bytes
+        decode_bytes(data.slice(prefix.byte_length(), data.length))
+    }
+
+    /// Copies nonempty text, or calls `fallback` exactly once when empty.
+    /// Borrows both inputs; whitespace is nonempty and the fallback result may be empty.
+    pub func if_empty(self, fallback: Supplier<String>) -> String {
+        branch {
+            self.empty? -> fallback()
+            _ -> self.copy()
+        }
     }
 
     /// Returns whether the text ends with `suffix`; an empty suffix always matches.
@@ -684,6 +714,36 @@ func ascii_case(text: String, lower: Bool) -> String {
 /// Returns whether a cluster consists of one ASCII decimal digit.
 func ascii_digit?(value: String) -> Bool {
     value.scalar_length() == 1 && value.scalar_head() >= '0' && value.scalar_head() <= '9'
+}
+
+test "if_empty evaluates only the required fallback and preserves its receiver" {
+    let text = "λ🙂"
+    assert(text.if_empty(() -> panic("unexpected fallback")) == text)
+    assert(text == "λ🙂")
+    assert(" ".if_empty(() -> panic("whitespace is nonempty")) == " ")
+    assert("".if_empty(() -> "fallback") == "fallback")
+    assert("".if_empty(() -> "") == "")
+    let fallback = () -> "reusable"
+    assert("".if_empty(fallback) == "reusable")
+    assert(fallback() == "reusable")
+    ()
+}
+
+test "strip_prefix removes one exact prefix and preserves its inputs" {
+    let text = "const const Int"
+    let prefix = "const "
+    assert(text.strip_prefix(prefix) == "const Int")
+    assert(text == "const const Int" && prefix == "const ")
+    assert("Int".strip_prefix("const ") == "Int")
+    assert("Int".strip_prefix("Int") == "")
+    assert("Int".strip_prefix("") == "Int")
+    assert("".strip_prefix("") == "")
+    assert("".strip_prefix("x") == "")
+    assert("const Int".strip_prefix("Const ") == "const Int")
+    assert("λ🙂text".strip_prefix("λ🙂") == "text")
+    assert("étail".strip_prefix("e") == "́tail")
+    assert("éclair".strip_prefix("é") == "éclair")
+    ()
 }
 
 test "string algorithms preserve Unicode text" {

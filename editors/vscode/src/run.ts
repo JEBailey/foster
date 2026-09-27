@@ -8,11 +8,9 @@ interface FosterTask extends vscode.TaskDefinition, LaunchOptions {
 }
 export function registerRunIntegration(context: vscode.ExtensionContext, compiler: Compiler): void {
   context.subscriptions.push(vscode.commands.registerCommand("foster.runCurrentFile", () => runActive(compiler, false)), vscode.commands.registerCommand("foster.runCurrentPackage", () => runActive(compiler, true)), vscode.tasks.registerTaskProvider("foster", {
-    provideTasks: () => (vscode.workspace.workspaceFolders ?? []).flatMap(folder => {
-      if (!fs.existsSync(path.join(folder.uri.fsPath, "foster.toml")) && !fs.existsSync(path.join(folder.uri.fsPath, "main.fos")))
-        return [];
-      return taskCommands.map(command => createTask(compiler, { type: "foster", command, program: folder.uri.fsPath }, folder));
-    }),
+    provideTasks: () => packageTaskTargets().flatMap(({ program, folder }) =>
+      taskCommands.map(command => createTask(compiler, { type: "foster", command, program }, folder,
+        `${command} (${path.relative(folder.uri.fsPath, program) || folder.name})`))),
     resolveTask: task => {
       const folder = typeof task.scope === "object" ? task.scope : undefined;
       try {
@@ -24,6 +22,20 @@ export function registerRunIntegration(context: vscode.ExtensionContext, compile
       }
     },
   }));
+}
+export function packageTaskTargets(): { program: string; folder: vscode.WorkspaceFolder }[] {
+  const targets = (vscode.workspace.workspaceFolders ?? [])
+    .filter(folder => fs.existsSync(path.join(folder.uri.fsPath, "foster.toml")) || fs.existsSync(path.join(folder.uri.fsPath, "main.fos")))
+    .map(folder => ({ program: folder.uri.fsPath, folder }));
+  try {
+    const active = activeTarget(true);
+    if (active.folder && !targets.some(target => target.program === active.program))
+      targets.push({ program: active.program, folder: active.folder });
+  }
+  catch {
+    // An unrelated active editor does not prevent discovery of workspace packages.
+  }
+  return targets;
 }
 export async function saveSources(): Promise<boolean> {
   if (!vscode.workspace.isTrusted) {
@@ -45,15 +57,20 @@ export function activeTarget(packageTarget: boolean): {
   folder?: vscode.WorkspaceFolder;
 } {
   const document = vscode.window.activeTextEditor?.document;
-  if (document?.languageId === "foster" && !document.isUntitled && document.uri.scheme === "file") {
+  if (document && (document.languageId === "foster" || (packageTarget && path.basename(document.uri.fsPath) === "foster.toml")) && !document.isUntitled && document.uri.scheme === "file") {
     const folder = vscode.workspace.getWorkspaceFolder(document.uri);
     const program = packageTarget ? findPackageRoot(document.uri.fsPath, folder?.uri.fsPath) : document.uri.fsPath;
     if (!program)
       throw new Error("No foster.toml project or main.fos package was found for the active file.");
     return { program, folder };
   }
-  if (packageTarget && vscode.workspace.workspaceFolders?.length === 1)
-    return { program: vscode.workspace.workspaceFolders[0].uri.fsPath, folder: vscode.workspace.workspaceFolders[0] };
+  if (packageTarget && vscode.workspace.workspaceFolders?.length === 1) {
+    const folder = vscode.workspace.workspaceFolders[0];
+    const root = folder.uri.fsPath;
+    if (fs.existsSync(path.join(root, "foster.toml")) || fs.existsSync(path.join(root, "main.fos")))
+      return { program: root, folder };
+    throw new Error("The workspace root is not a Foster package. Open a Foster source file or foster.toml in the package you want to run.");
+  }
   throw new Error("Open a saved Foster file to select the program to run.");
 }
 async function runActive(compiler: Compiler, packageTarget: boolean): Promise<void> {

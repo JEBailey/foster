@@ -952,6 +952,7 @@ impl Parser {
                             path.push(self.expect_member_ident("expected effect path component")?);
                         }
                         effects.push(Effect {
+                            capture: false,
                             kind,
                             target: GroupPath {
                                 root: root.clone(),
@@ -974,6 +975,7 @@ impl Parser {
                     )?;
                 } else {
                     effects.push(Effect {
+                        capture: false,
                         kind,
                         target: GroupPath { root, children },
                     });

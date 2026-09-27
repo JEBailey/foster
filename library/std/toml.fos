@@ -64,7 +64,9 @@ pub type TomlError = {
     pub column: Int
 }
 
-type PathItem = { key: String, index: Int }
+type PathItem = {
+    key: String, index: Int
+}
 
 enum PathPart = Key(String)
     | ArrayItem(PathItem)
@@ -99,14 +101,20 @@ impl PathPart {
     func copy(self) -> self {
         branch self {
             PathPart.Key(key) -> PathPart.Key(key.copy())
-            PathPart.ArrayItem(item) -> PathPart.ArrayItem(PathItem { key: item.key.copy(), index: item.index })
+            PathPart.ArrayItem(item) -> PathPart.ArrayItem(PathItem {
+                key: item.key.copy(), index: item.index
+            })
         }
     }
 }
 
 impl TomlEntry {
     /// Copies this entry and its complete TOML value.
-    pub func copy(self) -> self { TomlEntry { key: self.key.copy(), value: self.value.copy() } }
+    pub func copy(self) -> self {
+        TomlEntry {
+            key: self.key.copy(), value: self.value.copy()
+        }
+    }
 }
 
 impl TomlValue {
@@ -177,7 +185,9 @@ impl Parser {
         self.parse_statements()
         branch {
             not self.errors.empty? -> Result.Error(self.errors.head)
-            _ -> Result.Ok(TomlDocument { entries: materialize(self.entries, []) })
+            _ -> Result.Ok(TomlDocument {
+                entries: materialize(self.entries, [])
+            })
         }
     }
 
@@ -324,7 +334,9 @@ impl Parser {
     }
 
     /// Reports whether a diagnostic has already been recorded.
-    func failed?(self) -> Bool { not self.errors.empty? }
+    func failed?(self) -> Bool {
+        not self.errors.empty?
+    }
 
     /// Records only the first error at the current scalar position.
     func fail(self, message: String) -> () [consume self.errors, read self(line, column), mut self.errors, consume message] {
@@ -694,7 +706,9 @@ impl Parser {
 
     /// Saves the opening position so an unterminated array can report its origin.
     func parse_array(self) -> TomlValue [mut self] {
-        let { line: start_line, column: start_column } = self
+        let {
+            line: start_line, column: start_column
+        } = self
         self.take()
         self.skip_value_space()
         return self.empty_array() if self.peek?(']')
@@ -900,7 +914,9 @@ impl Parser {
     /// Rejects duplicate paths and value/table conflicts before adding a flat entry.
     func insert_value(self, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
         return self.fail("duplicate key or table/value conflict") if path_conflict?(self.entries, path)
-        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.Value(move value) })
+        self.entries = self.entries.append(FlatEntry {
+            path: move path, value: FlatValue.Value(move value)
+        })
         ()
     }
 
@@ -910,7 +926,9 @@ impl Parser {
         return self.fail("table is already defined") if exact_path?(self.entries, path)
         return self.fail("table conflicts with an existing value") if scalar_prefix_conflict?(self.entries, path)
         let context = [].concat(path)
-        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.TableMarker })
+        self.entries = self.entries.append(FlatEntry {
+            path: move path, value: FlatValue.TableMarker
+        })
         self.context = move context
         ()
     }
@@ -923,9 +941,13 @@ impl Parser {
         let parent = resolve_header_path(self.entries, [], move parents)
         return self.fail("array of tables conflicts with an existing value") if child_key_conflict?(self.entries, parent, name)
         let index = next_array_index(self.entries, parent, name)
-        let path = parent.append(PathPart.ArrayItem(PathItem { key: move name, index }))
+        let path = parent.append(PathPart.ArrayItem(PathItem {
+            key: move name, index
+        }))
         let context = [].concat(path)
-        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.ArrayTableMarker })
+        self.entries = self.entries.append(FlatEntry {
+            path: move path, value: FlatValue.ArrayTableMarker
+        })
         self.context = move context
         ()
     }
@@ -978,7 +1000,9 @@ func ascii_letter?(character: CodePoint) -> Bool {
 }
 
 /// Recognizes ASCII decimal digits.
-func decimal_digit?(character: CodePoint) -> Bool { character >= '0' && character <= '9' }
+func decimal_digit?(character: CodePoint) -> Bool {
+    character >= '0' && character <= '9'
+}
 
 /// Recognizes ASCII hexadecimal digits in either letter case.
 func hex_digit?(character: CodePoint) -> Bool {
@@ -1145,7 +1169,9 @@ func exponent?(value: String) -> Bool {
 }
 
 /// Validates decimal digits with underscores only between digits.
-func decimal_component?(value: String) -> Bool { based_digits?(value, 10) }
+func decimal_component?(value: String) -> Bool {
+    based_digits?(value, 10)
+}
 
 /// Binds array-of-tables ancestors to their most recently declared element.
 func resolve_header_path(entries: List<FlatEntry>, prefix: List<PathPart>, keys: List<String>) -> List<PathPart> [consume prefix, consume keys] {
@@ -1153,7 +1179,9 @@ func resolve_header_path(entries: List<FlatEntry>, prefix: List<PathPart>, keys:
     let name = keys.head
     let index = latest_array_index(entries, prefix, name, -1)
     let next = branch {
-        index >= 0 -> prefix.append(PathPart.ArrayItem(PathItem { key: move name, index }))
+        index >= 0 -> prefix.append(PathPart.ArrayItem(PathItem {
+            key: move name, index
+        }))
         _ -> prefix.append(PathPart.Key(move name))
     }
     resolve_header_path(entries, move next, keys.rest)
@@ -1339,8 +1367,12 @@ func materialize_array_child(name: String, entries: List<FlatEntry>, prefix: Lis
 func materialize_table_child(name: String, entries: List<FlatEntry>, prefix: List<PathPart>) -> TomlEntry {
     let path = prefix.append(PathPart.Key(name))
     branch exact_scalar(entries, path) {
-        Option.Some(value) -> TomlEntry { key: name, value: move value }
-        Option.None -> TomlEntry { key: name, value: TomlValue.Table(materialize(entries, path)) }
+        Option.Some(value) -> TomlEntry {
+            key: name, value: move value
+        }
+        Option.None -> TomlEntry {
+            key: name, value: TomlValue.Table(materialize(entries, path))
+        }
     }
 }
 
@@ -1361,7 +1393,9 @@ func flat_scalar(entry: FlatEntry) -> Option<TomlValue> {
 
 /// Builds consecutive table elements starting at `index`; stops at the first missing marker.
 func materialize_array_items(entries: List<FlatEntry>, prefix: List<PathPart>, name: String, index: Int, output: List<TomlValue>) -> List<TomlValue> [consume output] {
-    let path = prefix.append(PathPart.ArrayItem(PathItem { key: name.slice(0, name.length), index }))
+    let path = prefix.append(PathPart.ArrayItem(PathItem {
+        key: name.slice(0, name.length), index
+    }))
     return output if not exact_path?(entries, path)
     let table = TomlValue.Table(materialize(entries, path))
     materialize_array_items(entries, prefix, name, index + 1, output.append(move table))
@@ -1377,7 +1411,9 @@ func insert_table_value(entries: List<TomlEntry>, keys: List<String>, value: Tom
 /// Appends a new inline entry, rejecting an existing equal key.
 func insert_direct_table_value(entries: List<TomlEntry>, key: String, value: TomlValue) -> Result<List<TomlEntry>, String> [consume entries, consume key, consume value] {
     return Result.Error("duplicate key in inline table") if table_contains_key?(entries, key)
-    Result.Ok(entries.append(TomlEntry { key: move key, value: move value }))
+    Result.Ok(entries.append(TomlEntry {
+        key: move key, value: move value
+    }))
 }
 
 /// Tests exact key equality within one table level.
@@ -1398,7 +1434,9 @@ func insert_nested_table_value(entries: List<TomlEntry>, key: String, rest: List
 /// Constructs missing nested tables for the rest of a dotted inline key.
 func create_nested_table(entries: List<TomlEntry>, key: String, rest: List<String>, value: TomlValue) -> Result<List<TomlEntry>, String> [consume entries, consume key, consume rest, consume value] {
     let nested = try insert_table_value([], move rest, move value)
-    Result.Ok(entries.append(TomlEntry { key: move key, value: TomlValue.Table(move nested) }))
+    Result.Ok(entries.append(TomlEntry {
+        key: move key, value: TomlValue.Table(move nested)
+    }))
 }
 
 /// Accumulates preceding entries so nested insertion preserves the original entry order.
@@ -1413,7 +1451,9 @@ func rewrite_matching_table(entries: List<TomlEntry>, key: String, rest: List<St
     branch entries.head.value {
         TomlValue.Table(nested) -> {
             let updated = try insert_table_value(move nested, move rest, move value)
-            Result.Ok(prefix.append(TomlEntry { key: move key, value: TomlValue.Table(move updated) }).concat(entries.rest))
+            Result.Ok(prefix.append(TomlEntry {
+                key: move key, value: TomlValue.Table(move updated)
+            }).concat(entries.rest))
         }
         _ -> Result.Error("inline table key conflicts with a value")
     }
@@ -1736,19 +1776,19 @@ func hex_character(value: Int) -> String {
 
 /// Uses zero positions because constructed values have no source location.
 func render_error(message: String) -> TomlError {
-    TomlError { message: move message, line: 0, column: 0 }
+    TomlError {
+        message: move message, line: 0, column: 0
+    }
 }
 
 test "TOML parses queries renders and reports positioned errors" {
     branch parse("title = \"Foster\"\n[package]\nenabled = true\n") {
         Result.Error(_) -> {
-            assert(false, "valid TOML was rejected")
-            ()
+            panic("valid TOML was rejected")
         }
         Result.Ok(document) -> branch (move document).get("package") {
             Option.None -> {
-                assert(false, "package table was missing")
-                ()
+                panic("package table was missing")
             }
             Option.Some(value) -> branch (move value).get("enabled") {
                 Option.Some(TomlValue.Bool(enabled)) -> {
@@ -1756,22 +1796,26 @@ test "TOML parses queries renders and reports positioned errors" {
                     ()
                 }
                 _ -> {
-                    assert(false, "nested boolean was missing")
-                    ()
+                    panic("nested boolean was missing")
                 }
             }
         }
     }
 
-    let document = TomlDocument { entries: [TomlEntry { key: "count", value: TomlValue.Int(3) }, TomlEntry { key: "title", value: TomlValue.String("Foster") }] }
+    let document = TomlDocument {
+        entries: [TomlEntry {
+            key: "count", value: TomlValue.Int(3)
+        }, TomlEntry {
+            key: "title", value: TomlValue.String("Foster")
+        }]
+    }
     branch (move document).render() {
         Result.Ok(source) -> {
             assert(source == "count = 3\ntitle = \"Foster\"\n")
             ()
         }
         Result.Error(_) -> {
-            assert(false, "typed TOML failed to render")
-            ()
+            panic("typed TOML failed to render")
         }
     }
 
@@ -1782,8 +1826,7 @@ test "TOML parses queries renders and reports positioned errors" {
             ()
         }
         Result.Ok(_) -> {
-            assert(false, "malformed TOML was accepted")
-            ()
+            panic("malformed TOML was accepted")
         }
     }
 }
@@ -1841,7 +1884,11 @@ test "TOML round trips every value category" {
 }
 
 test "TOML renderer rejects invalid date-time values" {
-    let document = TomlDocument { entries: [TomlEntry { key: "when", value: TomlValue.DateTime("not-a-date") }] }
+    let document = TomlDocument {
+        entries: [TomlEntry {
+            key: "when", value: TomlValue.DateTime("not-a-date")
+        }]
+    }
     branch (move document).render() {
         Result.Ok(_) -> test_require(false, "invalid date-time rendered successfully")
         Result.Error(error) -> {

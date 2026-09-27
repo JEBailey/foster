@@ -197,6 +197,30 @@ parameter storage groups and an upper bound on effects.
 
 ## Mutable aliasing
 
+### Callback capture capabilities
+
+A callable contract can permit effects on its environment without naming each caller's
+captured group:
+
+```foster
+func(consume Int) -> Int [reshape captures]
+```
+
+`captures` denotes storage reachable through that callable's captures. `mut captures`
+permits value mutation; `reshape captures` also permits structural mutation. Neither
+permits consuming a captured owner, changing the explicit argument ownership contract,
+or suspension. An unannotated callable contract still excludes mutation effects.
+
+Lazy iterator `map` accepts this capability. Constructing the adaptor does not invoke
+the callback. Iteration invokes it and carries its effects and borrowed origins through
+stored adaptors and helper returns. Iterator consumers conservatively permit structural
+effects on their receiver, including its borrowed callback environment. References into
+storage reshaped during iteration cannot be used afterward. The iterator cannot escape
+the lifetime of a borrowed capture.
+
+Use `[ref name]` at the closure expression to retain ownership in the surrounding scope.
+The capability on the library signature does not change closure capture inference.
+
 Multiple closures may capture references into the same mutable group:
 
 ```foster

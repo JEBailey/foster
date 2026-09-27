@@ -93,6 +93,12 @@ unselected fields remain owned by the hidden source. Record branch patterns use
 the same binding and borrower propagation rules as enum payload patterns; a test
 itself does not transfer ownership of its subject.
 
+Matching through a reference preserves the subject's storage origin in payload and
+field bindings. Taking `ref payload` or `ref payload.field` reborrows that storage,
+including through nested enum and record patterns; it does not borrow a temporary
+copy in the matching function. Reference-valued payloads retain their existing origin.
+Returned references remain subject to the original owner's lifetime and invalidation rules.
+
 ## Copy and move
 
 The built-in copy types are currently:

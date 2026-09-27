@@ -95,6 +95,37 @@ pub const VERSION = "1" // visible to importing modules
 This default applies to function and type declarations. A public declaration may not expose a
 private declaration in its public signature.
 
+## Interpolated strings
+
+Ordinary `"text"` strings do not substitute names; `""` is empty text. Triple quotes
+open and close an interpolated string, which may span multiple lines:
+
+```foster
+let name = "Ada"
+let message = """
+hello my dear %name%! it's
+great to see you
+"""
+```
+
+`%name%` calls that variable's visible `as_string()` method and inserts its String
+result. Each occurrence runs once, from left to right, under ordinary borrowing and
+effect rules. Import the module providing the conversion (for example `core.int`).
+String itself provides `as_string()` without consuming its source. Use `%name%` for
+a name and `%{expression}%` for an expression, such as `%{escape(text)}%` or
+`%{price * quantity}%`. The expression runs once and its result is converted through
+`as_string()`. Nested braces, comments, quoted strings, and nested interpolated strings
+follow ordinary Foster syntax inside the expression. Its closing delimiter is `}%`.
+
+`%%` produces one percent sign. Standard `\n`, `\r`, `\t`, `\"`, and `\\` escapes
+apply. Single and double quote characters are ordinary text; an unescaped sequence
+of three quotes ends the string. Use `\"\"\"` to insert three quotes.
+
+An opening line containing only whitespace after the delimiter is omitted, as is
+the newline and whitespace immediately before a closing delimiter on its own line.
+All other whitespace and indentation are retained. Source CRLF line breaks become
+LF; explicit `\r` escapes are preserved. Inline `"""hello %name%"""` is also valid.
+
 ## Functions and evaluation
 
 `func` introduces a function. Type annotations may state parameter and result types; otherwise the
@@ -359,6 +390,8 @@ recoverable errors remain ordinary typed `Result` values.
 
 Identifiers may end in `?`, conventionally marking Boolean observations such as `empty?` and
 `whitespace?`. Commas separate arguments and generic parameters. Newlines separate statements.
+A leading `.` on the next nonempty line continues the preceding expression, allowing field
+access and method chains to span lines. A leading `(` or `[` does not continue an expression.
 
 ## Values
 
@@ -1307,6 +1340,12 @@ Supplier<Job>  // func() -> Job
 These are transparent aliases, so they preserve callable parameter ownership and runtime
 representation rather than introducing wrapper values. They currently describe pure callbacks;
 effect-polymorphic aliases remain future work.
+
+A callable type may explicitly permit mutation through its environment using
+`[mut captures]` or `[reshape captures]`. These capabilities retain borrowed-capture
+lifetime checks and do not grant additional access to explicit arguments, consumption
+of captured owners, or suspension. Unannotated callable types still exclude mutation.
+See [callback capture capabilities](closures.md#callback-capture-capabilities).
 
 ## Inferred and explicit effects
 

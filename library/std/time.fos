@@ -60,13 +60,17 @@ impl Duration {
         branch {
             nanosecond < 0 -> invalid_duration(nanosecond, "duration nanosecond must not be negative")
             nanosecond >= 1000000000 -> invalid_duration(nanosecond, "duration nanosecond must be below one billion")
-            _ -> Result.Ok(Duration { seconds_value: seconds, nanosecond_value: nanosecond })
+            _ -> Result.Ok(Duration {
+                seconds_value: seconds, nanosecond_value: nanosecond
+            })
         }
     }
 
     /// Constructs an exact whole-second duration.
     pub func from_seconds(seconds: Int) -> Duration {
-        Duration { seconds_value: seconds, nanosecond_value: 0 }
+        Duration {
+            seconds_value: seconds, nanosecond_value: 0
+        }
     }
 
     /// Constructs an exact duration from signed milliseconds.
@@ -74,8 +78,12 @@ impl Duration {
         let seconds = milliseconds / 1000
         let remainder = milliseconds - seconds * 1000
         branch {
-            remainder < 0 -> Duration { seconds_value: seconds - 1, nanosecond_value: (remainder + 1000) * 1000000 }
-            _ -> Duration { seconds_value: seconds, nanosecond_value: remainder * 1000000 }
+            remainder < 0 -> Duration {
+                seconds_value: seconds - 1, nanosecond_value: (remainder + 1000) * 1000000
+            }
+            _ -> Duration {
+                seconds_value: seconds, nanosecond_value: remainder * 1000000
+            }
         }
     }
 
@@ -84,19 +92,29 @@ impl Duration {
         let seconds = nanoseconds / 1000000000
         let remainder = nanoseconds - seconds * 1000000000
         branch {
-            remainder < 0 -> Duration { seconds_value: seconds - 1, nanosecond_value: remainder + 1000000000 }
-            _ -> Duration { seconds_value: seconds, nanosecond_value: remainder }
+            remainder < 0 -> Duration {
+                seconds_value: seconds - 1, nanosecond_value: remainder + 1000000000
+            }
+            _ -> Duration {
+                seconds_value: seconds, nanosecond_value: remainder
+            }
         }
     }
 
     /// Returns a zero-length duration.
-    pub func zero() -> Duration { Duration.from_seconds(0) }
+    pub func zero() -> Duration {
+        Duration.from_seconds(0)
+    }
 
     /// Returns the canonical whole-second component.
-    pub func seconds(self) -> Int { self.seconds_value }
+    pub func seconds(self) -> Int {
+        self.seconds_value
+    }
 
     /// Returns the nonnegative fractional nanosecond component.
-    pub func nanosecond(self) -> Int { self.nanosecond_value }
+    pub func nanosecond(self) -> Int {
+        self.nanosecond_value
+    }
 
     /// Returns this duration as signed nanoseconds.
     ///
@@ -123,8 +141,12 @@ impl Duration {
     /// Returns the additive inverse of this duration.
     pub func negated(self) -> Duration {
         branch {
-            self.nanosecond_value == 0 -> Duration { seconds_value: -self.seconds_value, nanosecond_value: 0 }
-            _ -> Duration { seconds_value: -self.seconds_value - 1, nanosecond_value: 1000000000 - self.nanosecond_value }
+            self.nanosecond_value == 0 -> Duration {
+                seconds_value: -self.seconds_value, nanosecond_value: 0
+            }
+            _ -> Duration {
+                seconds_value: -self.seconds_value - 1, nanosecond_value: 1000000000 - self.nanosecond_value
+            }
         }
     }
 
@@ -170,13 +192,17 @@ impl Instant {
         branch {
             nanosecond < 0 -> invalid_instant(nanosecond, "instant nanosecond must not be negative")
             nanosecond >= 1000000000 -> invalid_instant(nanosecond, "instant nanosecond must be below one billion")
-            _ -> Result.Ok(Instant { epoch_seconds_value: epoch_seconds, nanosecond_value: nanosecond })
+            _ -> Result.Ok(Instant {
+                epoch_seconds_value: epoch_seconds, nanosecond_value: nanosecond
+            })
         }
     }
 
     /// Constructs an instant at a whole Unix second.
     pub func from_epoch_seconds(epoch_seconds: Int) -> Instant {
-        Instant { epoch_seconds_value: epoch_seconds, nanosecond_value: 0 }
+        Instant {
+            epoch_seconds_value: epoch_seconds, nanosecond_value: 0
+        }
     }
 
     /// Constructs an instant from signed Unix milliseconds.
@@ -184,19 +210,29 @@ impl Instant {
         let seconds = milliseconds / 1000
         let remainder = milliseconds - seconds * 1000
         branch {
-            remainder < 0 -> Instant { epoch_seconds_value: seconds - 1, nanosecond_value: (remainder + 1000) * 1000000 }
-            _ -> Instant { epoch_seconds_value: seconds, nanosecond_value: remainder * 1000000 }
+            remainder < 0 -> Instant {
+                epoch_seconds_value: seconds - 1, nanosecond_value: (remainder + 1000) * 1000000
+            }
+            _ -> Instant {
+                epoch_seconds_value: seconds, nanosecond_value: remainder * 1000000
+            }
         }
     }
 
     /// Returns the Unix epoch.
-    pub func epoch() -> Instant { Instant.from_epoch_seconds(0) }
+    pub func epoch() -> Instant {
+        Instant.from_epoch_seconds(0)
+    }
 
     /// Returns the canonical Unix-second component.
-    pub func epoch_seconds(self) -> Int { self.epoch_seconds_value }
+    pub func epoch_seconds(self) -> Int {
+        self.epoch_seconds_value
+    }
 
     /// Returns the nonnegative fractional nanosecond component.
-    pub func nanosecond(self) -> Int { self.nanosecond_value }
+    pub func nanosecond(self) -> Int {
+        self.nanosecond_value
+    }
 
     /// Returns signed Unix milliseconds, truncated toward negative infinity.
     pub func epoch_milliseconds(self) -> Int {
@@ -249,19 +285,29 @@ impl Interval {
     /// Constructs `[start, end)`, rejecting an end before the start.
     pub func from(start: Instant, end: Instant) -> Result<Interval, TimeError> {
         branch end.compare(start) {
-            Ordering.Less -> Result.Error(TimeError { value: end.epoch_seconds(), message: "interval end must not precede its start" })
-            _ -> Result.Ok(Interval { start_value: start, end_value: end })
+            Ordering.Less -> Result.Error(TimeError {
+                value: end.epoch_seconds(), message: "interval end must not precede its start"
+            })
+            _ -> Result.Ok(Interval {
+                start_value: start, end_value: end
+            })
         }
     }
 
     /// Returns the inclusive interval start.
-    pub func start(self) -> Instant { clone_instant(self.start_value) }
+    pub func start(self) -> Instant {
+        clone_instant(self.start_value)
+    }
 
     /// Returns the exclusive interval end.
-    pub func end(self) -> Instant { clone_instant(self.end_value) }
+    pub func end(self) -> Instant {
+        clone_instant(self.end_value)
+    }
 
     /// Returns the exact interval length.
-    pub func duration(self) -> Duration { self.start_value.until(self.end_value) }
+    pub func duration(self) -> Duration {
+        self.start_value.until(self.end_value)
+    }
 
     /// Returns whether this interval contains `instant`.
     pub func contains?(self, instant: Instant) -> Bool {
@@ -282,17 +328,25 @@ pub type SystemClock = & Clock<Instant> & {
 
 impl SystemClock {
     /// Constructs the host wall clock capability.
-    pub func new() -> SystemClock { SystemClock { marker: :system_clock } }
+    pub func new() -> SystemClock {
+        SystemClock {
+            marker: :system_clock
+        }
+    }
 
     /// Reads the host wall clock.
     pub func now(self) -> Instant {
         let parts = TimeHost.wall_now()
-        Instant { epoch_seconds_value: parts[0], nanosecond_value: parts[1] }
+        Instant {
+            epoch_seconds_value: parts[0], nanosecond_value: parts[1]
+        }
     }
 }
 
 /// Returns the current host wall-clock instant.
-pub func now() -> Instant { SystemClock.new().now() }
+pub func now() -> Instant {
+    SystemClock.new().now()
+}
 
 /// An opaque reading from one monotonic-clock domain.
 pub type MonotonicInstant = & Ordered<MonotonicInstant> & {
@@ -309,7 +363,9 @@ pub type MonotonicInstant = & Ordered<MonotonicInstant> & {
 
 impl MonotonicInstant {
     /// Returns the host-context-relative nanosecond reading.
-    pub func ticks(self) -> Int { self.ticks_value }
+    pub func ticks(self) -> Int {
+        self.ticks_value
+    }
 
     /// Returns the elapsed duration from this reading until `other`.
     pub func until(self, other: MonotonicInstant) -> Duration {
@@ -318,7 +374,9 @@ impl MonotonicInstant {
 
     /// Advances a monotonic reading for deterministic clock implementations.
     pub func add(self, duration: Duration) -> MonotonicInstant {
-        MonotonicInstant { ticks_value: self.ticks_value + duration.total_nanoseconds() }
+        MonotonicInstant {
+            ticks_value: self.ticks_value + duration.total_nanoseconds()
+        }
     }
 
     /// Compares two readings from the same monotonic-clock domain.
@@ -339,24 +397,34 @@ pub type ContinuousClock = & Clock<MonotonicInstant> & {
 
 impl ContinuousClock {
     /// Constructs the host monotonic clock capability.
-    pub func new() -> ContinuousClock { ContinuousClock { marker: :continuous_clock } }
+    pub func new() -> ContinuousClock {
+        ContinuousClock {
+            marker: :continuous_clock
+        }
+    }
 
     /// Reads the host monotonic clock.
     pub func now(self) -> MonotonicInstant {
-        MonotonicInstant { ticks_value: TimeHost.monotonic_now() }
+        MonotonicInstant {
+            ticks_value: TimeHost.monotonic_now()
+        }
     }
 }
 
 /// Canonicalizes a duration whose nanosecond part may be outside its public range.
 func canonical_duration(seconds: Int, nanosecond: Int) -> Duration {
     let carry = floor_div(nanosecond, 1000000000)
-    Duration { seconds_value: seconds + carry, nanosecond_value: nanosecond - carry * 1000000000 }
+    Duration {
+        seconds_value: seconds + carry, nanosecond_value: nanosecond - carry * 1000000000
+    }
 }
 
 /// Canonicalizes an instant whose nanosecond part may be outside its public range.
 func canonical_instant(seconds: Int, nanosecond: Int) -> Instant {
     let carry = floor_div(nanosecond, 1000000000)
-    Instant { epoch_seconds_value: seconds + carry, nanosecond_value: nanosecond - carry * 1000000000 }
+    Instant {
+        epoch_seconds_value: seconds + carry, nanosecond_value: nanosecond - carry * 1000000000
+    }
 }
 
 /// Reconstructs an instant from its scalar representation.
@@ -395,20 +463,30 @@ func compare_int(left: Int, right: Int) -> Ordering {
 /// Returns whether two ordering cases match.
 func matches_ordering(left: Ordering, right: Ordering) -> Bool {
     branch left {
-        Ordering.Less -> branch right { Ordering.Less -> true _ -> false }
-        Ordering.Equal -> branch right { Ordering.Equal -> true _ -> false }
-        Ordering.Greater -> branch right { Ordering.Greater -> true _ -> false }
+        Ordering.Less -> branch right {
+            Ordering.Less -> true _ -> false
+        }
+        Ordering.Equal -> branch right {
+            Ordering.Equal -> true _ -> false
+        }
+        Ordering.Greater -> branch right {
+            Ordering.Greater -> true _ -> false
+        }
     }
 }
 
 /// Constructs a duration validation error.
 func invalid_duration(value: Int, message: String) -> Result<Duration, TimeError> {
-    Result.Error(TimeError { value, message })
+    Result.Error(TimeError {
+        value, message
+    })
 }
 
 /// Constructs an instant validation error.
 func invalid_instant(value: Int, message: String) -> Result<Instant, TimeError> {
-    Result.Error(TimeError { value, message })
+    Result.Error(TimeError {
+        value, message
+    })
 }
 
 test "exact durations normalize negative and fractional values" {
@@ -426,8 +504,7 @@ test "instants intervals and monotonic readings preserve exact elapsed time" {
     assert(start.until(end).total_milliseconds() == 1750)
     branch Interval.from(move start, move end) {
         Result.Error(_) -> {
-            assert(false, "ordered interval was rejected")
-            ()
+            panic("ordered interval was rejected")
         }
         Result.Ok(interval) -> {
             assert(interval.contains?(Instant.from_epoch_milliseconds(-500)))
@@ -435,7 +512,9 @@ test "instants intervals and monotonic readings preserve exact elapsed time" {
             ()
         }
     }
-    let tick = MonotonicInstant { ticks_value: 100 }
+    let tick = MonotonicInstant {
+        ticks_value: 100
+    }
     assert(tick.until(tick.add(Duration.from_nanoseconds(42))).total_nanoseconds() == 42)
 }
 
@@ -457,8 +536,7 @@ test "exact values validate canonical parts and preserve ordering" {
     branch Duration.from_seconds(1).compare(Duration.from_seconds(2)) {
         Ordering.Less -> ()
         _ -> {
-            assert(false, "duration ordering was incorrect")
-            ()
+            panic("duration ordering was incorrect")
         }
     }
 }
@@ -467,8 +545,7 @@ test "interval construction rejects reverse ranges and reports boundaries" {
     assert(Interval.from(Instant.from_epoch_seconds(2), Instant.from_epoch_seconds(1)).error?())
     branch Interval.from(Instant.epoch(), Instant.from_epoch_seconds(2)) {
         Result.Error(_) -> {
-            assert(false, "ordered interval was rejected")
-            ()
+            panic("ordered interval was rejected")
         }
         Result.Ok(value) -> {
             assert(value.start().equal?(Instant.epoch()))

@@ -1,0 +1,54 @@
+import core.string
+import core.int
+import core.bool
+
+type Label = {
+    text: String, calls: Int
+}
+impl Label {
+    func as_string(self) -> String [mut self.calls, read self.text] {
+        self.calls = self.calls + 1
+        self.text.copy()
+    }
+}
+
+func main() -> Int {
+    let name = "Ada"
+    let age = 42
+    let ready = true
+    let greeting = """
+hello my dear %name%! it's
+great to see you
+"""
+    assert(greeting == "hello my dear Ada! it's\ngreat to see you")
+    assert(name == "Ada")
+    assert("""%age%: %ready%""" == "42: true")
+    assert("""100%% \"\"\" and "quotes" {braces}""" == "100% \"\"\" and \"quotes\" {braces}")
+    assert("%name%" == "%name%")
+    assert("""%%name%%""" == "%name%")
+    assert("""a\nb\tc\\d""" == "a\nb\tc\\d")
+    assert("""
+  indented  
+
+""" == "  indented  \n")
+    assert("" == """""" && """
+""" == "")
+    let label = Label {
+        text: "λ🙂", calls: 0
+    }
+    assert("""%label%/%label%""" == "λ🙂/λ🙂")
+    assert(label.calls == 2 && label.text == "λ🙂")
+    assert("""%{name.copy()}%: %{age * 2}%""" == "Ada: 84")
+    assert("""%{label.as_string()}%/%{label.calls}%""" == "λ🙂/3")
+    assert(label.calls == 3)
+    assert("""%{branch { true -> "yes" _ -> "no" }}%""" == "yes")
+    assert("""%{"literal }% text"}%""" == "literal }% text")
+    assert("""%{age /* }% ignored */ + 1}%""" == "43")
+    assert("""%{"""nested %name%"""}%""" == "nested Ada")
+    assert("""%name%%{"""nested"""}%""" == "Adanested")
+    assert("""%{
+        age + 1
+    }%""" == "43")
+    assert("""%name%%name% %%{literal}%%""" == "AdaAda %{literal}%")
+    42
+}

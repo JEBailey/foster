@@ -76,6 +76,33 @@ modules. `import std.net.tcp` imports that module; `tcp::connect(...)` calls a
 module function. Importing a module also exposes its public names directly.
 Import the modules whose APIs you use; there is no general library prelude.
 
+## Multiline text and substitution
+
+Triple-quoted strings substitute `%name%` using the variable's `as_string()` method.
+Ordinary quoted strings do not substitute names. Use `%%` for a literal percent.
+Delimiter-only boundary lines are omitted; interior indentation is preserved.
+Substitutions borrow their inputs and obey the conversion method's effects.
+Use `%{expression}%` for calls, arithmetic, or other expressions; evaluation is once,
+left to right, followed by `as_string()` on each result.
+
+```foster
+import core.string
+import core.int
+
+func main() -> Int {
+    let name = "Ada"
+    let answer = 42
+    let message = """
+Hello %name%!
+The answer is %answer%.
+"""
+    assert(message == "Hello Ada!\nThe answer is 42.")
+    assert(name == "Ada")
+    assert("""Double: %{answer * 2}%""" == "Double: 84")
+    answer
+}
+```
+
 ## Variables, records, methods, and control flow
 
 `let` introduces a mutable binding. Assign with `=` afterward; do not redeclare

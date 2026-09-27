@@ -1,6 +1,7 @@
 //! Explicit ownership and pointer contracts layered over discovered declarations.
 import core.list
 import core.string
+import std.iter.map
 import bridge
 import bindings
 
@@ -28,19 +29,19 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     for row in declarations.copy().split("\n") {
         let fields = row.copy().split("\t")
         if fields.length >= 3 && ["F", "R"].contains?(fields[0]) declared.push(fields[1].copy())
-        if fields.length >= 3 && fields[0] == "T" declared_types.push(fields[1].copy())
+        if fields.length >= 3 && fields[0] == "T"declared_types.push(fields[1].copy())
     }
-    let reviewed = []
     let replaced = []
-    for operation in contracts.array(0, "operations", false) {
+    let reviewed = contracts.array(0, "operations", false).iterator().map([ref contracts, ref declared, ref replaced] (operation: Int) -> {
         let name = contracts.string(operation, "name", true)
         let symbol = contracts.string(operation, "symbol", true)
-        assert(declared.contains?(symbol), "contract symbol was not discovered in the selected header: " + symbol)
-        assert(!replaced.contains?(name), "duplicate reviewed operation " + name)
+        assert(declared.contains?(symbol), """contract symbol was not discovered in the selected header: %symbol%""")
+        assert(!replaced.contains?(name), """duplicate reviewed operation %name%""")
         replaced.push(name.copy())
         replaced.push(symbol.copy())
-        reviewed.push(contracts.json(operation))
-    }
+        contracts.json(operation)
+    }).collect()
+
     let excluded = []
     for name in contracts.array(0, "exclude", false) {
         assert(contracts.nodes[name].kind == "string" && declared.contains?(contracts.nodes[name].text), "excluded function was not discovered")
@@ -67,7 +68,7 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
             break if native == previous
         }
 
-        if native.starts_with?("struct ") native = native.slice(7, native.length)
+        native = native.strip_prefix("struct ")
 
         blocked.push(native.copy())
         for key in ["destroy", "close", "valid"] {
@@ -93,19 +94,19 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
 
     let records = []
     for record in base.array(0, "records", false) {
-        if !blocked.contains?(base.string(record, "name", true)) {
+        if !blocked.contains?(base.string(record, "name", true)){
             records.push(base.json(record))
         }
     }
 
     let operations = []
-    let extra_report = ""
+    let extra_report = StringBuilder.empty()
     for operation in base.array(0, "operations", true) {
         let name = base.string(operation, "name", true)
         continue if replaced.contains?(name) || excluded.contains?(name)
         branch {
             mentions(base, operation, blocked) -> {
-                extra_report = extra_report + name + ": native resource use requires a reviewed operation contract\n"
+                extra_report.append("""%name%: native resource use requires a reviewed operation contract\n""")
             }
             _ -> operations.push(base.json(operation))
         }
@@ -119,12 +120,12 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     for member in base.children(0) {
         let key = base.nodes[member].key.copy()
         continue if ["operations", "records", "resources", "callbacks"].contains?(key)
-        members.push(bindings::quoted(key) + ":" + base.json(member))
+        members.push("""%{bindings::quoted(key)}%:%{base.json(member)}%""")
     }
 
-    members.push("\"operations\":[" + operations.join(",") + "]")
-    members.push("\"records\":[" + records.join(",") + "]")
-    members.push("\"resources\":[" + resources.join(",") + "]")
+    members.push(""""operations":[%{operations.join(",")}%]""")
+    members.push(""""records":[%{records.join(",")}%]""")
+    members.push(""""resources":[%{resources.join(",")}%]""")
 
     let callbacks = []
     let callback_types = []
@@ -139,16 +140,16 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
             callback_types.push(native.copy())
         }
     }
-    members.push("\"callbacks\":[" + callbacks.join(",") + "]")
-    let remaining = ""
+    members.push(""""callbacks":[%{callbacks.join(",")}%]""")
+    let remaining = StringBuilder.empty()
     for line in report.copy().split("\n") {
         continue if line.empty?
         let name = line.copy().split(":")[0]
         continue if replaced.contains?(name) || excluded.contains?(name) || blocked.contains?(name) || callback_types.contains?(name)
-        remaining = remaining + line + "\n"
+        remaining.append("""%line%\n""")
     }
     Generated {
-        manifest: "{" + members.join(",") + "}", report: remaining + extra_report
+        manifest: """{%{members.join(",")}%}""", report: (move remaining).finish() + (move extra_report).finish()
     }
 }
 

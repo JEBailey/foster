@@ -31,14 +31,20 @@ impl UniformInt {
     /// Validates and constructs a uniform integer distribution over `[start, end)`.
     pub func from(start: Int, end: Int) -> Result<UniformInt, RandomError> {
         return failure("uniform_int", end, "uniform integer range must be nonempty") if start >= end
-        Result.Ok(UniformInt { start_value: start, end_value: end })
+        Result.Ok(UniformInt {
+            start_value: start, end_value: end
+        })
     }
 
     /// Returns the inclusive lower bound.
-    pub func start(self) -> Int { self.start_value }
+    pub func start(self) -> Int {
+        self.start_value
+    }
 
     /// Returns the exclusive upper bound.
-    pub func end(self) -> Int { self.end_value }
+    pub func end(self) -> Int {
+        self.end_value
+    }
 
     /// Draws one uniformly distributed integer in this distribution's range.
     pub func sample(self, source: RandomSource) -> Result<Int, RandomError> [read self(start_value, end_value), mut source] {
@@ -62,14 +68,20 @@ impl UniformFloat {
     /// Validates and constructs a uniform floating-point distribution over `[start, end)`.
     pub func from(start: Float, end: Float) -> Result<UniformFloat, RandomError> {
         return failure("uniform_float", 0, "uniform float bounds must be ordered finite numbers") if not finite?(start) || not finite?(end) || start >= end
-        Result.Ok(UniformFloat { start_value: start, end_value: end })
+        Result.Ok(UniformFloat {
+            start_value: start, end_value: end
+        })
     }
 
     /// Returns the inclusive floating-point lower bound.
-    pub func start(self) -> Float { self.start_value }
+    pub func start(self) -> Float {
+        self.start_value
+    }
 
     /// Returns the exclusive floating-point upper bound.
-    pub func end(self) -> Float { self.end_value }
+    pub func end(self) -> Float {
+        self.end_value
+    }
 
     /// Draws one uniformly distributed floating-point value in this distribution's range.
     pub func sample(self, source: RandomSource) -> Result<Float, RandomError> [read self(start_value, end_value), mut source] {
@@ -93,11 +105,15 @@ impl Bernoulli {
     /// Validates and constructs a Bernoulli probability from zero through one.
     pub func from(probability: Float) -> Result<Bernoulli, RandomError> {
         return failure("bernoulli", 0, "Bernoulli probability must be between zero and one") if probability != probability || probability < 0.0 || probability > 1.0
-        Result.Ok(Bernoulli { probability_value: probability })
+        Result.Ok(Bernoulli {
+            probability_value: probability
+        })
     }
 
     /// Returns the probability of drawing true.
-    pub func probability(self) -> Float { self.probability_value }
+    pub func probability(self) -> Float {
+        self.probability_value
+    }
 
     /// Draws one Boolean with the configured probability of true.
     pub func sample(self, source: RandomSource) -> Result<Bool, RandomError> [read self.probability_value, mut source] {
@@ -127,14 +143,20 @@ impl WeightedIndex {
     pub func from(weights: List<Int>) -> Result<WeightedIndex, RandomError> [consume weights] {
         let total = try weight_total(weights, 0, 0)
         return failure("weighted", total, "weighted distribution requires a positive total weight") if total == 0
-        Result.Ok(WeightedIndex { weights_value: move weights, total_value: total })
+        Result.Ok(WeightedIndex {
+            weights_value: move weights, total_value: total
+        })
     }
 
     /// Returns the number of weighted outcomes.
-    pub func length(self) -> Int { self.weights_value.length }
+    pub func length(self) -> Int {
+        self.weights_value.length
+    }
 
     /// Returns the sum of all configured weights.
-    pub func total(self) -> Int { self.total_value }
+    pub func total(self) -> Int {
+        self.total_value
+    }
 
     /// Draws one index in proportion to its configured weight.
     pub func sample(self, source: RandomSource) -> Result<Int, RandomError> [read self(weights_value, total_value), mut source] {
@@ -155,7 +177,9 @@ func weight_total(weights: List<Int>, index: Int, total: Int) -> Result<Int, Ran
 /// Finds the first index whose cumulative weight exceeds `target`.
 func weighted_index(weights: List<Int>, target: Int, index: Int, cumulative: Int) -> Int {
     let next = cumulative + weights[index]
-    branch { target < next -> index _ -> weighted_index(weights, target, index + 1, next) }
+    branch {
+        target < next -> index _ -> weighted_index(weights, target, index + 1, next)
+    }
 }
 
 /// Reports whether a floating-point value is neither NaN nor an infinity.
@@ -173,12 +197,16 @@ func source_capacity(source: RandomSource, operation: String) -> Result<Int, Ran
 
 /// Constructs a typed distribution error for any failed sample shape.
 func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
-    Result.Error(RandomError { operation, value, message })
+    Result.Error(RandomError {
+        operation, value, message
+    })
 }
 
 /// Extracts a successful integer sample for tests.
 func sampled_int(outcome: Result<Int, RandomError>) -> Int {
-    branch outcome { Result.Ok(value) -> value Result.Error(_) -> -1 }
+    branch outcome {
+        Result.Ok(value) -> value Result.Error(_) -> -1
+    }
 }
 
 /// Exercises a generic integer distribution contract for tests.
@@ -190,8 +218,7 @@ test "uniform distributions stay inside their half-open ranges" {
     let source = LehmerRandom.from_seed(42)
     branch UniformInt.from(-10, 21) {
         Result.Error(_) -> {
-            assert(false, "valid integer distribution was rejected")
-            ()
+            panic("valid integer distribution was rejected")
         }
         Result.Ok(distribution) -> {
             let value = sampled_distribution(distribution, source)
@@ -205,13 +232,11 @@ test "uniform distributions stay inside their half-open ranges" {
     assert(UniformFloat.from(0.0, parse_float("inf")).error?())
     branch UniformFloat.from(-1.0, 1.0) {
         Result.Error(_) -> {
-            assert(false, "valid float distribution was rejected")
-            ()
+            panic("valid float distribution was rejected")
         }
         Result.Ok(distribution) -> branch distribution.sample(source) {
             Result.Error(_) -> {
-                assert(false, "float sample failed")
-                ()
+                panic("float sample failed")
             }
             Result.Ok(value) -> {
                 assert(value >= -1.0 && value < 1.0)

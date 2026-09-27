@@ -393,9 +393,7 @@ impl Contract {
             names.push(name.copy())
             assert(!["Error", "Value", "Arguments", "Bridge", "Resource"].contains?(name), "C enum conflicts with std.ffi")
             let c_name = self.string(node, "c_type", true)
-            let bare = branch {
-                c_name.starts_with?("enum ") -> c_name.slice(5, c_name.length) _ -> c_name.copy()
-            }
+            let bare = c_name.strip_prefix("enum ")
             assert(identifier(bare), "invalid C enum type")
         }
         for node in self.records() {
@@ -406,10 +404,7 @@ impl Contract {
             names.push(name.copy())
             assert(!["Error", "Value", "Arguments", "Bridge", "Resource"].contains?(name), "C record conflicts with std.ffi")
             let c_name = self.string(node, "c_type", true)
-            let bare = branch {
-                c_name.starts_with?("struct ") -> c_name.slice(7, c_name.length)
-                _ -> c_name.copy()
-            }
+            let bare = c_name.strip_prefix("struct ")
             assert(identifier(bare), "invalid C record type")
             let fields = self.array(node, "fields", true)
             assert(fields.length > 0, "empty C records are not supported")
@@ -1458,9 +1453,7 @@ impl Contract {
                     }
                 }
                 _ -> {
-                    let base = branch {
-                        ty.starts_with?("!") -> ty.slice(1, ty.length) _ -> ty.copy()
-                    }
+                    let base = ty.strip_prefix("!")
                     parameters.push(place + ": " + foster_type(base))
                     arguments = arguments + self.foster_argument(base, place)
                 }
@@ -1897,8 +1890,7 @@ pub func canonical(file: String) -> String {
     // Rust's Windows canonicalization returns extended paths; C include syntax
     // and Clang source locations use ordinary drive/UNC spellings.
     return "//" + value.slice(8, value.length) if value.starts_with?("//?/UNC/")
-    return value.slice(4, value.length) if value.starts_with?("//?/")
-    move value
+    value.strip_prefix("//?/")
 }
 
 pub func absolute(file: String) -> String {

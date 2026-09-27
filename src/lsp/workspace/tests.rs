@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn if_statements_are_available_to_semantic_analysis() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "func main() -> Int {\n    let value = 0\n    if true value = 42\n    if false { value = 0 }\n    value\n}\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert!(
+        compilation.diagnostics.is_empty(),
+        "{:?}",
+        compilation.diagnostics
+    );
+}
+
+#[test]
+fn multiline_method_error_keeps_the_enclosing_function_available() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "import core.list\nfunc apply() -> () {\n    [1]\n        .missing_method()\n}\nfunc main() -> () { apply() }\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    let compilation = workspace.compile_for(&uri).unwrap();
+    let diagnostics = compilation
+        .diagnostics
+        .iter()
+        .map(|diagnostic| compiler_diagnostic(source, &uri, diagnostic))
+        .collect::<Vec<_>>();
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("missing_method")),
+        "{diagnostics:?}"
+    );
+    assert!(
+        diagnostics.iter().all(
+            |diagnostic| !diagnostic.message.contains("unknown name `apply`")
+                && !diagnostic.message.contains("expected expression")
+        ),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
 fn constrained_method_signature_displays_requirements() {
     let compilation = crate::compile("import core.copy\ntype Box<T> = { value: T }\nimpl Box<T & Copy> { func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { Box { value: 42 }.copied() }").unwrap();
     let module = compilation.hir.module_named("main").unwrap();

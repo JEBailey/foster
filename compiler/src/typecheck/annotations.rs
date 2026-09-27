@@ -199,7 +199,12 @@ impl Checker<'_> {
                 // A source-level callable type is a contract. The compiler chooses
                 // an erased representation when a concrete callable flows into it.
                 erased: true,
-                effects: effects.clone(),
+                effects: effects.iter().map(|effect| {
+                    let mut effect = effect.clone();
+                    effect.capture = !parameters.iter().any(|parameter|
+                        matches!(parameter, TypeExpr::Reference { group, .. } if group == &effect.target.root));
+                    effect
+                }).collect(),
                 suspends: *suspends,
             }),
         }

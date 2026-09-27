@@ -158,6 +158,8 @@ pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Option<ast::TypeExpr>,
     pub effects_explicit: bool,
+    /// Effects deferred by borrowed callbacks retained in the returned value.
+    pub result_effects: Vec<ast::Effect>,
     pub effects: Vec<ast::Effect>,
     pub effect_spans: Vec<std::ops::Range<usize>>,
     pub suspends: bool,

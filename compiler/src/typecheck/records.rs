@@ -409,6 +409,7 @@ impl Checker<'_> {
             }
             let mut allowed_effects = method.effects.clone();
             allowed_effects.push(crate::ast::Effect {
+                capture: false,
                 kind: crate::ast::EffectKind::Read,
                 target: crate::ast::GroupPath::root("self"),
             });
@@ -520,6 +521,7 @@ impl Checker<'_> {
                 result: Box::new(field),
                 erased: false,
                 effects: vec![crate::ast::Effect {
+                    capture: false,
                     kind: crate::ast::EffectKind::Read,
                     target: crate::ast::GroupPath::root("self"),
                 }],
@@ -752,6 +754,7 @@ impl Checker<'_> {
 
     pub(super) fn solve_member_constraints(&mut self) -> Result<(), FosterError> {
         let constraints = std::mem::take(&mut self.member_constraints);
+        let had_deferred_members = !constraints.is_empty();
         let mut pending = constraints;
         loop {
             let mut next = Vec::new();
@@ -767,7 +770,11 @@ impl Checker<'_> {
                 progress = true;
             }
             if next.is_empty() {
-                return Ok(());
+                return if had_deferred_members {
+                    self.resolve_deferred_member_calls()
+                } else {
+                    Ok(())
+                };
             }
             if !progress {
                 let constraint = &next[0];
@@ -781,5 +788,46 @@ impl Checker<'_> {
             }
             pending = next;
         }
+    }
+
+    fn resolve_deferred_member_calls(&mut self) -> Result<(), FosterError> {
+        // Resolving a receiver also determines dispatch, not just its result type.
+        // A provisional callable member must not reach codegen as a stored field.
+        let calls = self
+            .hir
+            .expressions
+            .iter()
+            .filter_map(|(call, expression)| {
+                let hir::Expr::Call { callee, arguments } = expression else {
+                    return None;
+                };
+                let hir::Expr::Member { object, ref name } = self.hir.expressions[*callee] else {
+                    return None;
+                };
+                (self.expressions.contains_key(callee)
+                    && !self.resolved_calls.contains_key(callee)
+                    && self.member_kinds.get(callee)
+                        != Some(&crate::semantics::MemberKind::StoredPlace))
+                .then(|| (call, *callee, object, name.clone(), arguments.clone()))
+            })
+            .collect::<Vec<_>>();
+        for (call, callee, object, name, arguments) in calls {
+            let Some(receiver) = self.expressions.get(&object).cloned() else {
+                continue;
+            };
+            if self.has_stored_member(&receiver, &name)? {
+                continue;
+            }
+            let function = self.hir.expression_functions[&call];
+            let member = self.infer_member(function, receiver, &name)?;
+            if matches!(self.resolved(member.clone()), Ty::Callable { .. }) {
+                self.member_kinds
+                    .insert(callee, crate::semantics::MemberKind::Method);
+            }
+            self.expressions.insert(callee, member);
+            let result = self.infer_call(function, call, callee, &arguments)?;
+            self.expressions.insert(call, result);
+        }
+        Ok(())
     }
 }

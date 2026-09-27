@@ -132,22 +132,21 @@ fn library_declarations_use_current_type_forms_and_explicit_public_signatures() 
             }
         }
         for record in &program.records {
-            if [
-                "Collection",
-                "Map",
-                "Set",
-                "Queue",
-                "Deque",
-                "Stack",
-                "Iterable",
-                "Iterator",
-                "Reader",
-                "Writer",
-                "Copy",
-                "Drop",
-            ]
-            .contains(&record.name.as_str())
-            {
+            // Contract names are module-qualified; std.json.Writer is private storage,
+            // not the unrelated public std.io.Writer capability.
+            if matches!(
+                (module.as_str(), record.name.as_str()),
+                ("std.collections", "Collection")
+                    | ("std.collections.map", "Map")
+                    | ("std.collections.set", "Set")
+                    | ("std.collections.queue", "Queue")
+                    | ("std.collections.deque", "Deque")
+                    | ("std.collections.stack", "Stack")
+                    | ("std.iter", "Iterable" | "Iterator")
+                    | ("std.io", "Reader" | "Writer")
+                    | ("core.copy", "Copy")
+                    | ("core.drop", "Drop")
+            ) {
                 assert!(
                     record.fields.is_empty(),
                     "{} must be a storage-free contract",
@@ -235,4 +234,55 @@ fn concrete_collections_work_through_shared_contracts() {
     let source = include_str!("fixtures/programs/collection_contracts.fos");
     let compilation = foster::compile(source).unwrap();
     assert_eq!(foster::vm::run(&compilation).unwrap().to_string(), "42");
+}
+
+#[test]
+fn map_contract_borrows_preserve_storage() {
+    let compilation =
+        foster::compile(include_str!("fixtures/programs/map_contract_borrow.fos")).unwrap();
+    for optimize in [false, true] {
+        let program =
+            foster::vm::compile_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap();
+        assert_eq!(
+            foster::vm::Machine::new(&program)
+                .run_main()
+                .unwrap()
+                .to_string(),
+            "42"
+        );
+        let encoded = foster::vm::encode_program(&program).unwrap();
+        let decoded = foster::vm::decode_program(&encoded).unwrap();
+        assert_eq!(
+            foster::vm::Machine::new(&decoded)
+                .run_main()
+                .unwrap()
+                .to_string(),
+            "42"
+        );
+    }
+}
+
+#[test]
+fn map_contract_borrows_reject_invalidated_storage() {
+    let error = foster::compile(
+        r#"
+import core.option
+import std.collections.map
+func lookup(values: Map<String, Int>) -> Option<ref[values] Int> {
+    values.borrow("answer")
+}
+func main() -> Int {
+    let values = Map.empty().put("answer", 42)
+    let found = lookup(values)
+    values.remove("answer")
+    branch found {
+        Option.Some(value) -> value + 0
+        Option.None -> 0
+    }
+}
+"#,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("invalidat"), "{error}");
 }

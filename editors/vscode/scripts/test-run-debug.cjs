@@ -13,8 +13,10 @@ class VSCodeEvents {
   dispose(){this.events.removeAllListeners()}
 }
 const original=Module._load;
-Module._load=function(name,...args){if(name==='vscode')return {EventEmitter:VSCodeEvents};return original.call(this,name,...args)};
+const vscodeMock={EventEmitter:VSCodeEvents,window:{},workspace:{}};
+Module._load=function(name,...args){if(name==='vscode')return vscodeMock;return original.call(this,name,...args)};
 const {FosterDebugAdapter}=require(path.join(build,'debug.js'));
+const {activeTarget,packageTaskTargets}=require(path.join(build,'run.js'));
 const {launchOptions,commandArguments,findPackageRoot,taskPath}=require(path.join(build,'launch.js'));
 Module._load=original;
 const executable=process.env.FOSTER_SERVER_PATH||path.join(root,'target/debug',process.platform==='win32'?'foster.exe':'foster');
@@ -34,6 +36,24 @@ class Client {
   async initialize(){await this.request('initialize',{linesStartAt1:true,columnsStartAt1:true,pathFormat:'path'});await this.event('initialized');}
   dispose(){this.adapter.dispose();}
 }
+
+test('active package rejects unrelated workspace roots and accepts nested manifests',()=>{
+  const folder={uri:{fsPath:root}};
+  vscodeMock.workspace.workspaceFolders=[folder];
+  vscodeMock.workspace.getWorkspaceFolder=()=>folder;
+  assert.throws(()=>activeTarget(true),/workspace root is not a Foster package/);
+  assert.deepEqual(packageTaskTargets(),[]);
+  const project=path.join(fixture,'nested');fs.mkdirSync(project);fs.writeFileSync(path.join(project,'foster.toml'),'');
+  vscodeMock.window.activeTextEditor={document:{languageId:'toml',isUntitled:false,uri:{scheme:'file',fsPath:path.join(project,'foster.toml')}}};
+  assert.equal(activeTarget(true).program,project);
+  assert.deepEqual(packageTaskTargets().map(target=>target.program),[project]);
+  vscodeMock.window.activeTextEditor=undefined;
+  vscodeMock.workspace.workspaceFolders=[{uri:{fsPath:fixture}}];
+  assert.equal(activeTarget(true).program,fixture);
+  vscodeMock.workspace.workspaceFolders=[{uri:{fsPath:project}}];
+  assert.equal(activeTarget(true).program,project);
+  assert.deepEqual(packageTaskTargets().map(target=>target.program),[project]);
+});
 
 test('package discovery prefers manifest above src/main.fos and preserves argument boundaries',()=>{
   const project=path.join(fixture,'project space');fs.mkdirSync(path.join(project,'src'),{recursive:true});fs.writeFileSync(path.join(project,'foster.toml'),'');fs.writeFileSync(path.join(project,'src/main.fos'),'');

@@ -9,10 +9,61 @@ pub(super) fn matches(
     value: &Value,
     bindings: &mut Vec<Value>,
 ) -> Result<bool, crate::error::RuntimeError> {
-    if matches!(pattern.unspanned(), Pattern::Record { .. })
-        && let Value::Reference(reference) = value
-    {
-        return matches(program, pattern, &reference.read()?, bindings);
+    if let Value::Reference(reference) = value {
+        let actual = reference.read()?;
+        let checkpoint = bindings.len();
+        match (pattern.unspanned(), &actual) {
+            (Pattern::Binding(_), _) => {
+                bindings.push(value.clone());
+                return Ok(true);
+            }
+            (Pattern::Record { fields: patterns }, Value::Record { fields, .. }) => {
+                for (name, pattern) in patterns {
+                    if !fields.contains_key(name)
+                        || !matches(
+                            program,
+                            pattern,
+                            &projected(reference.pattern_field(name))?,
+                            bindings,
+                        )?
+                    {
+                        bindings.truncate(checkpoint);
+                        return Ok(false);
+                    }
+                }
+                return Ok(true);
+            }
+            (
+                Pattern::Variant { variant, fields },
+                Value::Variant {
+                    type_name,
+                    alternative,
+                    payload,
+                    ..
+                },
+            ) => {
+                let expected = &program.metadata.variants[variant];
+                if type_name != &expected.type_name
+                    || alternative != &expected.alternative
+                    || fields.len() != payload.len()
+                {
+                    return Ok(false);
+                }
+                for (index, pattern) in fields.iter().enumerate() {
+                    if !matches(
+                        program,
+                        pattern,
+                        &projected(reference.payload(alternative, index))?,
+                        bindings,
+                    )? {
+                        bindings.truncate(checkpoint);
+                        return Ok(false);
+                    }
+                }
+                return Ok(true);
+            }
+            _ => return matches(program, pattern, &actual, bindings),
+        }
     }
     Ok(match (pattern.unspanned(), value) {
         (
@@ -113,5 +164,13 @@ pub(super) fn matches(
             true
         }
         _ => false,
+    })
+}
+
+fn projected(place: super::value::PlaceHandle) -> Result<Value, crate::error::RuntimeError> {
+    // Reference-valued payloads already name their own storage origin.
+    Ok(match place.read()? {
+        value @ Value::Reference(_) => value,
+        _ => Value::Reference(place),
     })
 }

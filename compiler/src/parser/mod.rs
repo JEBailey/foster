@@ -6,6 +6,7 @@ mod cursor;
 mod declarations;
 mod expressions;
 mod iteration;
+mod interpolation;
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, FosterError> {
     Parser::new(tokens).program()

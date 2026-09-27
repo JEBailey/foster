@@ -28,6 +28,7 @@ fn pattern_binding_types(
             binding: Some(_), ..
         } => bindings.push(ExecutableType::Unknown),
         Pattern::Record { fields } => {
+            let borrowed = matches!(subject, ExecutableType::Reference(_));
             let subject = match subject {
                 ExecutableType::Reference(value) => value.as_ref(),
                 value => value,
@@ -48,10 +49,16 @@ fn pattern_binding_types(
                 let ty = verification_field_type(program, subject, name).ok_or_else(|| {
                     FosterError::runtime(format!("record pattern selects missing field `{name}`"))
                 })?;
+                let ty = borrowed_pattern_type(ty, borrowed);
                 pattern_binding_types(program, field, &ty, bindings)?;
             }
         }
         Pattern::Variant { variant, fields } => {
+            let borrowed = matches!(subject, ExecutableType::Reference(_));
+            let subject = match subject {
+                ExecutableType::Reference(value) => value.as_ref(),
+                value => value,
+            };
             let metadata =
                 program.metadata.variants.get(variant).ok_or_else(|| {
                     FosterError::runtime("pattern references a missing enum case")
@@ -74,7 +81,7 @@ fn pattern_binding_types(
                 pattern_binding_types(
                     program,
                     field,
-                    &schema.substitute(&substitutions),
+                    &borrowed_pattern_type(schema.substitute(&substitutions), borrowed),
                     bindings,
                 )?;
             }
@@ -82,6 +89,14 @@ fn pattern_binding_types(
         _ => {}
     }
     Ok(())
+}
+
+fn borrowed_pattern_type(ty: ExecutableType, borrowed: bool) -> ExecutableType {
+    if borrowed && !matches!(ty, ExecutableType::Reference(_)) {
+        ExecutableType::Reference(Box::new(ty))
+    } else {
+        ty
+    }
 }
 
 pub(super) fn transfer(
@@ -775,7 +790,12 @@ pub(super) fn transfer(
                 ExecutableType::Bool,
             )?;
             let mut binding_types = Vec::new();
-            pattern_binding_types(program, pattern, &subject_type, &mut binding_types)?;
+            pattern_binding_types(
+                program,
+                pattern,
+                &bound_type(function, index, &state, *subject)?,
+                &mut binding_types,
+            )?;
             state.pending_pattern = Some(PendingPattern {
                 conditions: vec![*destination],
                 refined_subject: match pattern.unspanned() {

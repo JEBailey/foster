@@ -518,7 +518,7 @@ fn receiver_is_record(
     information
         .function_type(function)
         .and_then(|signature| signature.parameters.first())
-        .is_some_and(|ty| matches!(information.types[ty.ty], Type::Record { record: receiver, .. } if receiver == record))
+        .is_some_and(|ty| matches!(receiver_type(information, ty.ty), Type::Record { record: receiver, .. } if *receiver == record))
 }
 
 fn receiver_is_variant(
@@ -529,7 +529,16 @@ fn receiver_is_variant(
     information
         .function_type(function)
         .and_then(|signature| signature.parameters.first())
-        .is_some_and(|ty| matches!(information.types[ty.ty], Type::Variant { variant: receiver, .. } if receiver == variant))
+        .is_some_and(|ty| matches!(receiver_type(information, ty.ty), Type::Variant { variant: receiver, .. } if *receiver == variant))
+}
+
+// A method that exposes its receiver's storage group has a reference parameter.
+// Dispatch identity belongs to its pointee; the signature retains the reference.
+fn receiver_type(information: &TypeInformation, mut ty: crate::types::TypeId) -> &Type {
+    while let Type::Reference { value, .. } = information.types[ty] {
+        ty = value;
+    }
+    &information.types[ty]
 }
 
 fn best_dispatch_method(

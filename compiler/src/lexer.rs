@@ -15,6 +15,8 @@ pub enum TokenKind {
     Integer(i64),
     Float(f64),
     String(String),
+    /// Raw interior of a triple-quoted string, decoded by the parser.
+    InterpolatedString(String),
     CodePoint(String),
     Symbol(String),
     DocComment(String),
@@ -93,6 +95,11 @@ pub fn lex(source: &str) -> Result<Vec<Token>, FosterError> {
     Lexer::new(source).lex_all()
 }
 
+/// Scan a substitution using ordinary lexical rules, stopping before its matching `}%`.
+pub(crate) fn lex_interpolation(source: &str) -> Result<Vec<Token>, FosterError> {
+    Lexer::new(source).lex_until(true)
+}
+
 struct Lexer<'a> {
     chars: Vec<char>,
     index: usize,
@@ -114,9 +121,23 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn lex_all(mut self) -> Result<Vec<Token>, FosterError> {
+    fn lex_all(self) -> Result<Vec<Token>, FosterError> {
+        self.lex_until(false)
+    }
+
+    fn lex_until(mut self, interpolation: bool) -> Result<Vec<Token>, FosterError> {
         let mut out = Vec::new();
+        let mut braces = 0usize;
         while let Some(c) = self.peek() {
+            if interpolation && braces == 0 && c == '}' && self.peek_next() == Some('%') {
+                break;
+            }
+            if c == '{' {
+                braces += 1;
+            }
+            if c == '}' {
+                braces = braces.saturating_sub(1);
+            }
             let (line, column, offset) = (self.line, self.column, self.byte_index);
             match c {
                 ' ' | '\t' | '\r' => {
@@ -148,6 +169,9 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 '0'..='9' => out.push(self.number()?),
+                '"' if self.peek_n(1) == Some('"') && self.peek_n(2) == Some('"') => {
+                    out.push(self.interpolated_string()?);
+                }
                 '"' => out.push(self.string()?),
                 '\'' => out.push(self.code_point()?),
                 ':' if self.peek_next().is_some_and(is_ident_start) => out.push(self.symbol()),
@@ -370,6 +394,13 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+        if interpolation && self.peek().is_none() {
+            return Err(FosterError::new(
+                "expected `}%` after interpolation expression",
+                self.line,
+                self.column,
+            ));
+        }
         out.push(tok(
             TokenKind::Eof,
             self.line,
@@ -424,6 +455,67 @@ impl<'a> Lexer<'a> {
             column,
             range: offset..self.byte_index,
         })
+    }
+
+    fn interpolated_string(&mut self) -> Result<Token, FosterError> {
+        let (line, column, offset) = (self.line, self.column, self.byte_index);
+        for _ in 0..3 {
+            self.advance();
+        }
+        let start = self.byte_index;
+        while let Some(c) = self.peek() {
+            if c == '%' && self.peek_next() == Some('%') {
+                self.advance();
+                self.advance();
+                continue;
+            }
+            if c == '%' && self.peek_next() == Some('{') {
+                self.advance();
+                self.advance();
+                let tokens =
+                    lex_interpolation(&self._source[self.byte_index..]).map_err(|mut error| {
+                        if error.line == 1 {
+                            error.column += self.column - 1;
+                        }
+                        error.line += self.line - 1;
+                        error
+                    })?;
+                let end = self.byte_index + tokens.last().unwrap().range.start + 2;
+                while self.byte_index < end {
+                    self.advance();
+                }
+                continue;
+            }
+            if c == '%' && self.peek_next().is_some_and(is_ident_start) {
+                self.advance();
+                self.take_identifier();
+                if self.peek() == Some('%') {
+                    self.advance();
+                }
+                continue;
+            }
+            if c == '"' && self.peek_n(1) == Some('"') && self.peek_n(2) == Some('"') {
+                let value = self._source[start..self.byte_index].to_owned();
+                for _ in 0..3 {
+                    self.advance();
+                }
+                return Ok(tok(
+                    TokenKind::InterpolatedString(value),
+                    line,
+                    column,
+                    offset..self.byte_index,
+                ));
+            }
+            self.advance();
+            if c == '\\' {
+                self.advance();
+            }
+        }
+        Err(FosterError::new(
+            "unterminated triple-quoted string",
+            line,
+            column,
+        ))
     }
 
     fn string(&mut self) -> Result<Token, FosterError> {

@@ -744,14 +744,17 @@ func main() -> () {}
         compilation.hir.functions[change].effects,
         vec![
             foster::ast::Effect {
+                capture: false,
                 kind: foster::ast::EffectKind::Reshape,
                 target: foster::ast::GroupPath::root("x"),
             },
             foster::ast::Effect {
+                capture: false,
                 kind: foster::ast::EffectKind::Consume,
                 target: foster::ast::GroupPath::root("y"),
             },
             foster::ast::Effect {
+                capture: false,
                 kind: foster::ast::EffectKind::Reshape,
                 target: foster::ast::GroupPath::root("z").child("x"),
             },

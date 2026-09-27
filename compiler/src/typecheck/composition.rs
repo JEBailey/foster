@@ -369,6 +369,7 @@ impl Checker<'_> {
         self.coerce(required.result.clone(), signature.result, function)?;
         let mut allowed_effects = required.effects.clone();
         allowed_effects.push(crate::ast::Effect {
+            capture: false,
             kind: crate::ast::EffectKind::Read,
             target: crate::ast::GroupPath::root("self"),
         });
@@ -380,6 +381,7 @@ impl Checker<'_> {
         {
             if mode == crate::ast::ParameterMode::Borrow {
                 allowed_effects.push(crate::ast::Effect {
+                    capture: false,
                     kind: crate::ast::EffectKind::Read,
                     target: crate::ast::GroupPath::root(
                         self.hir.locals[parameter.local].name.clone(),
@@ -961,6 +963,7 @@ impl Checker<'_> {
         self.coerce(required.result.clone(), signature.result, function)?;
         let mut allowed_effects = required.effects.clone();
         allowed_effects.push(crate::ast::Effect {
+            capture: false,
             kind: crate::ast::EffectKind::Read,
             target: crate::ast::GroupPath::root("self"),
         });
@@ -972,6 +975,7 @@ impl Checker<'_> {
         {
             if mode == crate::ast::ParameterMode::Borrow {
                 allowed_effects.push(crate::ast::Effect {
+                    capture: false,
                     kind: crate::ast::EffectKind::Read,
                     target: crate::ast::GroupPath::root(
                         self.hir.locals[parameter.local].name.clone(),

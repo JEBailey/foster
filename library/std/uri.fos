@@ -52,16 +52,24 @@ impl Uri {
     }
 
     /// Returns the complete URI text.
-    pub func as_string(self) -> String { self.value.scalar_slice(0, self.value.scalar_length()) }
+    pub func as_string(self) -> String {
+        self.value.scalar_slice(0, self.value.scalar_length())
+    }
 
     /// Returns the stable identifier supplied to a protocol provider.
-    pub func resource_id(self) -> String { self.as_string() }
+    pub func resource_id(self) -> String {
+        self.as_string()
+    }
 
     /// Returns the scheme spelling supplied to the parser.
-    pub func scheme(self) -> String { self.scheme_value.scalar_slice(0, self.scheme_value.scalar_length()) }
+    pub func scheme(self) -> String {
+        self.scheme_value.scalar_slice(0, self.scheme_value.scalar_length())
+    }
 
     /// Returns the resource portion following the URI scheme separator.
-    pub func path(self) -> String { self.path_value.scalar_slice(0, self.path_value.scalar_length()) }
+    pub func path(self) -> String {
+        self.path_value.scalar_slice(0, self.path_value.scalar_length())
+    }
 }
 
 /// Begins scanning after the already validated first scheme character.
@@ -84,7 +92,9 @@ func parse_scheme(value: String, remaining: String, index: Int) -> Result<Uri, U
 func parsed_uri(value: String, index: Int) -> Result<Uri, UriError> [consume value] {
     let scheme_value = value.scalar_slice(0, index)
     let path_value = value.scalar_slice(index + 1, value.scalar_length())
-    Result.Ok(Uri { value: move value, scheme_value, path_value })
+    Result.Ok(Uri {
+        value: move value, scheme_value, path_value
+    })
 }
 
 /// Returns whether a code point may begin a URI scheme.
@@ -99,7 +109,9 @@ func scheme_character?(character: CodePoint) -> Bool {
 
 /// Constructs an invalid-URI result.
 func invalid_uri(value: String, message: String) -> Result<Uri, UriError> {
-    Result.Error(UriError { value, message })
+    Result.Error(UriError {
+        value, message
+    })
 }
 
 test "URIs parse schemes paths and invalid inputs" {
@@ -112,8 +124,7 @@ test "URIs parse schemes paths and invalid inputs" {
             ()
         }
         Result.Error(_) -> {
-            assert(false, "valid URI was rejected")
-            ()
+            panic("valid URI was rejected")
         }
     }
     branch Uri.from_parts("tcp", "//localhost:8080") {
@@ -122,19 +133,19 @@ test "URIs parse schemes paths and invalid inputs" {
             ()
         }
         Result.Error(_) -> {
-            assert(false, "URI parts were rejected")
-            ()
+            panic("URI parts were rejected")
         }
     }
     branch Uri.parse("1invalid") {
-        Result.Error({ value, message }) -> {
+        Result.Error({
+            value, message
+        }) -> {
             assert(value == "1invalid")
             assert(not message.empty?)
             ()
         }
         Result.Ok(_) -> {
-            assert(false, "invalid URI was accepted")
-            ()
+            panic("invalid URI was accepted")
         }
     }
 }

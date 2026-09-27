@@ -550,6 +550,18 @@ fn native_pattern_binding_types(
     subject: NativeType,
     bindings: &mut Vec<NativeType>,
 ) -> Result<(), FosterError> {
+    let borrowed = matches!(subject, NativeType::Object(layout) if matches!(layouts.get(layout).kind, LayoutKind::Pointer { .. }));
+    let subject = if !matches!(pattern.unspanned(), Pattern::Binding(_)) && borrowed {
+        let NativeType::Object(layout) = subject else {
+            unreachable!()
+        };
+        let LayoutKind::Pointer { pointee, .. } = &layouts.get(layout).kind else {
+            unreachable!()
+        };
+        native_verification_type(program, layouts, pointee, None)?
+    } else {
+        subject
+    };
     match pattern.unspanned() {
         Pattern::IsType {
             target, binding, ..
@@ -585,7 +597,13 @@ fn native_pattern_binding_types(
                 let field = physical_layouts
                     .record_field(layout, slot.index)
                     .ok_or_else(|| native_error("record pattern has no physical field"))?;
-                let ty = native_verification_type(program, layouts, &slot.ty, field.value.pointee)?;
+                let ty = pattern_projection_type(
+                    program,
+                    layouts,
+                    &slot.ty,
+                    borrowed,
+                    field.value.pointee,
+                )?;
                 native_pattern_binding_types(
                     program,
                     layouts,
@@ -626,7 +644,8 @@ fn native_pattern_binding_types(
                 .zip(&alternative.payload)
                 .zip(&physical.fields)
             {
-                let ty = native_verification_type(program, layouts, ty, field.value.pointee)?;
+                let ty =
+                    pattern_projection_type(program, layouts, ty, borrowed, field.value.pointee)?;
                 native_pattern_binding_types(
                     program,
                     layouts,
@@ -647,6 +666,25 @@ fn native_pattern_binding_types(
         | Pattern::Symbol(_) => {}
     }
     Ok(())
+}
+
+fn pattern_projection_type(
+    program: &crate::codegen::metadata::ProgramMetadata,
+    layouts: &LayoutRegistry,
+    ty: &ExecutableType,
+    borrowed: bool,
+    pointee: Option<crate::codegen::layout::LayoutId>,
+) -> Result<NativeType, FosterError> {
+    if borrowed && !matches!(ty, ExecutableType::Reference(_)) {
+        native_verification_type(
+            program,
+            layouts,
+            &ExecutableType::Reference(Box::new(ty.clone())),
+            None,
+        )
+    } else {
+        native_verification_type(program, layouts, ty, pointee)
+    }
 }
 
 fn value_type(

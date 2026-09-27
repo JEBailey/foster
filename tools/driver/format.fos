@@ -6,13 +6,104 @@ import core.string
 import std.process
 
 type ScanState = {
-    depth: Int, quote: Int, escaped: Bool, indents: List<Int>
+    depth: Int, mode: Int, escaped: Bool, comment: Int, parents: List<Int>, indents: List<Int>
+}
+
+// Negative modes count expression braces; positive modes are quote delimiters.
+
+func literal_state() -> ScanState {
+    ScanState {
+        depth: 0, mode: 0, escaped: false, comment: 0, parents: [], indents: []
+    }
+}
+
+func close_literal(state: ScanState) -> () {
+    state.mode = state.parents[state.parents.length - 1]
+    state.parents.remove(state.parents.length - 1)
+    ()
+}
+
+// Both formatting passes use the same literal boundaries, including nested expressions.
+func literal_step(points: List<CodePoint>, index: Int, state: ScanState) -> Int {
+    let c = points[index].as_int()
+    let next = branch {
+        index + 1 < points.length -> points[index + 1].as_int() _ -> 0
+    }
+    let triple = c == 34 && next == 34 && index + 2 < points.length && points[index + 2].as_int() == 34
+    if state.comment == -1 {
+        if c == 10 state.comment = 0
+        return 1
+    }
+    if state.comment > 0 {
+        if c == 47 && next == 42 {
+            state.comment = state.comment + 1
+            return 2
+        }
+        if c == 42 && next == 47 {
+            state.comment = state.comment - 1
+            return 2
+        }
+        return 1
+    }
+    if state.mode > 0 {
+        if state.escaped {
+            state.escaped = false
+            return 1
+        }
+        if c == 92 {
+            state.escaped = true
+            return 1
+        }
+        if state.mode == 3 {
+            if c == 37 && next == 37 return 2
+            if c == 37 && next == 123 {
+                state.parents.push(state.mode)
+                state.mode = -1
+                return 2
+            }
+            if c == 37 {
+                let end = index + 1
+                while end < points.length && points[end].as_int() != 37 { end = end + 1 }
+                return end - index + 1
+            }
+            if triple {
+                close_literal(state)
+                return 3
+            }
+        }
+        if state.mode != 3 && c == state.mode close_literal(state)
+        return 1
+    }
+    if state.mode < 0 {
+        if state.mode == -1 && c == 125 && next == 37 {
+            close_literal(state)
+            return 2
+        }
+        if c == 123 state.mode = state.mode - 1
+        if c == 125 state.mode = state.mode + 1
+        if c == 47 && (next == 47 || next == 42) {
+            state.comment = branch {
+                next == 47 -> -1 _ -> 1
+            }
+            return 2
+        }
+    }
+    if c == 34 || c == 39 {
+        state.parents.push(state.mode)
+        state.mode = branch {
+            triple -> 3 _ -> c
+        }
+        return branch {
+            triple -> 3 _ -> 1
+        }
+    }
+    branch {
+        state.mode != 0 -> 1 _ -> 0
+    }
 }
 
 func declaration(line: String) -> String {
-    branch {
-        line.starts_with?("pub ") -> line.scalar_slice(4, line.scalar_length()) _ -> line.copy()
-    }
+    line.strip_prefix("pub ")
 }
 
 func begins_declaration(line: String) -> Bool {
@@ -34,7 +125,7 @@ func continues_type(lines: List<String>, start: Int) -> Bool {
 }
 
 func closers(line: String, state: ScanState) -> Int {
-    return 0 if state.depth != 0 || state.quote != 0
+    return 0 if state.depth != 0 || state.mode != 0
     let count = 0
     for point in line.code_points() {
         let value = point.as_int()
@@ -51,6 +142,13 @@ func scan(line: String, indent: Int, state: ScanState) -> () {
         let character = characters[index].as_int()
         let next = branch {
             index + 1 < characters.length -> characters[index + 1].as_int() _ -> 0
+        }
+        if state.depth == 0 {
+            let width = literal_step(characters, index, state)
+            if width > 0 {
+                index = index + width
+                continue
+            }
         }
         branch {
             state.depth > 0 -> {
@@ -70,22 +168,6 @@ func scan(line: String, indent: Int, state: ScanState) -> () {
                 index = index + 1
                 continue
             }
-            state.quote != 0 -> {
-                branch {
-                    state.escaped -> {
-                        state.escaped = false
-                    }
-                    character == 92 -> {
-                        state.escaped = true
-                    }
-                    character == state.quote -> {
-                        state.quote = 0
-                    }
-                    _ -> ()
-                }
-                index = index + 1
-                continue
-            }
             _ -> ()
         }
         break if character == 47 && next == 47
@@ -94,9 +176,6 @@ func scan(line: String, indent: Int, state: ScanState) -> () {
                 state.depth = 1
                 index = index + 2
                 continue
-            }
-            character == 34 || character == 39 -> {
-                state.quote = character
             }
             character == 123 || character == 40 || character == 91 -> {
                 state.indents.push(indent + 1)
@@ -109,6 +188,7 @@ func scan(line: String, indent: Int, state: ScanState) -> () {
         }
         index = index + 1
     }
+    if state.comment == -1 state.comment = 0
     ()
 }
 
@@ -116,8 +196,7 @@ func scan(line: String, indent: Int, state: ScanState) -> () {
 func expand_braces(source: String) -> String {
     let points = source.code_points()
     let output = StringBuilder.empty()
-    let quote = 0
-    let escaped = false
+    let literal = literal_state()
     let depth = 0
     let line_comment = false
     let pending = false
@@ -128,21 +207,21 @@ func expand_braces(source: String) -> String {
         let next = branch {
             index + 1 < points.length -> points[index + 1].as_int() _ -> 0
         }
-        branch {
-            quote != 0 -> {
-                output.push(points[index])
-                branch {
-                    escaped -> {
-                        escaped = false
-                    }
-                    value == 92 -> {
-                        escaped = true
-                    }
-                    value == quote -> {
-                        quote = 0
-                    }
+        if depth == 0 && !line_comment {
+            let width = literal_step(points, index, literal)
+            if width > 0 {
+                if pending output.append("\n")
+                pending = false
+                let end = index + width
+                while index < end {
+                    output.push(points[index])
+                    line_start = points[index].as_int() == 10
+                    index = index + 1
                 }
+                continue
             }
+        }
+        branch {
             line_comment -> {
                 output.push(points[index])
                 if value == 10 line_comment = false
@@ -205,9 +284,6 @@ func expand_braces(source: String) -> String {
                             pending = !guarded && code >= 65 && code <= 90 || !guarded && code >= 97 && code <= 122 || code == 95
                         }
                     }
-                    value == 34 || value == 39 -> {
-                        quote = value
-                    }
                     value == 47 && next == 47 -> {
                         line_comment = true
                     }
@@ -237,14 +313,14 @@ func format(source: String) -> String {
     let normalized = source.copy().split("\r\n").join("\n").split("\r").join("\n")
     let lines = expand_braces(normalized).split("\n")
     let state = ScanState {
-        depth: 0, quote: 0, escaped: false, indents: []
+        depth: 0, mode: 0, escaped: false, comment: 0, parents: [], indents: []
     }
     let output = []
     let previous_blank = false
     let type_continuation = false
     let line_index = 0
     while line_index < lines.length {
-        if state.quote != 0 || state.depth > 0 {
+        if state.mode != 0 || state.depth > 0 {
             let literal_line = lines[line_index].copy()
             output.push(literal_line.copy())
             scan(literal_line, branch {
@@ -255,11 +331,11 @@ func format(source: String) -> String {
             continue
         }
         let probe = ScanState {
-            depth: 0, quote: 0, escaped: false, indents: []
+            depth: 0, mode: 0, escaped: false, comment: 0, parents: [], indents: []
         }
         scan(lines[line_index], 0, probe)
         let content = branch {
-            probe.quote != 0 || probe.depth > 0 -> lines[line_index].copy().trim_start()
+            probe.mode != 0 || probe.depth > 0 -> lines[line_index].copy().trim_start()
             _ -> lines[line_index].copy().trim()
         }
         line_index = line_index + 1
@@ -322,6 +398,29 @@ func format(source: String) -> String {
 
 func main(arguments: Arguments) -> Result<String, String> {
     Result.Ok(format(arguments.values[0]))
+}
+
+test "formatter preserves expression substitutions and nested quotes" {
+    let source = "func main() {\nlet text = \"\"\"\n%{branch { true -> \"\"\"{nested}\"\"\" _ -> \"}%\" }}%\n%{1 /* \"\"\" }% */ + 2}%\n\"\"\"\n}\n"
+    let expected = "func main() {\n    let text = \"\"\"\n%{branch { true -> \"\"\"{nested}\"\"\" _ -> \"}%\" }}%\n%{1 /* \"\"\" }% */ + 2}%\n\"\"\"\n}\n"
+    let formatted = format(source)
+    assert(formatted == expected, formatted)
+    assert(format(formatted) == formatted)
+    ()
+}
+
+test "formatter preserves triple quoted contents and remains stable" {
+    let probe = ScanState {
+        depth: 0, mode: 0, escaped: false, comment: 0, parents: [], indents: []
+    }
+    scan("let text = \"\"\"", 0, probe)
+    assert(probe.mode == 3, "scanner lost the opening delimiter")
+    let source = "func main() {\nlet name = \"Ada\"\nlet text = \"\"\"\n  hello %name%  \n\"quotes\" { braces } // text\n\n\"\"\"\ntext\n}\n"
+    let expected = "func main() {\n    let name = \"Ada\"\n    let text = \"\"\"\n  hello %name%  \n\"quotes\" { braces } // text\n\n\"\"\"\n    text\n}\n"
+    let formatted = format(source)
+    assert(formatted == expected, formatted)
+    assert(format(formatted) == formatted)
+    ()
 }
 
 test "formatter is stable around nested comments and Unicode strings" {

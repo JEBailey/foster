@@ -28,7 +28,9 @@ pub type LehmerRandom = & SeedableRandom & SplittableRandom & {
 impl LehmerRandom {
     /// Constructs the portable generator from any integer seed.
     pub func from_seed(seed: Int) -> LehmerRandom {
-        LehmerRandom { state: normalized_seed(seed) }
+        LehmerRandom {
+            state: normalized_seed(seed)
+        }
     }
 
     /// Returns the next portable zero-based generator value.
@@ -38,7 +40,9 @@ impl LehmerRandom {
     }
 
     /// Returns the inclusive maximum portable generator value.
-    pub func maximum(self) -> Int { LEHMER_MAXIMUM }
+    pub func maximum(self) -> Int {
+        LEHMER_MAXIMUM
+    }
 
     /// Resets the portable sequence from any integer seed.
     pub func reseed(self, seed: Int) -> () [mut self.state] {
@@ -64,7 +68,9 @@ pub type FastRandom = & SeedableRandom & SplittableRandom & {
 impl FastRandom {
     /// Constructs the default fast generator from a deterministic seed.
     pub func from_seed(seed: Int) -> FastRandom {
-        FastRandom { state: normalized_seed(seed) }
+        FastRandom {
+            state: normalized_seed(seed)
+        }
     }
 
     /// Seeds the default fast generator from operating-system randomness.
@@ -80,7 +86,9 @@ impl FastRandom {
     }
 
     /// Returns the inclusive maximum default-generator value.
-    pub func maximum(self) -> Int { LEHMER_MAXIMUM }
+    pub func maximum(self) -> Int {
+        LEHMER_MAXIMUM
+    }
 
     /// Resets the default generator from any integer seed.
     pub func reseed(self, seed: Int) -> () [mut self.state] {
@@ -103,13 +111,19 @@ func lehmer_step(state: Int) -> Int {
 /// Maps every signed Foster integer into the valid nonzero Lehmer state range.
 func normalized_seed(seed: Int) -> Int {
     let remainder = seed.modulo(LEHMER_MODULUS)
-    let normalized = branch { remainder < 0 -> remainder + LEHMER_MODULUS _ -> remainder }
-    branch { normalized == 0 -> 1 _ -> normalized }
+    let normalized = branch {
+        remainder < 0 -> remainder + LEHMER_MODULUS _ -> remainder
+    }
+    branch {
+        normalized == 0 -> 1 _ -> normalized
+    }
 }
 
 /// Extracts a successful deterministic value for tests.
 func generated(outcome: Result<Int, RandomError>) -> Int {
-    branch outcome { Result.Ok(value) -> value Result.Error(_) -> -1 }
+    branch outcome {
+        Result.Ok(value) -> value Result.Error(_) -> -1
+    }
 }
 
 /// Exercises the seedable contract and returns its first reset value.
@@ -149,8 +163,7 @@ test "fast generators satisfy seeded and splittable contracts" {
     assert(seeded_value(FastRandom.from_seed(99), 7) == parent_value)
     branch FastRandom.from_system() {
         Result.Error(_) -> {
-            assert(false, "system seeding failed")
-            ()
+            panic("system seeding failed")
         }
         Result.Ok(source) -> {
             let value = generated(source.next())

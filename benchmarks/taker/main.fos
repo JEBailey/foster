@@ -8,8 +8,7 @@ import core.int
 func numbers(parser: Taker<Int>, text: String, iterations: Int) -> Int {
     let sum = 0
     let index = 0
-    loop {
-        break if index == iterations
+    while index != iterations {
         sum = sum + value(parse_all(parser, text))
         index = index + 1
     }
@@ -18,8 +17,7 @@ func numbers(parser: Taker<Int>, text: String, iterations: Int) -> Int {
 func strings(parser: Taker<String>, text: String, iterations: Int) -> Int {
     let sum = 0
     let index = 0
-    loop {
-        break if index == iterations
+    while index != iterations {
         sum = sum + value(parse_all(parser, text)).length
         index = index + 1
     }
@@ -37,19 +35,17 @@ func measure(name: String, expected: Int, workload: func(Int) -> Int) {
         iterations = iterations * 2
     }
     let warm = 0
-    loop {
-        break if warm == 2
+    while warm != 2 {
         assert(workload(iterations) == expected * iterations)
         warm = warm + 1
     }
     let sample = 0
-    loop {
-        break if sample == 5
+    while sample != 5 {
         let sample_start = clock.now()
         let sample_sum = workload(iterations)
         let sample_elapsed = sample_start.until(clock.now()).total_nanoseconds()
         assert(sample_sum == expected * iterations)
-        println(name + "," + iterations.as_string() + "," + sample_elapsed.as_string() + "," + sample_sum.as_string())
+        println("""%name%,%iterations%,%sample_elapsed%,%sample_sum%""")
         sample = sample + 1
     }
 }

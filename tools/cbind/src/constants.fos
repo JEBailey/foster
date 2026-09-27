@@ -13,7 +13,19 @@ pub type Extracted = {
     pub values: String, pub report: String
 }
 type Context = {
-    shim: String, output: String, compiler: String, includes: List<String>, rows: List<String>, records: Contract, accepted: List<String>, doc_names: List<String>, doc_texts: List<String>
+    shim: String, output: String, compiler: String, includes: List<String>, rows: List<String>, records: Contract, accepted: List<String>, documentation: List<Documentation>
+}
+
+type Constant = {
+    name: String, kind: String
+}
+
+type Documentation = {
+    name: String, text: String
+}
+
+type Macro = {
+    name: String, definition: String
 }
 
 func text(tree: Contract, node: Int, key: String) -> String {
@@ -38,7 +50,8 @@ func attempt(context: Context, args: List<String>) -> ProcessOutput {
         Result.Error(error) -> panic(error.message)
     }
     branch await child {
-        Result.Ok(output) -> move output Result.Error(error) -> panic(error.message)
+        Result.Ok(output) -> move output
+        Result.Error(error) -> panic(error.message)
     }
 }
 // Only literal string decay/parentheses are safe to copy without pointer contracts.
@@ -55,7 +68,8 @@ func type_json(tree: Contract, node: Int) -> String {
         return "{\"array\":" + type_json(tree, tree.member(node, "array")) + ",\"length\":" + tree.nodes[tree.member(node, "length")].text + "}"
     }
     let key = branch {
-        tree.member(node, "enum") >= 0 -> "enum" _ -> "record"
+        tree.member(node, "enum") >= 0 -> "enum"
+        _ -> "record"
     }
     "{" + bindings::quoted(key) + ":" + bindings::quoted(tree.string(node, key, true)) + "}"
 }
@@ -132,42 +146,36 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
         return ()
     }
     let tree = bridge::decode_json(String.from_utf8(move completed.stdout).unwrap_or(""))
-    let kinds = []
-    let accepted_names = []
+    let constants = []
     for body in tree.array(0, "inner", false) {
         for statement in tree.array(body, "inner", false) {
             for variable in tree.array(statement, "inner", false) {
                 continue if text(tree, variable, "kind") != "VarDecl"
-                let name = text(tree, variable, "name").slice(13, text(tree, variable, "name").length)
+                let name = text(tree, variable, "name").strip_prefix("foster_cbind_")
                 let node = tree.member(variable, "type")
                 let spelling = text(tree, node, "desugaredQualType")
-                if spelling.empty? spelling = text(tree, node, "qualType")
-                if spelling.starts_with?("const ") spelling = spelling.slice(6, spelling.length)
+                .if_empty([ref tree] () -> text(tree, node, "qualType"))
+                spelling = spelling.strip_prefix("const ")
                 let kind = bindings::binding_type(spelling, context.rows, context.accepted)
-                branch {
-                    literal_string(tree, variable) -> {
-                        kind = "\"string\""
+                kind = branch {
+                    literal_string(tree, variable) -> "\"string\""
+                    spelling.starts_with?("enum ") -> "\"i64\""
+                    kind.empty? || kind == "\"void\"" -> {
+                        reports.push("""%name%: unsupported constant type %spelling%\n""")
+                        continue
                     }
-                    spelling.starts_with?("enum ") -> {
-                        kind = "\"i64\""
-                    }
+                    _ -> move kind
                 }
-                branch {
-                    kind.empty? || kind == "\"void\"" -> reports.push(name + ": unsupported constant type " + spelling + "\n")
-                    _ -> {
-                        kinds.push(kind.copy())
-                        accepted_names.push(name.copy())
-                    }
-                }
+                constants.push(Constant {
+                    name: move name, kind: move kind
+                })
             }
         }
     }
-    return () if accepted_names.empty?
+    return () if constants.empty?
     source = prefix + PRINTER + "\nint main(void) {\n"
-    let index = 0
-    for name in accepted_names {
-        source = source + print_value(context, kinds[index], "(" + name + ")") + "putchar('\\n');\n"
-        index = index + 1
+    for constant in constants {
+        source = source + print_value(context, constant.kind, "(" + constant.name + ")") + "putchar('\\n');\n"
     }
     source = source + "return 0; }\n"
     bridge::write_file(file, source)
@@ -179,8 +187,8 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
     bridge::execute(context.compiler, args, "")
     let output = bridge::execute(executable, [], "")
     let lines = output.copy().split("\n")
-    index = 0
-    for name in accepted_names {
+    let index = 0
+    for constant in constants {
         let value = lines[index].copy().trim()
         let decoded = bridge::decode_json(value)
         let finite = true
@@ -188,17 +196,15 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
             if node.kind == "null" finite = false
         }
         branch {
-            !finite -> reports.push(name + ": non-finite constant is not representable\n")
+            !finite -> reports.push(constant.name + ": non-finite constant is not representable\n")
             _ -> {
                 let docs = ""
-                let position = 0
-                while position < context.doc_names.length {
-                    if context.doc_names[position] == name {
-                        docs = ",\"documentation\":" + context.doc_texts[position]
+                for entry in context.documentation {
+                    if entry.name == constant.name {
+                        docs = ",\"documentation\":" + entry.text
                     }
-                    position = position + 1
                 }
-                values.push("{\"name\":" + bindings::quoted(name) + ",\"type\":" + kinds[index] + ",\"value\":" + value + docs + "}")
+                values.push("{\"name\":" + bindings::quoted(constant.name) + ",\"type\":" + constant.kind + ",\"value\":" + value + docs + "}")
             }
         }
         index = index + 1
@@ -215,8 +221,7 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
     }
     let types = []
     let enumerators = []
-    let doc_names = []
-    let doc_texts = []
+    let documentation = []
     for row in rows.copy().split("\n") {
         let fields = row.copy().split("\t")
         continue if fields.length < 2
@@ -224,13 +229,14 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
             fields[0] == "T" || fields[0] == "S" || fields[0] == "N" -> types.push(row.copy())
             fields[0] == "E" -> enumerators.push(fields[1].copy())
             fields[0] == "D" && fields.length == 3 && fields[1].starts_with?("K.") -> {
-                doc_names.push(fields[1].slice(2, fields[1].length))
-                doc_texts.push(fields[2].copy())
+                documentation.push(Documentation {
+                    name: fields[1].strip_prefix("K."), text: fields[2].copy()
+                })
             }
         }
     }
     let context = Context {
-        shim: shim.copy(), output: output.copy(), compiler: compiler.copy(), includes: includes.slice(0, includes.length), rows: move types, records: move records, accepted: move accepted, doc_names: move doc_names, doc_texts: move doc_texts
+        shim: shim.copy(), output: output.copy(), compiler: compiler.copy(), includes: includes.slice(0, includes.length), rows: move types, records: move records, accepted: move accepted, documentation: move documentation
     }
     let args = arguments(context)
     for arg in ["-E", "-dD", shim.copy()] {
@@ -241,7 +247,6 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
     let names = []
     let reports = []
     let macros = []
-    let definitions = []
     let selected = false
     for line in preprocessed.copy().split("\n") {
         let parts = line.copy().split("\"")
@@ -259,25 +264,25 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
         let pieces = rest.copy().split(" ")
         let token = pieces[0].copy()
         let name = token.copy().split("(")[0].copy()
-        let index = 0
-        for prior in macros {
-            if prior == name definitions[index] = ""
-            index = index + 1
+        for index in 0.range(macros.length) {
+            if macros[index].name == name {
+                macros[index] = Macro {
+                    name: name.copy(), definition: ""
+                }
+            }
         }
         continue if !define || !selected
-        macros.push(name.copy())
-        definitions.push(branch {
-            rest == token -> "" _ -> rest.copy()
+        macros.push(Macro {
+            name: move name, definition: branch {
+                rest == token -> "" _ -> rest.copy()
+            }
         })
     }
-    let index = 0
-    for name in macros {
-        let definition = definitions[index].copy()
-        index = index + 1
-        continue if definition.empty?
+    for macro in macros {
+        continue if macro.definition.empty?
         branch {
-            definition.starts_with?(name + "(") -> reports.push(name + ": function-like macro requires a C adapter\n")
-            _ -> names.push(name.copy())
+            macro.definition.starts_with?(macro.name + "(") -> reports.push(macro.name + ": function-like macro requires a C adapter\n")
+            _ -> names.push(macro.name.copy())
         }
     }
     for name in enumerators {

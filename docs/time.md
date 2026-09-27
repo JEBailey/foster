@@ -71,7 +71,7 @@ Use `subtract`, `negated`, `zero?`, `compare`, and `equal?` for duration arithme
 ```foster
 branch Duration.from_parts(12, 500000000) {
     Result.Ok(value) -> { assert(value.total_milliseconds() == 12500) }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -202,7 +202,7 @@ branch Date.from(2024, 2, 29) {
         assert(value.month() == 2)
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 
 assert(Date.from(2023, 2, 29).error?())
@@ -258,13 +258,13 @@ branch Date.from(2024, 1, 31) {
     Result.Ok(january_31) -> {
         branch january_31.add(Span.from_months(1), Overflow.Constrain) {
             Result.Ok(value) -> { assert(value.day() == 29) }
-            Result.Error(error) -> { assert(false, error.message) }
+            Result.Error(error) -> { panic(error.message) }
         }
 
         assert(january_31.add(Span.from_months(1), Overflow.Reject).error?())
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -282,7 +282,7 @@ branch local.add(two_hours, Overflow.Reject) {
         assert(value.time().hour() == 1)
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -336,7 +336,7 @@ branch Offset.from_seconds(-5 * 60 * 60) {
         assert(value.local().epoch_seconds() == -5 * 60 * 60)
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -351,7 +351,7 @@ branch Offset.from_seconds(2 * 60 * 60) {
         assert(value.instant().epoch_seconds() == -2 * 60 * 60)
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -403,7 +403,7 @@ let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.midnight())
 
 branch ZonedDateTime.from_local(local, FixedOffsetZone.utc(), Disambiguation.Reject) {
     Result.Ok(value) -> { assert(value.instant().equal?(Instant.epoch())) }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -455,7 +455,7 @@ branch format::parse_date_time("2024-02-29T23:59:58.123400") {
         assert(format::date_time(move value) == "2024-02-29T23:59:58.1234")
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -486,7 +486,7 @@ branch Interval.from(Instant.from_epoch_seconds(10), Instant.from_epoch_seconds(
         assert(window.duration().equal?(Duration.from_seconds(10)))
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -505,7 +505,7 @@ branch YearMonth.from(2024, 2) {
         assert(february.on_day(29).success?())
         ()
     }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 
@@ -515,7 +515,7 @@ representable, but placing it in a non-leap year returns an error:
 ```foster
 branch MonthDay.from(2, 29) {
     Result.Ok(leap_day) -> { assert(leap_day.in_year(2023).error?()) }
-    Result.Error(error) -> { assert(false, error.message) }
+    Result.Error(error) -> { panic(error.message) }
 }
 ```
 

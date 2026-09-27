@@ -1,240 +1,95 @@
 # Foster source concision review
 
-Review snapshot: 2026-09-17. This is an assessment, not a change to the language contract.
+## Scope
 
-## Scope and evidence
+The current corpus contains 221 `.fos` files: 61 library modules, 36 example
+files, 13 tool files, 12 benchmark files, two optional-package files, and 97 test
+files. This review inventories that entire corpus and inspects candidates against
+[Writing Foster](writing-foster.md), the [language reference](language-design.md),
+[semantics](semantics.md), and [ownership](ownership.md). Embedded Foster in
+Rust tests and documentation also supplies intentional syntax and rejection coverage;
+it must not be mechanically rewritten to satisfy a style search.
 
-Scanned all 190 tracked `.fos` files in Foster, including the library, examples,
-fixtures, benchmarks, and tools, plus all 16 discovered `.fos` files in
-`../taker_foster`. No `.fos` files were found under `../taker`.
-Inspected representative implementations for each finding against the writing
-guide, implemented language specification, ownership rules, and library declarations.
-This is a corpus-wide pattern review with focused source inspection, not a claim
-that every function or embedded Rust test program was semantically audited.
+The goal is to use implemented concepts where they clarify code while preserving
+ownership, evaluation order, errors, and test intent. A valid older spelling is
+not automatically an obsolete language contract.
 
-The following are textual occurrence counts, including tests and comments where
-they match. They locate opportunities; they are not counts of safe replacements.
+## Applied concepts
 
-| Pattern | Foster | Taker Foster |
-| --- | ---: | ---: |
-| `loop {` | 149 | 54 |
-| `for name in ...` | 11 | 0 |
-| `while ...` | 38 | 1 |
-| Simple `name = name + 1` | 122 | 47 |
-| Repeated `field: field` spelling | 18 | 9 |
-| Direct `Result.Error(error)` forwarding arms | 8 | 0 |
-| Direct `Failed(error)` forwarding arms | 0 | 35 |
-| `break if !(true)` | 0 | 3 |
+| Concept | Application and evidence |
+| --- | --- |
+| `while` | Time-zone table scans, binary searches, recurrence searches, and benchmark counters express their continuation condition directly. The Unicode generator emits the same form in its conformance fixture. |
+| `try<Case>` | The JSON example propagates fresh `ParseResult` failures with `try<ParseOk>`. Error-detail tests cover fractional numbers, exponents, escapes, and literals. |
+| Record destructuring | The JSON example names successful `token`, `rest`, and `value` fields directly after selected propagation. Ownership still follows field-binding rules. |
+| `panic` and `Never` | Unrecoverable time-zone invariants no longer fabricate offsets, dates, instants, or integers after failing. Explicit failure arms in library tests, tools, and guide examples use `panic(message)`. |
+| String interpolation | The endpoint example and benchmark CSV output use triple-quoted substitutions. Substitutions retain the required conversion imports. |
+| Generic implementation parameters and inferred `self` | Library collection and iterator implementations already use these forms. Explicit reference and specialized receiver annotations remain necessary. |
+| Structural constraints and type branches | The writing guide and `impl_constraints` / `type_branch` fixtures exercise concrete-type-preserving constraints and capability checks. |
+| Named scopes and parameter groups | Ownership examples and the `named_scopes` / `parameter_groups` fixtures exercise lifetime boundaries and returned loans. |
+| Deferred fields | The writing guide and `deferred_initialization` fixture demonstrate `??` with definite initialization. Fully available records do not benefit from artificial deferred construction. |
+| Conditional execution | Production sources already use `if` for guarded actions and `branch` for selecting values. Dedicated fixtures retain both explicit and implicit unit fallbacks. |
 
-Generated Unicode data and deliberate language/ownership fixtures should not be
-rewritten simply to reduce these totals. Change generators rather than generated tables.
+## Deliberate retained forms
 
-## Changes supported by the current language
+- Iterator consumers use `loop` plus `next()` because an existing cursor is not
+  necessarily an iterable with `iterator()`. Changing them to `for` can restart
+  traversal or change ownership. Parser state machines, retry loops, and the loop
+  showcase also retain their applicable control-flow forms.
+- Branches over borrowed `Result` and parser outcomes remain branches. `try` consumes
+  its operand; replacing those branches would change the API's ownership contract.
+  Error conversion and recovery also require explicit handling.
+- Negative fixtures deliberately contain rejected programs. Syntax, ownership,
+  formatter, and backend tests retain explicit receivers, unconditional assertions,
+  manual loops, and other forms when those are what the test exercises.
+- Generated Unicode and IANA data remain generator-owned. Update the generator and
+  verify its output instead of restyling table literals or changing data provenance.
+- Index traversal remains appropriate when positions, byte widths, mutation, or
+  parallel arrays matter. String iteration uses graphemes; scalar cursors and byte
+  scans must preserve their original text units.
+- `move`, explicit copies, public signatures, and useful effect bounds remain part
+  of the contract. Shorter source must not hide resource transfer or weaken checks.
 
-### 1. Adopt structured iteration where its contract matches
+## Future work is not available syntax
 
-Highest-volume opportunity: `library/core/list.fos`, `library/core/string.fos`,
-`tools/unicode/src/generate.fos`, and Taker's parser loops.
-Replace a loop's initial exit test with `while` when it expresses the actual
-continuation condition. Remove the three always-false break guards in
-`../taker_foster/src/combinators.fos`.
+Record-update expressions, compound assignment, tuples or variadic parameters, and
+new remaining-iterator adapters require their own designs and implementation.
+Custom-case propagation and record destructuring are already implemented; they
+must not be described as proposals. Consult the implemented reference before using
+any spelling suggested by a roadmap.
 
-Use `for value in values` for sequential traversal when iterator semantics match.
-This removes the index binding, bounds test, indexed read, and increment.
-Keep indexing when the position matters, or when mutation requires access to
-original storage. `List.read_at` explicitly copies; changing it to iteration is
-not automatically equivalent. Likewise, a bare `Iterator` currently lacks the
-`iterator()` operation that `for` requires.
+## Validation
 
-`library/std/toml.fos` also retains recursive sequential control flow in
-`parse_statements`, `skip_document_space`, and helpers such as `key_parts`.
-Use `while` for repeated parser statements and consider `map` for pure element
-transformations. Besides concision, this can avoid call-stack growth. Preserve
-early failure, evaluation order, and ownership when migrating.
+Use the checkout compiler for package checks and formatting. Keep foundational
+library modules in the `library` package context. Run the Foster language and
+library suites with and without optimization, the writing-guide and documentation
+example tests, and the time-zone integration suite. The latter checks the compiled
+library in VM/native modes and compares its results with independent reference data.
 
-### 2. Move repeated type parameters into `impl` headers
+Check examples at their actual package roots (`examples/modules` and
+`examples/json_parser`), tools using their manifests, and the Taker benchmark with
+its sibling source dependency. The Unicode generator's `--check` mode verifies
+both generated files against its current source. A successful style scan alone is
+not evidence of successful compilation or behavioral equivalence.
 
-For example, `library/std/collections/map.fos` repeatedly spells
-`func length<K, V>(self: ListMap<K, V>)` and the same receiver on adjacent methods.
-The current language supports:
+The review checked 49 example, benchmark, tool, and package entry points plus the
+Taker benchmark with its sibling dependency. All passed. The writing-guide and
+time-guide examples, optimized/unoptimized language and library suites, JSON and
+future/process integration tests, time-zone VM/native reference comparisons,
+`Never`, record-destructuring, and selected-propagation tests passed. Unicode
+generation and `--check` agreed, and its regenerated conformance program returned
+42. Edited handwritten Foster files passed the checkout's formatter (compiled
+natively for the larger files).
 
-```foster
-impl ListMap<K, V> {
-    pub func length(self) -> Int { self.entries.length }
-}
-```
+The public contract inventory now covers all 150 declarations. Coverage references
+identify the existing future/process and JSON integration suites. The storage-free
+contract audit uses module-qualified names so a private JSON `Writer` is not
+mistaken for `std.io.Writer`.
 
-Apply the same organization to `Option`, `Result`, iterator adaptors, and
-collection implementations. Keep method-only parameters on the method:
-`impl Option<T> { ... func map<U>(...) ... }`.
-Preserve explicit reference receivers such as `List.remove`'s `ref[self] List<T>`;
-omitting that annotation is not merely cosmetic.
-
-### 3. Use existing field shorthand and simple propagation
-
-`Frame { rule: rule, position: position }` can be `Frame { rule, position }`.
-Shorthand does not insert a copy or change a move into a borrow.
-
-In `library/std/path.fos`, `path_result` can use the existing propagation form:
-
-```foster
-let value = try move outcome
-Result.Ok(Path.from(move value))
-```
-
-`TcpHost.read` in `library/std/net/tcp.fos` has the same opportunity. Keep branches
-that translate errors, recover, or inspect failure details. Do not replace an
-ownership-transferring branch with `Result.map` blindly: its callback contract
-currently borrows its parameter.
-
-### 4. Consolidate genuinely shared implementations
-
-`Collection.empty?` is a candidate for a default body based on `length() == 0`.
-The language already supports composed defaults; the roadmap correctly calls
-for testing this across concrete collections first. Retain overrides where
-length is expensive or representation-specific behavior matters.
-
-Private helpers can rely on inferred effects where an explicit contract adds
-no useful boundary. Keep public ownership/effect contracts and diagnostic fixtures.
-Likewise, remove redundant `()` after a unit-producing loop, but retain it after
-assignments where it determines the function's result.
-
-### 5. Express capability-dependent application behavior with ordinary types
-
-Use `impl Box<T & Copy>` when an operation requires copying, and
-`branch value { is Copy -> ... _ -> ... }` when failure is part of the operation.
-This uses the recent general type-branch work without giving `Copy` special syntax.
-
-The low-level `can_copy_at`/`copy_at` pair in `library/core/list.fos` is a candidate
-for a separate implementation experiment, not an automatic replacement.
-Narrowing currently follows named locals/parameters, and binding an owned field
-to a new local can move it. A shorter capability check must preserve the list,
-invoke user copying code exactly once, and retain bounds-before-copyability errors.
-
-## Language and library improvements worth designing
-
-### 1. Propagation for custom outcome types — greatest benefit in Taker
-
-`../taker_foster/src/taker.fos:162` nests two branches in `then`; 35 matching
-failure-forwarding arms occur across Taker. Existing `try` handles `Result`, not
-`ParseResult`.
-
-First compare a library migration to `Result<Matched<A>, Failure>` with keeping
-the domain-specific enum and defining a structural propagation protocol. If the
-latter wins, reuse `try` rather than inventing another propagation operator.
-Required decisions include the success payload, residual/error conversion,
-consumption, cleanup, and which enclosing closure receives an early return.
-Partial/committed parse failures must still retain their explicit recovery rules.
-
-### 2. Record updates with explicit ownership
-
-`Input` is rebuilt in `skip`, `success`, and `failure` in
-`../taker_foster/src/taker.fos:95`, and `Failure` is rebuilt to change flags or context.
-This duplicates unchanged fields and makes new fields costly to maintain.
-
-First centralize copying and checkpoint construction in ordinary helpers.
-Then design a record-update expression that transfers untouched fields from an
-owned base. Updating a borrowed base must require an explicit copy or fail;
-it must not silently copy noncopyable members. Functional record updates are
-already an open roadmap item. No spelling is assumed here.
-
-### 3. Non-returning expressions
-
-Implemented: `panic(message)` has type `Never`, and divergent arms no longer need
-fallback values. Taker's `value` and `current_char`, core string construction,
-byte formatting, and cursor invariants now use panic directly. Failure cleanup
-is shared with assertions; `try` does not catch panic. An `expect` convenience
-can build on this mechanism where unrecoverable failure is intended.
-
-### 4. Consume the remainder of an iterator concisely
-
-`library/std/iter.fos` repeats `loop` + `branch self.next()` + `None -> break`.
-Either provide an explicit remaining-items adapter usable by `for`, or define
-how `for` directly accepts an `Iterator`. Keep the distinction between opening
-an independent traversal and advancing an existing cursor. Pattern-binding
-loop syntax is another option, but does not need to be the first solution.
-
-### 5. Destructuring before variadics
-
-`../taker_foster/src/apply.fos:8` through `map8` repeatedly walks nested
-`Pair.first.first...` fields. Record patterns would name those components once
-and clarify which fields are moved. They would not eliminate every arity-specific
-function; tuples or parameter packs are a separate, substantially larger decision.
-
-### 6. Compound assignment, with specified evaluation order
-
-There are 169 simple increment spellings in the scanned source. `index += 1`
-would help, but it saves less structural complexity than the items above.
-For projected destinations, define single evaluation and the order of the
-right-hand expression, destination selection, and reading its previous value.
-Preserve overflow behavior and reference invalidation rules. Do not implement
-it as naive textual substitution of `place = place + value`.
-
-## Migration constraints
-
-- String iteration yields grapheme strings; `StringCursor.next()` yields Unicode
-  scalars. Taker's `starts_with?` combines those two kinds at `src/taker.fos:70`.
-  Choose a consistent text unit before shortening that loop. A scalar cursor
-  avoids materializing a code-point list when allocation matters.
-- Ordinary references permit mutation. `borrow` is not a copying lookup and is
-  not a read-only reference type. Do not shorten away needed `.copy()` or `move`.
-- `is Copy` is an ordinary structural type test. Do not reintroduce special
-  capability syntax during this cleanup.
-- Some `get` examples describe custom types, and TOML has its own `get` operations.
-  A global textual replacement would not respect their contracts.
-- Keep explicit imports, public return types, and useful effect bounds. The aim is
-  less repeated control flow and ownership plumbing, not fewer informative tokens.
-
-## Suggested order
-
-1. Migrate representative library and Taker modules to current loops, generic
-   implementation headers, field shorthand, and `try`; measure actual diff savings.
-2. Address Taker's text-unit/API migration issues and centralize record copying.
-3. Decide custom-outcome propagation and divergence typing using Taker examples.
-4. Design record updates, remaining-iterator traversal, and record patterns.
-5. Consider compound assignment after loop migrations reveal how much remains.
-
-Validation for this review: a standalone program exercising `for`, `while`,
-generic constrained `impl`, omitted receiver annotations, field shorthand, and
-`try move` passed the checkout compiler's `check` and returned `42` with `run`.
-This validates representative current syntax, not every proposed rewrite.
-Checking `../taker_foster` with the checkout compiler reproduced the
-`taker.starts_with?` error at line 76: `Option<CodePoint>` is compared with
-`Option<String>`. The package therefore does not currently pass checking;
-additional errors may appear after that first failure is corrected.
-No production Foster source or compiler behavior was changed by this review.
-
-## Follow-up: traversal migration
-
-The subsequent traversal migration applies `for` to suitable collection, byte,
-grapheme, and Unicode-input scans, and `while` to indexed mutation, explicit-copy,
-and scalar-cursor scans. TOML statement and document-space traversal use loops
-instead of recursion. Stateful iterator consumers and deliberately illustrative
-loop fixtures retain `loop`; no new iteration syntax or compiler behavior is required.
-
-Taker's prefix comparison now uses two scalar cursors, resolving the type mismatch
-recorded above. Its regression covers combining marks, an advanced checkpoint,
-an empty prefix, and an overlong prefix. Traversal changes preserve explicit
-copying and the distinction between Unicode scalars and grapheme clusters.
-
-## Follow-up: inferred receivers
-
-Ordinary implementation methods across the library, tools, examples, benchmarks,
-and Taker use inferred `self`. Shared type parameters live on implementation
-headers; method-specific parameters stay on methods. Explicit references and
-specialized receivers retain their annotations. Compiler fixtures that exercise
-explicit receiver syntax remain explicit.
-
-## Follow-up: field shorthand and propagation
-
-Remaining same-name field initializers in TOML diagnostics and the inventory
-example use shorthand. Filesystem, path, TCP, and month-day validation use `try`
-for direct error propagation. Borrowed `Result` methods, error conversion,
-recovery, and custom parser outcomes retain their branches; replacing those
-with consuming `try` expressions would change their contracts.
-
-## Follow-up: selected-case propagation
-
-`try<Case>` implements explicit custom-outcome propagation. Taker's direct parser
-composition and CSV loops use `try<Match>`; recovery and contextual error handling
-retain branches. No propagation protocol or enum declaration annotation is needed.
+The collection-contract dispatch discrepancy is fixed: reference-wrapped receivers
+retain their nominal dispatch identity, and native specialization and calls preserve
+the receiver's storage address. The original collection fixture now returns 42 on
+both backends. Regression coverage also checks absent map keys, returning a borrowed
+entry through a helper, and mutating the original entry through the shared contract.
+The map APIs and ownership contract are unchanged. Borrowed enum payload references
+also preserve their original storage across both backends; regression coverage includes
+nested patterns, scalar payloads, existing references, and enum contract methods.

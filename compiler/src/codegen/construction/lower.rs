@@ -1410,7 +1410,44 @@ impl FunctionCompiler<'_> {
             .map(|ty| verification_type(self.hir, self.types, ty, 0))
             .unwrap_or(ExecutableType::Unknown);
         let subject = subject
-            .map(|subject| self.expression(subject))
+            .map(|subject| {
+                // Reference parameters are loaded as values by the native prologue.
+                // Reborrow their place explicitly so pattern bindings keep the caller's storage.
+                let borrowed =
+                    crate::semantics::expression_place(self.hir, &self.types.member_kinds, subject)
+                        .is_some_and(|place| {
+                            self.types.local_type(place.root).is_some_and(|ty| {
+                                matches!(self.types.types[ty], crate::types::Type::Reference { .. })
+                            }) || self.closure_captures.get(&self.function).is_some_and(
+                                |captures| {
+                                    captures.iter().any(|capture| {
+                                        capture.local == place.root
+                                            && capture.mode == hir::CaptureMode::Ref
+                                    })
+                                },
+                            ) || self.hir.functions[self.function]
+                                .parameters
+                                .iter()
+                                .enumerate()
+                                .any(|(index, parameter)| {
+                                    parameter.local == place.root
+                                        && self.types.function_type(self.function).is_some_and(
+                                            |signature| {
+                                                matches!(
+                                                    self.types.types
+                                                        [signature.parameters[index].ty],
+                                                    crate::types::Type::Reference { .. }
+                                                )
+                                            },
+                                        )
+                                })
+                        });
+                if borrowed {
+                    self.reference_expression(subject, span.clone())
+                } else {
+                    self.expression(subject)
+                }
+            })
             .transpose()?;
         let destination = self.allocate();
         let cfg = crate::control_flow::BranchCfg::new(arms);

@@ -23,7 +23,9 @@ pub type SecureRandom = & RandomSource & EntropySource & {
 impl SecureRandom {
     /// Constructs a secure source backed by the operating system.
     pub func new() -> SecureRandom {
-        SecureRandom { source_value: SystemRandom.new() }
+        SecureRandom {
+            source_value: SystemRandom.new()
+        }
     }
 
     /// Returns the next uniformly distributed secure 31-bit integer.
@@ -32,7 +34,9 @@ impl SecureRandom {
     }
 
     /// Returns the inclusive maximum secure integer value.
-    pub func maximum(self) -> Int { self.source_value.maximum() }
+    pub func maximum(self) -> Int {
+        self.source_value.maximum()
+    }
 
     /// Returns exactly `count` operating-system entropy bytes.
     pub func bytes(self, count: Int) -> Result<Bytes, RandomError> {
@@ -72,7 +76,9 @@ func token_remaining(source: SecureRandom, remaining: Int, output: String) -> Re
 
 /// Constructs a typed secure-randomness error.
 func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
-    Result.Error(RandomError { operation, value, message })
+    Result.Error(RandomError {
+        operation, value, message
+    })
 }
 
 /// Exercises the byte-oriented entropy contract for tests.
@@ -87,8 +93,7 @@ test "secure entropy produces exact byte and token lengths" {
     assert(entropy_length(SecureRandom.new(), 8) == 8)
     branch random_bytes(24) {
         Result.Error(_) -> {
-            assert(false, "secure bytes were unavailable")
-            ()
+            panic("secure bytes were unavailable")
         }
         Result.Ok(value) -> {
             assert(value.length == 24)
@@ -97,8 +102,7 @@ test "secure entropy produces exact byte and token lengths" {
     }
     branch token(32) {
         Result.Error(_) -> {
-            assert(false, "secure token generation failed")
-            ()
+            panic("secure token generation failed")
         }
         Result.Ok(value) -> {
             assert(value.length == 32)
@@ -107,8 +111,7 @@ test "secure entropy produces exact byte and token lengths" {
     }
     branch token_hex(12) {
         Result.Error(_) -> {
-            assert(false, "hex token generation failed")
-            ()
+            panic("hex token generation failed")
         }
         Result.Ok(value) -> {
             assert(value.length == 24)

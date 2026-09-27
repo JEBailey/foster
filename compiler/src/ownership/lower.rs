@@ -1419,6 +1419,45 @@ impl<'a> Builder<'a> {
         arguments: &[ExprId],
         expression: ExprId,
     ) {
+        // Temporary receivers can retain borrowed callback environments too.
+        // Apply their structural effects before the full expression destroys them.
+        if let hir::Expr::Member { object, .. } = self.hir.expressions[callee]
+            && self.owned_place(object).is_none()
+            && let Some(place) = self.active_temporaries.get(&object).cloned()
+            && self.types.expression_type(callee).is_some_and(|ty| {
+                matches!(&self.types.types[ty], crate::types::Type::Function(signature)
+                    if signature.effects.iter().any(|effect|
+                        effect.kind == crate::ast::EffectKind::Reshape && effect.target.root == "self"
+                            && effect.target.children.is_empty()))
+            })
+        {
+            self.emit(Operation::Invalidate {
+                place, kind: InvalidationKind::Reshape, span: self.span(expression),
+            });
+        }
+        if let Some(target) = self.types.resolved_function_for_callee(callee) {
+            let offset = usize::from(matches!(
+                self.hir.expressions[callee],
+                hir::Expr::Member { .. }
+            ));
+            for (index, argument) in arguments.iter().enumerate() {
+                let parameter = &self.hir.functions[target].parameters[index + offset];
+                if self.owned_place(*argument).is_none()
+                    && let Some(place) = self.active_temporaries.get(argument).cloned()
+                    && self.hir.functions[target].effects.iter().any(|effect| {
+                        effect.kind == crate::ast::EffectKind::Reshape
+                            && effect.target.root == self.hir.locals[parameter.local].name
+                            && effect.target.children.is_empty()
+                    })
+                {
+                    self.emit(Operation::Invalidate {
+                        place,
+                        kind: InvalidationKind::Reshape,
+                        span: self.span(expression),
+                    });
+                }
+            }
+        }
         if self
             .types
             .expression_type(callee)

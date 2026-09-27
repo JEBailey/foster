@@ -64,7 +64,14 @@ fn public_library_modules_declare_tests_or_have_external_coverage() {
         "std/host.fos",
         "std/net/tcp.fos",
     ];
-    let externally_tested = ["core/range.fos"];
+    let externally_tested = [
+        "core/range.fos",
+        // Composed futures, remote forwarding, and process lifecycle: tests/future_process.rs.
+        "core/future.fos",
+        "std/process.fos",
+        // Public parsing and rendering through VM, bytecode, and native: tests/json.rs.
+        "std/json.fos",
+    ];
     let mut uncovered = Vec::new();
     for entry in walkdir::WalkDir::new(&library) {
         let entry = entry.unwrap();

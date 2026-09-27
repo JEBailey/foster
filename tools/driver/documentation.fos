@@ -99,7 +99,7 @@ func plural(count: Int) -> String {
 }
 
 func page(title: String, heading: String, body: String, stylesheet: String, script: String) -> String {
-    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + escape(title) + "</title><link rel=\"stylesheet\" href=\"" + stylesheet + "\"></head><body><a class=\"skip-link\" href=\"#main-content\">Skip to content</a><header>" + heading + "</header><main id=\"main-content\" tabindex=\"-1\">" + body + "</main>" + script + "</body></html>"
+    """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%{escape(title)}%</title><link rel="stylesheet" href="%stylesheet%"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header>%heading%</header><main id="main-content" tabindex="-1">%body%</main>%script%</body></html>"""
 }
 
 func members(reader: Reader) -> String {
@@ -110,10 +110,10 @@ func members(reader: Reader) -> String {
     while index < count {
         let name = reader.take()
         let documentation = reader.optional()
-        body = body + "<li><code>" + name + "</code>"
+        body = body + """<li><code>%name%</code>"""
         branch documentation {
             Option.Some(text) -> {
-                body = body + "<br><small>" + escape(text) + "</small>"
+                body = body + """<br><small>%{escape(text)}%</small>"""
             }
             Option.None -> ()
         }
@@ -121,7 +121,7 @@ func members(reader: Reader) -> String {
         index = index + 1
     }
     branch {
-        count == 0 -> "" _ -> "<h4>" + escape(heading) + "</h4><ul>" + body + "</ul>"
+        count == 0 -> "" _ -> """<h4>%{escape(heading)}%</h4><ul>%body%</ul>"""
     }
 }
 
@@ -129,7 +129,8 @@ func type_card(reader: Reader) -> String {
     let name = escape(reader.take())
     let public = reader.flag()
     let documentation = reader.optional()
-    let body = "<article class=\"type-summary\"><h3><a href=\"#" + name + "\">" + name + "</a>" + badge(public) + "</h3>"
+    let body = ""
+    body = body + """<article class="type-summary"><h3><a href="#%name%">%name%</a>%{badge(public)}%</h3>"""
     branch documentation {
         Option.Some(html) -> {
             body = body + html
@@ -149,10 +150,10 @@ func type_card(reader: Reader) -> String {
         let anchor = escape(reader.take())
         let label = escape(reader.take())
         let summary = reader.optional()
-        body = body + "<li><a href=\"#" + anchor + "\"><code>" + label + "</code></a>"
+        body = body + """<li><a href="#%anchor%"><code>%label%</code></a>"""
         branch summary {
             Option.Some(text) -> {
-                body = body + "<br><small>" + escape(text) + "</small>"
+                body = body + """<br><small>%{escape(text)}%</small>"""
             }
             Option.None -> ()
         }
@@ -160,7 +161,8 @@ func type_card(reader: Reader) -> String {
         index = index + 1
     }
     if functions > 0 body = body + "</ul>"
-    body + "</article>"
+    body = body + "</article>"
+    body
 }
 
 type Declaration = {
@@ -175,8 +177,9 @@ func declaration(reader: Reader) -> Declaration {
     let owner_attribute = branch {
         owner.empty? -> "" _ -> " data-owner=\"" + escape(owner) + "\""
     }
-    let contents = "<li" + owner_attribute + " data-declaration><a href=\"#" + anchor + "\">" + name + " <small>" + kind + "</small></a></li>"
-    let body = "<article id=\"" + anchor + "\"><h2><a class=\"anchor\" href=\"#" + anchor + "\">" + name + "</a><span class=\"badge kind\">" + kind + "</span>"
+    let contents = """<li%owner_attribute% data-declaration><a href="#%anchor%">%name% <small>%kind%</small></a></li>"""
+    let body = ""
+    body = body + """<article id="%anchor%"><h2><a class="anchor" href="#%anchor%">%name%</a><span class="badge kind">%kind%</span>"""
     let index = 0
     if count > 1 body = body + "</h2>"
     while index < count {
@@ -184,8 +187,8 @@ func declaration(reader: Reader) -> Declaration {
         let signature = reader.take()
         let docs = reader.optional()
         body = body + branch {
-            count == 1 -> badge(public) + "</h2><pre><code>" + signature + "</code></pre>"
-            _ -> "<section><h3>Overload " + (index + 1).as_string() + badge(public) + "</h3><pre><code>" + signature + "</code></pre>"
+            count == 1 -> """%{badge(public)}%</h2><pre><code>%signature%</code></pre>"""
+            _ -> """<section><h3>Overload %{index + 1}%%{badge(public)}%</h3><pre><code>%signature%</code></pre>"""
         }
         branch docs {
             Option.Some(html) -> {
@@ -200,8 +203,9 @@ func declaration(reader: Reader) -> Declaration {
         if count > 1 body = body + "</section>"
         index = index + 1
     }
+    body = body + """<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article>"""
     Declaration {
-        contents, html: body + "<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>"
+        contents, html: body
     }
 }
 
@@ -211,16 +215,17 @@ type RenderedModule = {
 func module_page(reader: Reader, script: String) -> RenderedModule {
     let name = reader.take()
     let docs = reader.optional()
-    let body = "<div id=\"module-overview\"><h2>Overview</h2>" + HELP
+    let body = ""
+    body = body + """<div id="module-overview"><h2>Overview</h2>%HELP%"""
     branch docs {
         Option.Some(html) -> {
-            body = body + "<article class=\"module-documentation\">" + html + "</article>"
+            body = body + """<article class="module-documentation">%html%</article>"""
         }
         Option.None -> ()
     }
     let card_count = reader.number()
     if card_count > 0 {
-        body = body + "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">"
+        body = body + """<section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid">"""
     }
     let index = 0
     while index < card_count {
@@ -239,8 +244,8 @@ func module_page(reader: Reader, script: String) -> RenderedModule {
         index = index + 1
     }
     if count == 0 body = body + "<p class=\"empty\">This module has no declarations.</p>"
-    let layout = "<div class=\"module-layout\"><nav id=\"page-navigation\" class=\"on-this-page\" aria-label=\"On this page\"><a class=\"crumb\" href=\"../index.html\">← All modules</a><details open><summary>On this page</summary><a href=\"#module-overview\">Overview</a><label for=\"declaration-filter\">Find a declaration</label><input id=\"declaration-filter\" class=\"filter\" type=\"search\" placeholder=\"Name or kind…\" data-declaration-filter><p class=\"filter-status\" role=\"status\" data-declaration-status>" + count.as_string() + " declarations</p><ul>" + contents + "</ul></details></nav><div class=\"module-content\">" + body + "</div></div>"
-    let heading = "<h1>module " + escape(name) + "</h1><p>" + count.as_string() + " declaration" + plural(count) + "</p>"
+    let layout = """<div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>%count% declarations</p><ul>%contents%</ul></details></nav><div class="module-content">%body%</div></div>"""
+    let heading = """<h1>module %{escape(name)}%</h1><p>%count% declaration%{plural(count)}%</p>"""
     let filename = name.copy().split(".").join("-") + ".html"
     RenderedModule {
         page: ModulePage {
@@ -268,25 +273,25 @@ func index_page(entries: List<Entry>, declarations: Int, script: String) -> Stri
             break if namespace(entries[end].name) != name
             end = end + 1
         }
-        jumps = jumps + "<a href=\"#namespace-" + group.as_string() + "\" data-module-jump>" + escape(name) + "</a>"
-        groups = groups + "<details class=\"module-group\" id=\"namespace-" + group.as_string() + "\" data-module-group open><summary>" + escape(name) + "<small>" + (end - position).as_string() + " modules</small></summary><ul class=\"module-list\">"
+        jumps = jumps + """<a href="#namespace-%group%" data-module-jump>%{escape(name)}%</a>"""
+        groups = groups + """<details class="module-group" id="namespace-%group%" data-module-group open><summary>%{escape(name)}%<small>%{end - position}% modules</small></summary><ul class="module-list">"""
         while position < end {
             let entry = entries[position].copy()
             let depth = entry.name.copy().split(".").length - 1
-            groups = groups + "<li data-module=\"" + escape(entry.name.lower()) + "\" style=\"--depth:" + depth.as_string() + "\"><a href=\"modules/" + entry.file_name + "\"><strong>" + escape(entry.name) + "</strong><small>" + entry.count.as_string() + " declaration" + plural(entry.count) + "</small></a></li>"
+            groups = groups + """<li data-module="%{escape(entry.name.lower())}%" style="--depth:%depth%"><a href="modules/%{entry.file_name}%"><strong>%{escape(entry.name)}%</strong><small>%{entry.count}% declaration%{plural(entry.count)}%</small></a></li>"""
             position = position + 1
         }
         groups = groups + "</ul></details>"
         group = group + 1
     }
     let count = entries.length
-    let body = "<div class=\"summary\"><span>" + count.as_string() + " module" + plural(count) + "</span><span>" + declarations.as_string() + " declaration" + plural(declarations) + "</span></div><h2>Modules</h2><label for=\"module-filter\">Filter modules by name</label><input id=\"module-filter\" class=\"filter\" type=\"search\" placeholder=\"e.g. collections or string\" aria-label=\"Filter modules\" data-module-filter><p class=\"filter-status\" role=\"status\" data-module-status>" + count.as_string() + " modules</p><nav class=\"module-jumps\" aria-label=\"Module namespaces\">" + jumps + "</nav>" + groups + "<p class=\"no-results\" role=\"status\" data-no-results hidden>No modules match your filter.</p>"
+    let body = """<div class="summary"><span>%count% module%{plural(count)}%</span><span>%declarations% declaration%{plural(declarations)}%</span></div><h2>Modules</h2><label for="module-filter">Filter modules by name</label><input id="module-filter" class="filter" type="search" placeholder="e.g. collections or string" aria-label="Filter modules" data-module-filter><p class="filter-status" role="status" data-module-status>%count% modules</p><nav class="module-jumps" aria-label="Module namespaces">%jumps%</nav>%groups%<p class="no-results" role="status" data-no-results hidden>No modules match your filter.</p>"""
     page("Foster documentation", "<h1>Foster documentation</h1><p>Resolved package API reference</p>", body, "style.css", script)
 }
 
 func checked_io(outcome: Result<(), IoError>) -> Result<(), String> [consume outcome] {
     branch outcome {
-        Result.Ok(_) -> Result.Ok(()) Result.Error(error) -> Result.Error(error.operation + " `" + error.path + "`: " + error.message)
+        Result.Ok(_) -> Result.Ok(()) Result.Error(error) -> Result.Error("""%{error.operation}% `%{error.path}%`: %{error.message}%""")
     }
 }
 

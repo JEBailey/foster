@@ -1,0 +1,29 @@
+pub type Item = {
+    value: Int
+}
+pub type BorrowItem = {
+    pub func borrow(self) -> ref[self] Item
+}
+pub type Holder = & BorrowItem & {
+    item: Item
+}
+impl Holder {
+    pub func borrow(self) -> ref[self] Item {
+        ref self.item
+    }
+}
+func update(value: BorrowItem) -> () {
+    let item = value.borrow()
+    item.value = item.value + 2
+    ()
+}
+func main() -> Int {
+    let holder = Holder {
+        item: Item {
+            value: 40
+        }
+    }
+    update(holder)
+    assert(holder.item.value == 42)
+    holder.item.value
+}

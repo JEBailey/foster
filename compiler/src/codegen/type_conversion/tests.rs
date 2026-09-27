@@ -92,6 +92,7 @@ fn scalar_and_nested_callable_conversions_agree() {
         result: reference,
         erased: true,
         effects: vec![Effect {
+            capture: false,
             kind: EffectKind::Read,
             target: GroupPath::root("g"),
         }],

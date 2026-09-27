@@ -251,7 +251,7 @@ impl Parser {
 
     // Parentheses and brackets delimit expressions independently of an enclosing
     // loop header, so record braces inside them cannot be mistaken for its body.
-    fn delimited_expression(&mut self) -> Result<Expr, FosterError> {
+    pub(super) fn delimited_expression(&mut self) -> Result<Expr, FosterError> {
         let previous = self.suppress_record_literal;
         self.suppress_record_literal = false;
         let expression = self.expression();
@@ -262,6 +262,18 @@ impl Parser {
     pub(super) fn postfix(&mut self) -> Result<Expr, FosterError> {
         let mut expr = self.primary()?;
         loop {
+            // A leading dot continues the preceding expression. Leave other
+            // newlines intact so calls and index expressions on a new line
+            // remain separate statements.
+            if self.at(&TokenKind::Newline) {
+                let mut next = self.current;
+                while self.tokens[next].kind == TokenKind::Newline {
+                    next += 1;
+                }
+                if self.tokens[next].kind == TokenKind::Dot {
+                    self.current = next;
+                }
+            }
             let start = expr.span().map_or(0, |span| span.start);
             if self.take(&TokenKind::LParen) {
                 let mut arguments = Vec::new();
@@ -365,6 +377,9 @@ impl Parser {
             TokenKind::Integer(value) => Expr::Integer(value),
             TokenKind::Float(value) => Expr::Float(value),
             TokenKind::String(value) => Expr::String(value),
+            TokenKind::InterpolatedString(value) => {
+                super::interpolation::parse(&value, start + 3, token.line, token.column + 3)?
+            }
             TokenKind::CodePoint(value) => Expr::CodePoint(value),
             TokenKind::Symbol(name)
                 if !self.suppress_record_literal && self.at(&TokenKind::LBrace) =>

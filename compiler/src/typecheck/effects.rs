@@ -2,10 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use super::*;
 
+mod latent;
+
 pub(super) struct EffectDerivation<'a, 'hir> {
     checker: &'a Checker<'hir>,
     function: FunctionId,
     owners: HashMap<LocalId, crate::ast::GroupPath>,
+    latent: HashMap<LocalId, Vec<crate::ast::Effect>>,
+    pub(super) result_effects: Vec<crate::ast::Effect>,
     contract: HashSet<String>,
     derived: Vec<crate::ast::Effect>,
     pub(super) suspends: bool,
@@ -108,6 +112,8 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             checker,
             function,
             owners,
+            latent: HashMap::new(),
+            result_effects: Vec::new(),
             contract,
             derived: Vec::new(),
             suspends: false,
@@ -148,6 +154,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             return;
         }
         let effect = crate::ast::Effect {
+            capture: false,
             kind,
             target: group,
         };
@@ -161,7 +168,13 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     pub(super) fn walk_statements(&mut self, statements: &crate::block::Block<hir::Stmt>) {
-        self.walk_statement_block(statements, true);
+        loop {
+            let previous = self.latent.clone();
+            self.walk_statement_block(statements, true);
+            if self.latent == previous {
+                break;
+            }
+        }
     }
 
     fn walk_statement_block(
@@ -177,6 +190,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         self.walk_expr(*guard);
                     }
                     self.walk_consumed_expr(*value);
+                    self.return_latent(*value);
                 }
                 hir::Stmt::Assert { condition, message } => {
                     self.walk_expr(*condition);
@@ -195,9 +209,11 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 hir::Stmt::Destructure { pattern, value, .. } => {
                     self.walk_expr(*value);
                     self.bind_record_pattern(pattern, self.place_group(*value), true);
+                    self.remember_pattern_latent(pattern, *value);
                 }
                 hir::Stmt::Bind { local, value } => {
                     self.walk_consumed_expr(*value);
+                    self.remember_latent(*local, *value);
                     let group = self.borrowed_result_group(*value).unwrap_or_else(|| {
                         match self.checker.hir.expressions[*value] {
                             hir::Expr::Reference(place) => self.place_group(place),
@@ -214,12 +230,23 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 }
                 hir::Stmt::Assign { local, value } => {
                     self.walk_consumed_expr(*value);
+                    self.remember_latent(*local, *value);
                     self.add(crate::ast::EffectKind::Mut, self.local_group(*local));
                 }
-                hir::Stmt::Expr(value) if is_last => self.walk_consumed_expr(*value),
+                hir::Stmt::Expr(value) if is_last => {
+                    self.walk_consumed_expr(*value);
+                    self.return_latent(*value);
+                }
                 hir::Stmt::Expr(value) => self.walk_expr(*value),
                 hir::Stmt::Set { place, value } => {
                     self.walk_consumed_expr(*value);
+                    if let Some(place) = crate::semantics::expression_place(
+                        self.checker.hir,
+                        &self.checker.member_kinds,
+                        *place,
+                    ) {
+                        self.remember_latent(place.root, *value);
+                    }
                     self.walk_place_address(*place);
                     self.add(crate::ast::EffectKind::Mut, self.place_group(*place));
                 }
@@ -294,7 +321,8 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 }
             }
             hir::Expr::Try { value, .. } => self.walk_consumed_expr(*value),
-            hir::Expr::Closure { captures, .. } => {
+            hir::Expr::Closure { function, captures } => {
+                self.dependencies.insert(*function);
                 for capture in captures {
                     // Body constraints have settled before effect derivation. Classify
                     // pending captures from this checker's locals instead of deriving
@@ -356,6 +384,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             hir::Expr::List(values) => values.iter().for_each(|value| self.walk_expr(*value)),
             hir::Expr::Call { callee, arguments } => {
                 self.walk_call(*callee, arguments);
+                self.remember_call_latent(*callee, arguments);
                 if self.call_target(*callee).is_some_and(|function| {
                     self.checker.hir.functions[function]
                         .intrinsic
@@ -461,8 +490,10 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     self.walk_statement_block(&arm.body, false);
                 }
             }
-            hir::Expr::Closure { .. }
-            | hir::Expr::Deferred
+            hir::Expr::Closure { function, .. } => {
+                self.dependencies.insert(*function);
+            }
+            hir::Expr::Deferred
             | hir::Expr::Unit
             | hir::Expr::Bool(_)
             | hir::Expr::Integer(_)
@@ -475,6 +506,25 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn walk_call(&mut self, callee: ExprId, arguments: &[ExprId]) {
+        if let Some(Ty::Callable { effects, .. }) = self
+            .checker
+            .expressions
+            .get(&callee)
+            .map(|ty| self.checker.resolved(ty.clone()))
+        {
+            for effect in effects {
+                if effect.target.root == "captures" {
+                    self.invoke_latent(callee);
+                } else if matches!(
+                    effect.kind,
+                    crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
+                ) && effect.target.root == "self"
+                    && let hir::Expr::Member { object, .. } = self.checker.hir.expressions[callee]
+                {
+                    self.invoke_latent(object);
+                }
+            }
+        }
         if let hir::Expr::Member { object, .. } = &self.checker.hir.expressions[callee] {
             self.walk_place_address(*object);
             let receiver = self
@@ -531,7 +581,9 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             {
                 self.suspends |= suspends;
                 for effect in effects {
-                    let group = if effect.target.root == "self" {
+                    let group = if effect.target.root == "captures" {
+                        self.place_group(callee)
+                    } else if effect.target.root == "self" {
                         self.place_group(*object)
                     } else {
                         parameters
@@ -581,18 +633,22 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 {
                     self.suspends |= suspends;
                     for effect in effects {
-                        let group = parameters
-                            .iter()
-                            .position(|parameter| {
-                                reference_group(&parameter.ty).as_deref()
-                                    == Some(effect.target.root.as_str())
-                            })
-                            .and_then(|index| arguments.get(index))
-                            .and_then(|argument| self.argument_group(*argument))
-                            .unwrap_or_else(|| {
-                                crate::ast::GroupPath::root(effect.target.root.clone())
-                            })
-                            .with_children(&effect.target.children);
+                        let group = if effect.target.root == "captures" {
+                            self.place_group(callee)
+                        } else {
+                            parameters
+                                .iter()
+                                .position(|parameter| {
+                                    reference_group(&parameter.ty).as_deref()
+                                        == Some(effect.target.root.as_str())
+                                })
+                                .and_then(|index| arguments.get(index))
+                                .and_then(|argument| self.argument_group(*argument))
+                                .unwrap_or_else(|| {
+                                    crate::ast::GroupPath::root(effect.target.root.clone())
+                                })
+                                .with_children(&effect.target.children)
+                        };
                         self.add(effect.kind, group);
                     }
                 }
@@ -607,6 +663,23 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         let effects = effects.to_vec();
         self.suspends |= suspends;
         for effect in &effects {
+            if matches!(
+                effect.kind,
+                crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
+            ) {
+                let offset = usize::from(receiver.is_some());
+                if let Some(argument) = definition
+                    .parameters
+                    .iter()
+                    .position(|parameter| {
+                        self.checker.hir.locals[parameter.local].name == effect.target.root
+                    })
+                    .and_then(|index| index.checked_sub(offset))
+                    .and_then(|index| arguments.get(index))
+                {
+                    self.invoke_latent(*argument);
+                }
+            }
             let group = match (effect.target.root.as_str(), receiver) {
                 ("self", Some(receiver)) => self
                     .place_group(receiver)

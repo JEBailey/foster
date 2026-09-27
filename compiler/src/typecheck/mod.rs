@@ -21,8 +21,9 @@ mod variants;
 use context::*;
 use effects::EffectDerivation;
 use predicates::{
-    FRAME_GROUP, callable_effects, contains_variable, effect_kind_name, effects_are_subset,
-    function_parameter_modes, pattern_is_irrefutable, reference_group, remote_transferable,
+    FRAME_GROUP, callable_effects, callable_effects_are_subset, contains_variable,
+    effect_kind_name, effects_are_subset, function_parameter_modes, pattern_is_irrefutable,
+    reference_group, remote_transferable,
 };
 
 use crate::ast::{BinaryOp, UnaryOp};
@@ -36,7 +37,7 @@ use crate::types::{
     TypeId, TypeInformation,
 };
 
-type DerivedEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
+type DerivedEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool, Vec<crate::ast::Effect>)>;
 
 pub fn check(
     hir: &mut hir::PackageHir,
@@ -63,14 +64,14 @@ fn check_bodies(
         let mut checker = Checker::new(hir);
         checker.body_cache = cache.clone();
         let mut checker = checker.check(recover)?;
-        let changed = checker
-            .derived_effects
-            .iter()
-            .any(|(function, (effects, suspends))| {
+        let changed = checker.derived_effects.iter().any(
+            |(function, (effects, suspends, result_effects))| {
                 let definition = &hir.functions[*function];
-                !definition.effects_explicit
-                    && (definition.effects != *effects || definition.suspends != *suspends)
-            });
+                (!definition.effects_explicit
+                    && (definition.effects != *effects || definition.suspends != *suspends))
+                    || definition.result_effects != *result_effects
+            },
+        );
         if !changed {
             // The current pass already checked every body against the fixed-point contracts.
             // Validate the published bounds using that same state instead of repeating all
@@ -100,8 +101,9 @@ fn check_bodies(
         // unresolved types must still be rejected before publishing their inferred effects.
         crate::compiler::profile::measure("types.finish", || checker.finish())
             .map_err(|e| vec![e])?;
-        for (function, (effects, suspends)) in inferred {
+        for (function, (effects, suspends, result_effects)) in inferred {
             let definition = &mut hir.functions[function];
+            definition.result_effects = result_effects;
             if !definition.effects_explicit
                 && (definition.effects != effects || definition.suspends != suspends)
             {
@@ -397,7 +399,7 @@ impl<'a> Checker<'a> {
             }
             // These summaries belong to this checker pass. Validation runs only after
             // inference converges, against exactly the contracts used for derivation.
-            let (actual, derived_suspends) = &self.derived_effects[&function];
+            let (actual, derived_suspends, _) = &self.derived_effects[&function];
             if !effects_are_subset(actual, &definition.effects) {
                 let missing = actual
                     .iter()
