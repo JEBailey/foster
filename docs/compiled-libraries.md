@@ -93,11 +93,11 @@ All integers are little endian. The file contains:
 | Field | Representation |
 | --- | --- |
 | Magic | 8 bytes, `FOSTERLB` |
-| Library format version | `u16`, currently 3 |
+| Library format version | `u16`, currently 4 |
 | Interface length | `u32` |
 | Interface | UTF-8 JSON declaration and symbolic metadata |
 | Code length | `u32` |
-| Code | Bytecode version 36, without inserted drops |
+| Code | Bytecode version 37, without inserted drops |
 
 Each section is limited to 256 MiB. Unsupported versions, truncated sections, trailing bytes,
 incomplete bindings, inconsistent function declarations/descriptors, and invalid bytecode are

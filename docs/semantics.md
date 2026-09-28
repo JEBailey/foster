@@ -75,7 +75,9 @@ including their ownership modes, effects, and suspension requirements. It does n
 inheritance. Adapting a value to a narrower contract must preserve its ownership and loan origins;
 the adaptation does not manufacture an independent owner. An intersection requires every component
 contract. Type definitions do not admit alternatives; a transparent alias names one target type.
-An enum has distinct cases and an optional single payload per case, constructed explicitly.
+An enum has distinct cases and zero or more positional payload values per case, constructed explicitly.
+Construction and branch patterns must match the declared number and types of parameters.
+Nested patterns and exhaustiveness checking account for all payload positions together.
 
 **S-05 — Generic and callable identity.** Generic substitution must preserve type relationships,
 parameter modes, effect substitutions, and borrower provenance. Specialization and representation
@@ -203,6 +205,13 @@ functions. Assertions and completed loops yield `()`. A guarded return's fallthr
 `()` when no subsequent statement supplies a result. Unconditional control transfers leave the
 body instead of manufacturing a result.
 
+A function or method with an explicit `-> ()` annotation evaluates and discards its implicit
+body result, as if followed by a final `()`. This also applies to nested named functions.
+Discarding a result does not skip evaluation, grant consumption rights, suppress effects or
+failures, or let a borrow escape. Ordinary expression-temporary and local cleanup still applies.
+Explicit returns remain checked against `()`. Result inference, anonymous closures, test bodies,
+and other result annotations are unchanged; this rule is not an implicit conversion to unit.
+
 Local record destructuring evaluates its source once and applies ordinary
 field-binding ownership in pattern order. Scalar fields copy, managed fields move,
 and omitted fields remain in the source. Computed sources live until scope exit;
@@ -216,7 +225,10 @@ arm. If no condition matches, it completes with unit and no arm body runs.
 The implicit arm participates in result typing, ownership, and initialization
 checks; value-producing arms must be compatible with unit. Subject branches
 retain their exhaustiveness requirements.
-Enum coverage must account for refutable payload patterns, not merely mention each case name.
+Coverage combines Boolean cases, enum payload patterns, and record field combinations
+across arms. Enum coverage accounts for refutable payload patterns, not merely each
+case name. Missing combinations are diagnosed; open literal domains and structural
+type tests still require a covering fallback.
 Record branch patterns test accessible stored fields and bind only on success;
 failed nested patterns expose none of their tentative bindings. A record pattern
 with only irrefutable field patterns covers its record type, including when nested
@@ -328,9 +340,10 @@ preserves the resulting callable's ownership and effect requirements.
 operand once: `Ok(value)` yields the payload; `Error(error)` returns an error from the enclosing
 function. That function must return `Result<U, E>` with the same error type. `try` does not catch
 panics, assertions, bounds failures, arithmetic failures, or arbitrary host exceptions.
-`try<Case>` generalizes this selection to an enum: it yields that case's payload
-(or unit) and propagates every other case by name into the return enum. All
-propagated payload types must match; no conversion is implicit. The operand is
+`try<Case>` generalizes this selection to an enum: the selected case must have zero
+or one parameter and yields its payload (or unit). Use `branch` to extract several
+parameters. Every other case propagates by name into the return enum, carrying all
+its values. Propagated payload counts and types must match in order; no conversion is implicit. The operand is
 consumed once, and only the chosen success path continues execution.
 
 

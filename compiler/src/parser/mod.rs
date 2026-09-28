@@ -5,8 +5,8 @@ use crate::lexer::{Token, TokenKind};
 mod cursor;
 mod declarations;
 mod expressions;
-mod iteration;
 mod interpolation;
+mod iteration;
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, FosterError> {
     Parser::new(tokens).program()

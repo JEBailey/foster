@@ -85,8 +85,6 @@ impl Checker<'_> {
         function: FunctionId,
         pattern: &hir::Pattern,
         expected: Ty,
-        covered: &mut std::collections::HashSet<hir::VariantId>,
-        catch_all: &mut bool,
         top_level: bool,
     ) -> Result<(), FosterError> {
         match pattern.unspanned() {
@@ -132,26 +130,16 @@ impl Checker<'_> {
                                 error
                             }
                         })?;
-                    self.check_pattern(function, pattern, ty, covered, catch_all, false)?;
-                }
-                if top_level && fields.iter().all(|(_, p)| pattern_is_irrefutable(p)) {
-                    *catch_all = true;
+                    self.check_pattern(function, pattern, ty, false)?;
                 }
             }
-            hir::Pattern::Wildcard => {
-                if top_level {
-                    *catch_all = true;
-                }
-            }
+            hir::Pattern::Wildcard => {}
             hir::Pattern::Binding(local) => {
                 let expected = self.resolved(expected);
                 if let Some(group) = reference_group(&expected) {
                     self.local_groups.insert(*local, group);
                 }
                 self.locals.insert(*local, expected);
-                if top_level {
-                    *catch_all = true;
-                }
             }
             hir::Pattern::Bool(_) => self.unify(expected, Ty::Bool, function)?,
             hir::Pattern::Integer(_) => self.unify(expected, Ty::Int, function)?,
@@ -162,7 +150,7 @@ impl Checker<'_> {
             hir::Pattern::Variant { variant, fields } => {
                 let definition = self.hir.variants[*variant].clone();
                 let parent = self.hir.variant_types[definition.parent].clone();
-                let payload_count = usize::from(definition.payload.is_some());
+                let payload_count = definition.payload.len();
                 if fields.len() != payload_count {
                     return Err(self.error(
                         function,
@@ -186,12 +174,10 @@ impl Checker<'_> {
                     .map(|p| generics[p].clone())
                     .collect();
                 self.unify(expected, Ty::Variant(definition.parent, args), function)?;
-                if top_level && fields.iter().all(pattern_is_irrefutable) {
-                    covered.insert(*variant);
-                }
+
                 for (field, annotation) in fields.iter().zip(definition.payload.iter()) {
                     let ty = self.annotation_type(parent.module, annotation, &generics)?;
-                    self.check_pattern(function, field, ty, covered, catch_all, false)?;
+                    self.check_pattern(function, field, ty, false)?;
                 }
             }
             hir::Pattern::Spanned { .. } => unreachable!("patterns are unwrapped above"),

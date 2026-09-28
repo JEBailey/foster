@@ -247,7 +247,7 @@ func main() -> Int { observe(ref (make())) }
 fn round_trips_generic_aggregate_layout_metadata() {
     let source = r#"
 type Box<T> = { value: T }
-enum Maybe<T> = None | Some(T)
+enum Maybe<T> = None | Some(T, Int)
 
 func make<T>(value: T) -> Box<T> { Box { value } }
 func main() -> Int { make(42).value }
@@ -275,7 +275,10 @@ func main() -> Int { make(42).value }
         .values()
         .find(|variant| variant.alternative.as_ref() == "Some")
         .unwrap();
-    assert_eq!(some.payload, vec![ExecutableType::Generic("T".into())]);
+    assert_eq!(
+        some.payload,
+        vec![ExecutableType::Generic("T".into()), ExecutableType::Integer]
+    );
     assert_eq!(some.parameters, vec!["T"]);
     let make = program
         .functions

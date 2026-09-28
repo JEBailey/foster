@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 36; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 37; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -186,7 +186,8 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 36 readers accept only version 36 with zero flags. Borrowed pattern subjects
+Version 37 readers accept only version 37 with zero flags. Enum metadata and construction
+support multiple positional payload values. Borrowed pattern subjects
 produce bindings projected into the original storage, including nested enum payloads.
 String accessors use Foster
 grapheme algorithms, and strings implement `Sequence<String>`; scalar-based artifacts

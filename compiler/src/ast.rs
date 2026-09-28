@@ -74,7 +74,7 @@ pub enum VariantAlternative {
     EnumCase {
         span: std::ops::Range<usize>,
         name: String,
-        payload: Option<TypeExpr>,
+        payload: Vec<TypeExpr>,
     },
 }
 

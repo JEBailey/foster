@@ -888,7 +888,7 @@ impl<'a> Builder<'a> {
             None
         };
 
-        let cfg = crate::control_flow::BranchCfg::new(arms);
+        let cfg = crate::control_flow::BranchCfg::new(arms, subject.is_some());
         let blocks = cfg.nodes().map(|_| self.block()).collect::<Vec<_>>();
         if let Some(subject) = boolean_subject {
             let target = |value| {
@@ -958,7 +958,11 @@ impl<'a> Builder<'a> {
                                         ]));
                                     }
                                 }
-                                hir::Pattern::Variant { variant, .. } => {
+                                hir::Pattern::Variant { variant, fields }
+                                    if fields
+                                        .iter()
+                                        .all(crate::control_flow::pattern_is_irrefutable) =>
+                                {
                                     if let Some(subject) =
                                         subject.and_then(|subject| self.owned_place(subject))
                                     {
@@ -1004,6 +1008,10 @@ impl<'a> Builder<'a> {
                     {
                         self.terminate(Terminator::Goto(blocks[completed.0]));
                     }
+                }
+                crate::control_flow::BranchNode::Unmatched => {
+                    self.current = blocks[node_id.0];
+                    self.terminate(Terminator::Unreachable);
                 }
                 crate::control_flow::BranchNode::Exit => {}
             }

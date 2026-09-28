@@ -632,6 +632,14 @@ fn enum_payloads_are_relocated() {
 }
 
 #[test]
+fn enum_parameters_are_relocated() {
+    let w = Workspace::new();
+    w.library("pub type Item = { pub value: Int }\npub enum Choice<T> = Value(T, Item) | Empty\npub func boxed(x: Int) -> Choice<Int> { Choice.Value(x, Item { value: 22 }) }");
+    let app = w.consumer("import api\nenum Earlier = A | B\nfunc main() -> Int { branch boxed(20) { Choice.Value(a, { value: b }) -> a + b\nChoice.Empty -> 0 } }").unwrap();
+    assert_eq!(run(&app), Value::Integer(42));
+}
+
+#[test]
 fn imported_code_builds_as_native() {
     let w = Workspace::new();
     w.library("func bump(x: Int) -> Int { x + 1 }\npub func identity<T>(x: T) -> T [consume x] { x }\npub func multiplier(factor: Int) -> func(Int) -> Int { (x: Int) -> factor * bump(x) }");

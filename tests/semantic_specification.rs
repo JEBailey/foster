@@ -19,7 +19,8 @@ fn semantic_specification_has_unique_ordered_rule_ids() {
         .filter_map(|line| line.strip_prefix("**S-"))
         .map(|line| line.split_whitespace().next().unwrap())
         .collect::<Vec<_>>();
-    let expected = (1..=22).map(|id| format!("{id:02}")).collect::<Vec<_>>();
+    let mut expected = (1..=22).map(|id| format!("{id:02}")).collect::<Vec<_>>();
+    expected.insert(12, "12a".to_owned());
     assert_eq!(identifiers, expected);
 }
 

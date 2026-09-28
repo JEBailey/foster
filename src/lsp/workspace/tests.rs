@@ -858,7 +858,7 @@ fn alias_hover_renders_its_single_target_type() {
 #[test]
 fn enum_hover_renders_case_labels_and_payload_types() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = r#"enum Option<T> = Some(T)
+    let source = r#"enum Option<T> = Some(T, Int)
     | None
 "#;
     workspace.open(uri.clone(), source.into(), 2);
@@ -877,7 +877,11 @@ fn enum_hover_renders_case_labels_and_payload_types() {
         "{}",
         contents.value
     );
-    assert!(contents.value.contains("Some(T)"), "{}", contents.value);
+    assert!(
+        contents.value.contains("Some(T, Int)"),
+        "{}",
+        contents.value
+    );
     assert!(contents.value.contains("| None"), "{}", contents.value);
 }
 

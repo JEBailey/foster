@@ -614,7 +614,7 @@ fn variant_alternative_signature(
 ) -> String {
     if let Some(member) = &alternative.member {
         links.source(member)
-    } else if alternative.payload.is_none() {
+    } else if alternative.payload.is_empty() {
         alternative.name.clone()
     } else {
         format!(
@@ -624,8 +624,8 @@ fn variant_alternative_signature(
                 .payload
                 .iter()
                 .map(|ty| links.source(ty))
-                .next()
-                .expect("a payload-bearing enum case has a payload type")
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     }
 }

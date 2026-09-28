@@ -1,0 +1,55 @@
+import core.drop
+
+type Resource = & Drop & {
+    id: Int
+}
+impl Resource {
+    func deinit(self) -> () {
+        println(self.id)
+    }
+}
+func temporary() -> () {
+    Resource {
+        id: 1
+    }
+}
+func local() -> () {
+    let item = Resource {
+        id: 2
+    }
+}
+func moved() -> () {
+    let item = Resource {
+        id: 3
+    }
+    move item
+}
+func borrowed(item: Resource) -> () {
+    item
+}
+func make() -> Resource {
+    Resource {
+        id: 5
+    }
+}
+func called() -> () {
+    make()
+}
+func main() -> Int {
+    temporary()
+    println(10)
+    local()
+    println(20)
+    moved()
+    println(30)
+    called()
+    println(50)
+    :borrow {
+        let item = Resource {
+            id: 4
+        }
+        borrowed(item)
+        println(40)
+    }
+    42
+}

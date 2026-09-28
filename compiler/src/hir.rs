@@ -109,7 +109,7 @@ pub struct Variant {
     pub parent: VariantTypeId,
     pub member: Option<ast::TypeExpr>,
     pub name: String,
-    pub payload: Option<ast::TypeExpr>,
+    pub payload: Vec<ast::TypeExpr>,
 }
 
 #[derive(Debug, Clone)]

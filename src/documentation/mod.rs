@@ -39,6 +39,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn enum_parameters_appear_in_documentation() {
+        let compilation = crate::compile("pub enum Event = Created(Int, Bool) | Finished").unwrap();
+        let site = render::site(&compilation).unwrap();
+        assert!(
+            site.modules
+                .iter()
+                .any(|page| page.html.contains("Created(Int, Bool)"))
+        );
+    }
+
+    #[test]
     fn foster_writer_reports_counts_and_filesystem_errors() {
         let root = std::env::temp_dir().join(format!(
             "foster-documentation-writer-{}-{}",

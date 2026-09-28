@@ -58,7 +58,8 @@ func multiplier(factor: Int) {
 ```
 
 Like every other statement in a Foster block, a nested function declaration has a value. Its value
-is the function it declares, so a declaration in final position is the block's implicit result. A
+is the function it declares, so a declaration in final position is the block's implicit result.
+An enclosing function explicitly declared `-> ()` discards that implicit result. A
 nested function with no captures lowers to an ordinary function item.
 
 ### Explicit capture clauses

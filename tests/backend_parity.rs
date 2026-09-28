@@ -2969,3 +2969,63 @@ fn parameter_storage_groups_on_both_backends() {
         Ok("42"),
     );
 }
+
+#[test]
+fn expanded_branch_coverage_agrees_in_both_backends() {
+    check(
+        "branch-coverage",
+        include_str!("fixtures/programs/branch_coverage.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn unit_results_agree_in_both_backends() {
+    check(
+        "explicit-unit-results",
+        include_str!("fixtures/programs/explicit_unit_results.fos"),
+        Ok("42"),
+    );
+    check(
+        "unit-result-failure",
+        "func stopped() -> () { panic(\"unit result failure\") }\nfunc main() -> Int { stopped()\n42 }",
+        Err("unit result failure"),
+    );
+}
+
+#[test]
+fn unit_results_preserve_cleanup() {
+    check_stdout(
+        "unit-result-cleanup",
+        include_str!("fixtures/programs/unit_result_cleanup.fos"),
+        "1\n10\n2\n20\n3\n30\n5\n50\n40\n4\n42",
+    );
+}
+
+#[test]
+fn enum_parameters_agree_in_both_backends() {
+    check(
+        "enum-parameters",
+        include_str!("fixtures/programs/enum_parameters.fos"),
+        Ok("42"),
+    );
+    check_stdout(
+        "enum-parameter-cleanup",
+        include_str!("fixtures/programs/enum_parameter_cleanup.fos"),
+        "1\n1\n10\n2\n2\n20\n42",
+    );
+}
+
+#[test]
+fn enum_parameter_examples_agree_in_both_backends() {
+    check(
+        "enum-linked-list",
+        include_str!("../examples/linked_list.fos"),
+        Ok("13"),
+    );
+    check_stdout(
+        "enum-showcase",
+        include_str!("../examples/showcase/enums.fos"),
+        "Ada scored 42\nError: missing score\n42",
+    );
+}

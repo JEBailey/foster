@@ -642,15 +642,8 @@ func main() -> Int { describe(Foo.FooBar("Foster")) }
 }
 
 #[test]
-fn enum_cases_carry_at_most_one_payload_type() {
-    let error = foster::compile("enum Pair = Together(Int, String)\n").unwrap_err();
-    assert!(
-        error
-            .message
-            .contains("an enum case carries one payload type"),
-        "{}",
-        error.message
-    );
+fn enum_cases_carry_multiple_payload_types() {
+    foster::compile("enum Pair = Together(Int, String)\n").unwrap();
 }
 
 #[test]

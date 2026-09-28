@@ -1,0 +1,75 @@
+enum Maybe<T> = Some(T) | None
+type Flags = {
+    first: Bool, second: Bool
+}
+
+func boolean(value: Bool) -> Int {
+    branch value {
+        true -> 1
+        false -> 2
+    }
+}
+func nested(value: Maybe<Maybe<Bool>>) -> Int {
+    branch value {
+        Maybe.Some(Maybe.Some(true)) -> 3
+        Maybe.Some(Maybe.Some(false)) -> 4
+        Maybe.Some(Maybe.None) -> 5
+        Maybe.None -> 6
+    }
+}
+func record(value: Flags) -> Int {
+    branch value {
+        {
+            first: true
+        } -> 7
+        {
+            second: true, first: false
+        } -> 8
+        {
+            first: false, second: false
+        } -> 9
+    }
+}
+func borrowed(value: ref[value] Maybe<Bool>) -> Int {
+    branch value {
+        Maybe.Some(true) -> 10
+        Maybe.Some(false) -> 11
+        Maybe.None -> 12
+    }
+}
+func inferred(value: Maybe<Bool>) {
+    branch value {
+        Maybe.Some(true) -> 13
+        Maybe.Some(false) -> 14
+        Maybe.None -> 15
+    }
+}
+func main() -> Int {
+    assert(boolean(true) == 1 && boolean(false) == 2)
+    assert(nested(Maybe.Some(Maybe.Some(true))) == 3)
+    assert(nested(Maybe.Some(Maybe.Some(false))) == 4)
+    assert(nested(Maybe.Some(Maybe.None)) == 5)
+    assert(nested(Maybe.None) == 6)
+    assert(record(Flags {
+        first: true, second: false
+    }) == 7)
+    assert(record(Flags {
+        first: true, second: true
+    }) == 7)
+    assert(record(Flags {
+        first: false, second: true
+    }) == 8)
+    assert(record(Flags {
+        first: false, second: false
+    }) == 9)
+    let value = Maybe.Some(true)
+    assert(borrowed(ref value) == 10)
+    value = Maybe.Some(false)
+    assert(borrowed(ref value) == 11)
+    value = Maybe.None
+    assert(borrowed(ref value) == 12)
+    assert(inferred(Maybe.Some(true)) == 13)
+    assert(inferred(Maybe.Some(false)) == 14)
+    assert(inferred(Maybe.None) == 15)
+    42
+}

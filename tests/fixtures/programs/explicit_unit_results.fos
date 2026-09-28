@@ -1,0 +1,83 @@
+type Counter = {
+    value: Int
+}
+impl Counter {
+    func increment(self) -> () [mut self] {
+        self.value = self.value + 1
+    }
+}
+func literal() -> () {
+    42
+}
+func scoped() -> () {
+    :value {
+        42
+    }
+}
+func declaration() -> () {
+    func inner() -> Int {
+        42
+    }
+}
+func binding() -> () {
+    let value = 42
+}
+func assigned() -> () {
+    let value = 0
+    value = 42
+}
+func result(counter: Counter) -> Int [mut counter] {
+    counter.value = counter.value + 1
+    counter.value
+}
+func call(counter: Counter) -> () [mut counter] {
+    result(counter)
+}
+func selected(counter: Counter, flag: Bool) -> () [mut counter] {
+    branch flag {
+        true -> result(counter)
+        false -> 0
+    }
+}
+func guarded(counter: Counter, skip: Bool) -> () [mut counter] {
+    return () if skip
+    counter.value = counter.value + 1
+}
+func local_borrow() -> () {
+    let local = Counter {
+        value: 42
+    }
+    ref local
+}
+func inferred() {
+    let value = 42
+}
+func nested(counter: Counter) -> () [mut counter] {
+    func increment(value: Counter) -> () {
+        value.value = value.value + 1
+    }
+    increment(counter)
+}
+func main() -> Int {
+    assert(literal() == ())
+    assert(scoped() == ())
+    assert(declaration() == ())
+    assert(binding() == ())
+    assert(assigned() == ())
+    assert(local_borrow() == ())
+    let counter = Counter {
+        value: 0
+    }
+    assert(counter.increment() == ())
+    assert(call(counter) == ())
+    assert(selected(counter, true) == ())
+    assert(selected(counter, false) == ())
+    assert(guarded(counter, true) == ())
+    assert(guarded(counter, false) == ())
+    assert(nested(counter) == ())
+    assert(counter.value == 5)
+    assert(inferred() == 42)
+    let closure = () -> 42
+    assert(closure() == 42)
+    42
+}

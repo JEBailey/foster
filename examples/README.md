@@ -49,7 +49,7 @@ EOF, and the Foster-written `stream::copy` algorithm.
 error is returned immediately, even when the operation and enclosing function have different
 success types. Its endpoint and error messages use triple-quoted interpolation.
 
-`linked_list.fos` implements an owned generic linked list as a recursive variant, including
+`linked_list.fos` implements an owned generic linked list with `Node(value, next)` enum parameters, including
 constant-time prepend/pop, reverse, map, fold, and conversion to the built-in list type.
 
 ## Focused capability showcase
@@ -60,7 +60,7 @@ The programs in `showcase/` are small, directly runnable demonstrations:
 | --- | --- |
 | `accounts_pipeline.fos` | Records, enums, methods, closures, and lazy iterator pipelines |
 | `closures.fos` | Nested, captured, and returned closures |
-| `enums.fos` | Enum construction and exhaustive pattern matching |
+| `enums.fos` | Multiple enum parameters and exhaustive pattern matching |
 | `float_recursion.fos` | Recursive floating-point computation |
 | `function_selection.fos` | Selecting ordinary functions through a shared callable type |
 | `generic_records.fos` | Generic record construction and access |

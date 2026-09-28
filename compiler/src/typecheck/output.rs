@@ -118,18 +118,18 @@ impl Checker<'_> {
                 .collect::<HashMap<_, _>>();
             let payload = variant
                 .payload
-                .as_ref()
+                .iter()
                 .map(|annotation| self.annotation_type(parent.module, annotation, &generics))
-                .transpose()?
-                .map(|ty| intern_type(&mut information, &mut interner, ty));
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|ty| intern_type(&mut information, &mut interner, ty))
+                .collect::<Vec<_>>();
+            information
+                .variant_field_types
+                .entry(variant.parent)
+                .or_default()
+                .extend(payload.iter().copied());
             information.variant_payloads.insert(variant_id, payload);
-            if let Some(payload) = payload {
-                information
-                    .variant_field_types
-                    .entry(variant.parent)
-                    .or_default()
-                    .push(payload);
-            }
         }
 
         for (expression, ty) in &self.expressions {

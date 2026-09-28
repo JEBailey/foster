@@ -102,14 +102,7 @@ impl Checker<'_> {
             } => {
                 let ty = self.infer_expression(function, *value)?;
                 self.locals.insert(*owner, ty.clone());
-                self.check_pattern(
-                    function,
-                    pattern,
-                    ty,
-                    &mut Default::default(),
-                    &mut false,
-                    true,
-                )?;
+                self.check_pattern(function, pattern, ty, true)?;
                 Ok(Some(Ty::Unit))
             }
             hir::Stmt::Return {
@@ -459,9 +452,7 @@ impl Checker<'_> {
                 .map(|subject| self.infer_expression(function, subject))
                 .transpose()?;
             let mut yields = false;
-            let mut covered = std::collections::HashSet::new();
-            let mut catch_all = false;
-            for arm in arms {
+            for arm in &arms {
                 if let hir::BranchTest::Condition(condition) = arm.test {
                     let condition = self.infer_expression(function, condition)?;
                     self.unify(Ty::Bool, condition, function)?;
@@ -470,8 +461,6 @@ impl Checker<'_> {
                         function,
                         pattern,
                         subject_ty.clone().expect("pattern branch has subject"),
-                        &mut covered,
-                        &mut catch_all,
                         true,
                     )?;
                 }
@@ -486,19 +475,8 @@ impl Checker<'_> {
                     self.unify(expected.clone(), value, function)?;
                 }
             }
-            if let Some(Ty::Variant(parent, _)) = subject_ty.map(|ty| self.resolved(ty)) {
-                let required = self.hir.variant_types[parent].alternatives.len();
-                if !catch_all && covered.len() != required {
-                    return Err(self.error(
-                        function,
-                        format!(
-                            "non-exhaustive branch on `{}`",
-                            self.hir.variant_types[parent].name
-                        ),
-                    ));
-                }
-            } else if subject.is_some() && !catch_all {
-                return Err(self.error(function, "pattern branch requires `_` for exhaustiveness"));
+            if let Some(subject_ty) = subject_ty {
+                self.check_branch_coverage(function, subject_ty, &arms)?;
             }
             let result = if yields { expected } else { Ty::Never };
             self.expressions.insert(expression_id, result.clone());
@@ -780,11 +758,12 @@ impl Checker<'_> {
                     .cloned()
                     .zip(arguments)
                     .collect::<HashMap<_, _>>();
-                let success = match self.hir.variants[selected].payload.clone() {
-                    Some(annotation) => {
-                        self.annotation_type(definition.module, &annotation, &generics)?
+                let success = match self.hir.variants[selected].payload.clone().as_slice() {
+                    [annotation] => {
+                        self.annotation_type(definition.module, annotation, &generics)?
                     }
-                    None => Ty::Unit,
+                    [] => Ty::Unit,
+                    _ => return Err(self.error(function, "`try<Variant>` cannot unwrap multiple payload values; use `branch` to extract them")),
                 };
                 let mut returned = self.resolved(self.functions[&function].result.clone());
                 if matches!(returned, Ty::Variable(_)) {
@@ -827,15 +806,19 @@ impl Checker<'_> {
                                 ),
                             )
                         })?;
-                    match (case.payload, self.hir.variants[target].payload.clone()) {
-                        (Some(source), Some(target)) => {
-                            let source = self.annotation_type(definition.module, &source, &generics)?;
-                            let target = self.annotation_type(output_definition.module, &target, &output_generics)?;
-                            self.unify(source, target, function).map_err(|_| self.error(function,
+                    let target_payload = self.hir.variants[target].payload.clone();
+                    if case.payload.len() != target_payload.len() {
+                        return Err(self.error(function, format!("`try<{variant}>` requires matching payloads for propagated variant `{}`", case.name)));
+                    }
+                    for (source, target) in case.payload.iter().zip(&target_payload) {
+                        let source = self.annotation_type(definition.module, source, &generics)?;
+                        let target = self.annotation_type(
+                            output_definition.module,
+                            target,
+                            &output_generics,
+                        )?;
+                        self.unify(source, target, function).map_err(|_| self.error(function,
                                 format!("`try<{variant}>` requires matching payload types for propagated variant `{}`", case.name)))?;
-                        }
-                        (None, None) => {}
-                        _ => return Err(self.error(function, format!("`try<{variant}>` requires matching payloads for propagated variant `{}`", case.name))),
                     }
                 }
                 self.locals.insert(binding, success.clone());
@@ -933,9 +916,7 @@ impl Checker<'_> {
                     .map(|s| self.infer_expression(function, s))
                     .transpose()?;
                 let mut yields = false;
-                let mut covered = std::collections::HashSet::new();
-                let mut catch_all = false;
-                for arm in arms {
+                for arm in &arms {
                     if let hir::BranchTest::Condition(condition) = arm.test {
                         let condition = self.infer_expression(function, condition)?;
                         self.unify(Ty::Bool, condition, function)?;
@@ -944,8 +925,6 @@ impl Checker<'_> {
                             function,
                             pattern,
                             subject_ty.clone().expect("pattern branch has subject"),
-                            &mut covered,
-                            &mut catch_all,
                             true,
                         )?;
                     }
@@ -960,21 +939,8 @@ impl Checker<'_> {
                         self.unify(result.clone(), value, function)?;
                     }
                 }
-                if let Some(Ty::Variant(parent, _)) = subject_ty.map(|t| self.resolved(t)) {
-                    let expected = self.hir.variant_types[parent].alternatives.len();
-                    if !catch_all && covered.len() != expected {
-                        return Err(self.error(
-                            function,
-                            format!(
-                                "non-exhaustive branch on `{}`",
-                                self.hir.variant_types[parent].name
-                            ),
-                        ));
-                    }
-                } else if subject.is_some() && !catch_all {
-                    return Err(
-                        self.error(function, "pattern branch requires `_` for exhaustiveness")
-                    );
+                if let Some(subject_ty) = subject_ty {
+                    self.check_branch_coverage(function, subject_ty, &arms)?;
                 }
                 if yields { result } else { Ty::Never }
             }
@@ -1315,7 +1281,7 @@ impl Checker<'_> {
                         .map(|p| generics[p].clone())
                         .collect(),
                 );
-                if definition.payload.is_none() {
+                if definition.payload.is_empty() {
                     result
                 } else {
                     Ty::Function(

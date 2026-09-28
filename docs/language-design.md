@@ -134,7 +134,14 @@ result: expressions provide their value, bindings and assignments provide the bo
 value, and nested function declarations provide the declared function. Assertions and completed
 loops provide `()`. Empty function, method, closure, and test bodies also produce `()`.
 A guarded return that does not transfer control and has no following result produces `()`;
-use `return ()` for an explicit early unit return. Declared result types must match these values.
+use `return ()` for an explicit early unit return. A function or method explicitly declared
+`-> ()`, including a nested named function, evaluates and discards its implicit body result.
+It does not need a trailing `()` after an assignment, binding, or value-producing expression.
+This is equivalent to appending `()` to the body: evaluation, effects, moves, temporary cleanup,
+and failure propagation still occur normally. Explicit `return value` statements must match
+the declared result type. Inferred results, anonymous closures, test declarations, and functions
+with other result annotations keep their ordinary result rules; there is no general conversion
+from a value to unit.
 
 Assignment evaluates its complete right-hand expression before evaluating the left-hand place.
 The destination is then evaluated exactly once and replaced. For example,
@@ -631,8 +638,8 @@ func length(value: TextOrBytes) -> Int {
 }
 ```
 
-Tagged cases use a distinct `enum` declaration. Each case has a label and optionally carries one
-explicit payload type:
+Tagged cases use a distinct `enum` declaration. Each case has a label and zero or more
+positional payload types:
 
 ```foster
 enum Result<T, E> = Ok(T)
@@ -640,8 +647,13 @@ enum Result<T, E> = Ok(T)
 ```
 
 The labels are scoped enum cases, not names of other types. `Ok(T)` declares a case named `Ok`
-whose payload is a `T`; `None` declares a payloadless case. Multiple related fields are grouped in
-a record and carried as that one record value. Enums synthesize explicit
+whose payload is a `T`; `None` declares a payloadless case. A declaration such as
+`enum Event = Created(String, Int) | Finished` carries two values in `Created`.
+Construct it with `Event.Created("report.txt", 42)` and extract its values with
+`Event.Created(path, bytes)` in a subject branch. Each position accepts a binding,
+wildcard, or nested pattern, and construction and matching require the declared arity.
+Parameters are evaluated in source order and follow ordinary payload ownership rules.
+Record payloads remain useful for named fields and reusable data. Enums synthesize explicit
 constructors such as `Result.Ok(value)` and `Result.Error(error)`. Constructors insert a runtime
 tag, and subject branches may match those tags exhaustively. Enum values are nominal, and generic
 arguments are inferred from construction, calls, and branch patterns.
@@ -701,10 +713,16 @@ branch result {
 ```
 
 The implemented patterns include enum-case patterns, record patterns, nested payload patterns,
-bindings, `_`, and Bool, Int, Float, String, and Symbol literals. Branches over enum types are
-checked for exhaustiveness. An enum case is covered only when all of its nested patterns are
-irrefutable bindings, `_`, or records containing only irrefutable field patterns; for example, `Some(value)` covers `Some(T)`, while `Some(0)` does not.
+bindings, `_`, and Bool, Int, Float, String, and Symbol literals. Coverage combines
+all arms recursively: `true` and `false` cover Bool, and `Some(true)`, `Some(false)`,
+and `None` cover an optional Bool. Nested enum alternatives and combinations of
+record fields follow the same rule. Omitted record fields are unconstrained;
+coverage must include every combination, not merely each field value separately.
 A top-level binding, `_`, or irrefutable record pattern is a catch-all.
+Incomplete matches report a missing pattern. Numeric, text, and other open literal
+domains still need a covering binding or `_`; structural type tests do not establish
+exhaustiveness. Coverage does not assume a subject's current literal value or use
+arbitrary condition expressions to prove a subjectless branch complete.
 For example, `Match({ value, input: rest })` binds selected fields of an enum payload.
 `{ value: 0 }` tests a field and needs a later covering arm. Record branch bindings
 follow existing enum-pattern binding rules; testing the pattern does not consume
@@ -1431,7 +1449,9 @@ The language does not provide dedicated `throw` or typed error-effect syntax.
 name resolves against that enum, without importing its constructors. The selected
 case yields its payload, or `()` when payload-free. Every other case returns from
 the enclosing function: its return enum must declare a case with the same name
-and matching payload type (including the absence of a payload). Case order and
+and matching payload types in order (including the absence of payloads). The selected
+case must have zero or one parameter; use `branch` to extract multiple values.
+Non-selected cases propagate all their payload values. Case order and
 the two enums' selected/success payload types may differ. Propagation reconstructs
 the destination case; it performs no error conversion. Every nonselected case is
 checked, even when the operand is visibly constructed with the selected case.

@@ -1,0 +1,47 @@
+import core.drop
+
+type Item = & Drop & {
+    id: Int
+}
+impl Item {
+    func deinit(self) -> () {
+        println(self.id)
+    }
+}
+enum Pair = Items(Item, Item)
+enum Input = Good(Int) | Bad(Item, Item)
+enum Output = Good(Int) | Bad(Item, Item)
+
+func propagate(value: Input) -> Output [consume value] {
+    Output.Good(try<Good> move value)
+}
+func main() -> Int {
+    :direct {
+        let pair = Pair.Items(Item {
+            id: 1
+        }, Item {
+            id: 1
+        })
+        branch pair {
+            Pair.Items(first, second) -> {
+                assert(first.id + second.id == 2)
+            }
+        }
+    }
+    println(10)
+    :propagated {
+        let result = propagate(Input.Bad(Item {
+            id: 2
+        }, Item {
+            id: 2
+        }))
+        branch result {
+            Output.Bad(first, second) -> {
+                assert(first.id + second.id == 4)
+            }
+            Output.Good(_) -> panic("expected failure")
+        }
+    }
+    println(20)
+    42
+}

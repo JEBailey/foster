@@ -85,7 +85,7 @@ impl PackageHir {
                             span.clone(),
                             Some(ty.clone()),
                             variant_member_name(ty),
-                            None,
+                            Vec::new(),
                         ),
                         ast::VariantAlternative::EnumCase {
                             span,

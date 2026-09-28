@@ -2014,7 +2014,7 @@ fn variant_signature(
             let alternative = &compilation.hir.variants[*alternative];
             let member = if let Some(member) = &alternative.member {
                 display_type_expr(member)
-            } else if alternative.payload.is_none() {
+            } else if alternative.payload.is_empty() {
                 alternative.name.clone()
             } else {
                 format!(
@@ -2024,8 +2024,8 @@ fn variant_signature(
                         .payload
                         .iter()
                         .map(display_type_expr)
-                        .next()
-                        .expect("a payload-bearing enum case has a payload type")
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             };
             if index == 0 && variant.kind == crate::ast::VariantKind::Enum {

@@ -75,7 +75,7 @@ storage and borrowing contract than the proposed list-backed arena.
   turbofish. Leave the spelling open; use cases include result-only type parameters and empty
   collections whose element types cannot be inferred. Reuse generic substitution and structural
   constraint checking without introducing overload selection based solely on return types.
-- Add record and list patterns, pattern-branch guards, and more precise exhaustiveness checking for literal
+- Add list patterns, pattern-branch guards, and more precise exhaustiveness checking for open literal
   domains.
 - Design functional record updates.
 - Design distinct nominal wrapper declarations beyond the transparent aliases.

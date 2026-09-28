@@ -291,19 +291,20 @@ impl Parser {
                         if self.at(&TokenKind::RParen) {
                             return Err(self.error("a payloadless enum case omits parentheses"));
                         }
-                        let payload = self.type_expr()?;
-                        if self.at(&TokenKind::Comma) {
-                            return Err(self.error(
-                                "an enum case carries one payload type; use a record type to carry multiple fields",
-                            ));
+                        let mut payload = vec![self.type_expr()?];
+                        while self.take(&TokenKind::Comma) {
+                            if self.at(&TokenKind::RParen) {
+                                break;
+                            }
+                            payload.push(self.type_expr()?);
                         }
                         self.expect(
                             &TokenKind::RParen,
                             "expected `)` after enum case payload type",
                         )?;
-                        Some(payload)
+                        payload
                     } else {
-                        None
+                        Vec::new()
                     };
                     VariantAlternative::EnumCase {
                         span: member_start..self.tokens[self.current.saturating_sub(1)].range.end,

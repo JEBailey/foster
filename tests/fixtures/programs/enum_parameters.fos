@@ -1,0 +1,88 @@
+enum Event = Created(String, Int) | Finished
+enum Pair<A, B> = Values(A, B)
+enum Bit = On | Off
+enum Flags = Both(Bool, Bit)
+enum Input = Good(Int) | Bad(String, Int)
+enum Output = Good(Int) | Bad(String, Int) | Empty
+type Item = {
+    value: Int
+}
+enum Stored = Items(Item, Item)
+enum Triple = Values(Int, Int, Int)
+type Counter = {
+    value: Int
+}
+
+func next(counter: Counter) -> Int [mut counter] {
+    counter.value = counter.value + 1
+}
+
+func size(event: Event) -> Int {
+    branch event {
+        Event.Created(_, bytes) -> bytes
+        Event.Finished -> 0
+    }
+}
+func classify(value: Flags) -> Int {
+    branch value {
+        Flags.Both(true, Bit.On) -> 1
+        Flags.Both(true, Bit.Off) -> 2
+        Flags.Both(false, _) -> 3
+    }
+}
+func propagate(value: Input) -> Output [consume value] {
+    let number = try<Good> move value
+    Output.Good(number)
+}
+func second(value: Stored) -> ref[value] Item {
+    branch value {
+        Stored.Items(_, item) -> ref item
+    }
+}
+func inspect(value: ref[value] Stored) -> Int {
+    branch value {
+        Stored.Items({
+            value: first
+        }, {
+            value: last
+        }) -> first + last
+    }
+}
+func main() -> Int {
+    let counter = Counter {
+        value: 0
+    }
+    let triple = Triple.Values(next(counter), next(counter), next(counter))
+    assert((branch triple {
+        Triple.Values(a, b, c) -> a * 100 + b * 10 + c
+    }) == 123)
+    assert(counter.value == 3)
+    assert(size(Event.Created("report.txt", 42)) == 42)
+    assert(size(Event.Finished) == 0)
+    let pair = Pair.Values(20, 22)
+    assert((branch pair {
+        Pair.Values(left, right) -> left + right
+    }) == 42)
+    assert(classify(Flags.Both(true, Bit.On)) == 1)
+    assert(classify(Flags.Both(true, Bit.Off)) == 2)
+    assert(classify(Flags.Both(false, Bit.On)) == 3)
+    let failure = propagate(Input.Bad("missing", 42))
+    assert((branch failure {
+        Output.Bad(message, code) -> code
+        _ -> 0
+    }) == 42)
+    let success = propagate(Input.Good(42))
+    assert((branch success {
+        Output.Good(number) -> number
+        _ -> 0
+    }) == 42)
+    let stored = Stored.Items(Item {
+        value: 20
+    }, Item {
+        value: 20
+    })
+    let item = second(stored)
+    item.value = 22
+    assert(inspect(ref stored) == 42)
+    42
+}

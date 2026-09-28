@@ -265,9 +265,9 @@ pub(crate) fn compile_with_locals(
                         .types
                         .variant_payloads
                         .get(&id)
-                        .and_then(|payload| *payload)
-                        .map(|ty| verification_type(&compilation.hir, &compilation.types, ty, 0))
                         .into_iter()
+                        .flatten()
+                        .map(|ty| verification_type(&compilation.hir, &compilation.types, *ty, 0))
                         .collect(),
                 },
             )

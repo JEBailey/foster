@@ -125,12 +125,6 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
         }
     }
     for variant in program.metadata.variants.values() {
-        if variant.payload.len() > 1 {
-            return Err(FosterError::runtime(format!(
-                "bytecode enum case `{}.{}` has more than one payload value",
-                variant.type_name, variant.alternative
-            )));
-        }
         for ty in &variant.payload {
             verify_metadata_type(program, ty, 0)?;
         }

@@ -6,6 +6,7 @@ mod composition;
 mod constants;
 mod constraints;
 mod context;
+mod coverage;
 mod effect_worklist;
 mod effects;
 mod expressions;
@@ -22,8 +23,8 @@ use context::*;
 use effects::EffectDerivation;
 use predicates::{
     FRAME_GROUP, callable_effects, callable_effects_are_subset, contains_variable,
-    effect_kind_name, effects_are_subset, function_parameter_modes, pattern_is_irrefutable,
-    reference_group, remote_transferable,
+    effect_kind_name, effects_are_subset, function_parameter_modes, reference_group,
+    remote_transferable,
 };
 
 use crate::ast::{BinaryOp, UnaryOp};

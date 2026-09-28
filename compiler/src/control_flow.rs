@@ -52,6 +52,8 @@ pub(crate) enum BranchNode {
         arm: usize,
         completed: Option<NodeId>,
     },
+    // A checked subject branch cannot reach this node.
+    Unmatched,
     Exit,
 }
 
@@ -63,15 +65,16 @@ pub(crate) struct BranchCfg {
 }
 
 impl BranchCfg {
-    pub fn new(arms: &[hir::BranchArm]) -> Self {
+    pub fn new(arms: &[hir::BranchArm], exhaustive: bool) -> Self {
         let arm_count = arms.len();
-        let exit = NodeId(arm_count * 2);
+        let unmatched = NodeId(arm_count * 2);
+        let exit = NodeId(unmatched.0 + usize::from(exhaustive));
         let mut nodes = Vec::with_capacity(exit.0 + 1);
         for (arm, branch_arm) in arms.iter().enumerate() {
             let next = if arm + 1 < arm_count {
                 NodeId((arm + 1) * 2)
             } else {
-                exit
+                unmatched
             };
             nodes.push(BranchNode::Test {
                 arm,
@@ -82,6 +85,9 @@ impl BranchCfg {
                 arm,
                 completed: summarize_arm(&branch_arm.body).yields_value.then_some(exit),
             });
+        }
+        if exhaustive {
+            nodes.push(BranchNode::Unmatched);
         }
         nodes.push(BranchNode::Exit);
         Self {
@@ -139,7 +145,7 @@ mod tests {
             test: hir::BranchTest::Wildcard,
             body: crate::block::Block::new(),
         }];
-        let cfg = BranchCfg::new(&arms);
+        let cfg = BranchCfg::new(&arms, false);
         assert_eq!(
             cfg.nodes().nth(cfg.entry().0).unwrap().1,
             BranchNode::Test {
@@ -163,7 +169,7 @@ mod tests {
             test: hir::BranchTest::Wildcard,
             body: crate::block::Block::single(hir::Stmt::Break { guard: None }, 0..0),
         }];
-        let cfg = BranchCfg::new(&arms);
+        let cfg = BranchCfg::new(&arms, false);
         assert_eq!(
             cfg.nodes().nth(1).unwrap().1,
             BranchNode::Body {
@@ -171,5 +177,16 @@ mod tests {
                 completed: None,
             }
         );
+    }
+}
+
+/// A failed nested literal test does not exclude its enclosing enum case.
+pub(crate) fn pattern_is_irrefutable(pattern: &hir::Pattern) -> bool {
+    match pattern.unspanned() {
+        hir::Pattern::Wildcard | hir::Pattern::Binding(_) => true,
+        hir::Pattern::Record { fields } => fields
+            .iter()
+            .all(|(_, field)| pattern_is_irrefutable(field)),
+        _ => false,
     }
 }

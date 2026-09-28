@@ -107,8 +107,10 @@ The answer is %answer%.
 
 `let` introduces a mutable binding. Assign with `=` afterward; do not redeclare
 the same binding to update it. Local types are inferred from expressions.
-Newlines separate statements. A block's final statement determines its result;
-use a final `()` when a function should return unit after an assignment.
+Newlines separate statements. A block's final statement normally determines its result.
+A function or method explicitly declared `-> ()` evaluates and discards its implicit
+result, so an assignment or call needs no trailing `()`. Explicit early returns still use
+`return ()`. Without a result annotation, keep a final `()` when unit is intended.
 
 Records use `type Name = { ... }`, construction uses `Name { field: value }`,
 and implementations use `impl Name { ... }`. Use `pub` on declarations and fields
@@ -127,7 +129,6 @@ type Counter = { value: Int }
 impl Counter {
     func increment(self) -> () [mut self] {
         self.value = self.value + 1
-        ()
     }
 }
 
@@ -150,7 +151,8 @@ func main() -> Int {
 
 `branch` chooses a value or statement block. Its conditions are checked in order;
 `_` is the fallback. Result-producing arms must have compatible types. A `Bool`
-subject match also needs `_` for exhaustiveness in the current compiler.
+subject match is exhaustive when it handles both `true` and `false`.
+Coverage also combines nested enum and record patterns across arms.
 
 A subjectless `branch { ... }` can omit `_` when its completing arms produce
 unit. No matching condition means do nothing and produce `()`, equivalent to
@@ -242,8 +244,25 @@ and `continue` keep their ordinary function and loop targets.
 
 ## Optional results, errors, and generic functions
 
-Enums use `enum Name = Case | Other(Payload)`. A case carries at most one payload
-type; use a record to package several fields. Match cases with `branch value`.
+Enums use `enum Name = Case | Other(Payload)`. Cases can carry several positional
+values: declare `Created(String, Int)`, construct `Event.Created("report.txt", 42)`,
+and match `Event.Created(path, bytes)` in `branch value`. Patterns must supply one
+pattern per parameter; use `_` for values you do not need. Use a record payload
+when named fields or a reusable data type are preferable.
+
+```foster
+enum Event = Created(String, Int) | Finished
+
+func size(event: Event) -> Int {
+    branch event {
+        Event.Created(_, bytes) -> bytes
+        Event.Finished -> 0
+    }
+}
+
+func main() -> Int { size(Event.Created("report.txt", 42)) }
+```
+
 Use `Option.Some(value)` / `Option.None` for absence and `Result.Ok(value)` /
 `Result.Error(error)` for recoverable failure. `null`, exceptions, and Rust-style
 `?` propagation are not replacements for these forms.
@@ -288,7 +307,10 @@ recoverable error. Generics use `<T>`; storage groups are named by parameters or
 
 Use `try<Case>` to unwrap a selected enum case and return any other case from the
 function. The return enum must accept every other case by name with the same
-payload type. A case without a payload yields `()`. The operand is consumed;
+payload types in the same order. A selected case without a payload yields `()`;
+a selected case with one payload yields that value. Use `branch` to extract a
+selected case with multiple parameters. Other cases may propagate multiple values.
+The operand is consumed;
 use `move` for an existing owned binding. Keep branches for recovery or adding
 error context.
 
@@ -329,7 +351,6 @@ type Counter = { value: Int }
 
 func bump(counter: ref[counter] Counter) -> () [mut counter] {
     counter.value = counter.value + 1
-    ()
 }
 
 func consume_length(text: String) -> Int [consume text] {

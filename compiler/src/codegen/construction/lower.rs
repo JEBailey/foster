@@ -335,7 +335,7 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Name(ResolvedName::Variant(variant)) => {
-                if self.hir.variants[*variant].payload.is_some() {
+                if !self.hir.variants[*variant].payload.is_empty() {
                     return Err(self.unsupported("unapplied enum case constructor"));
                 }
                 let destination = self.allocate();
@@ -831,7 +831,7 @@ impl FunctionCompiler<'_> {
                     .copied()
                     .find(|case| self.hir.variants[*case].name == selected_name)
                     .ok_or_else(|| self.unsupported("try success variant"))?;
-                let has_payload = self.hir.variants[ok].payload.is_some();
+                let has_payload = !self.hir.variants[ok].payload.is_empty();
                 let unwrapped = self.allocate();
                 self.locals.insert(*binding, unwrapped);
                 let matched = self.allocate();
@@ -887,8 +887,10 @@ impl FunctionCompiler<'_> {
                             .copied()
                             .find(|target| self.hir.variants[*target].name == definition.name)
                             .ok_or_else(|| self.unsupported("try propagated variant"))?;
-                        let payload_present = definition.payload.is_some();
-                        let payload = self.allocate();
+                        let payload_count = definition.payload.len();
+                        let payload = (0..payload_count)
+                            .map(|_| self.allocate())
+                            .collect::<Vec<_>>();
                         let matched = self.allocate();
                         self.emit(
                             Instruction::MatchPattern {
@@ -896,17 +898,9 @@ impl FunctionCompiler<'_> {
                                 subject: source,
                                 pattern: hir::Pattern::Variant {
                                     variant: case,
-                                    fields: if payload_present {
-                                        vec![hir::Pattern::Binding(*binding)]
-                                    } else {
-                                        vec![]
-                                    },
+                                    fields: vec![hir::Pattern::Binding(*binding); payload_count],
                                 },
-                                bindings: if payload_present {
-                                    vec![payload]
-                                } else {
-                                    vec![]
-                                },
+                                bindings: payload.clone(),
                             },
                             span.clone(),
                         );
@@ -923,11 +917,7 @@ impl FunctionCompiler<'_> {
                                 destination: propagated,
                                 variant: target,
                                 type_arguments: type_arguments.clone(),
-                                payload: if payload_present {
-                                    vec![payload]
-                                } else {
-                                    vec![]
-                                },
+                                payload,
                             },
                             span.clone(),
                         );
@@ -1450,7 +1440,7 @@ impl FunctionCompiler<'_> {
             })
             .transpose()?;
         let destination = self.allocate();
-        let cfg = crate::control_flow::BranchCfg::new(arms);
+        let cfg = crate::control_flow::BranchCfg::new(arms, subject.is_some());
         let mut labels = vec![None; cfg.node_count()];
         let mut pending = vec![Vec::new(); cfg.node_count()];
 
@@ -1558,6 +1548,18 @@ impl FunctionCompiler<'_> {
                         );
                         self.emit_branch_jump(completed, &labels, &mut pending, span.clone());
                     }
+                }
+                crate::control_flow::BranchNode::Unmatched => {
+                    // Retain a defensive runtime failure while keeping the impossible
+                    // path out of value/initialization joins in the bytecode verifier.
+                    let condition = self.load_constant(Constant::Bool(false), span.clone())?;
+                    self.emit(
+                        Instruction::Assert {
+                            condition,
+                            message: None,
+                        },
+                        span.clone(),
+                    );
                 }
                 crate::control_flow::BranchNode::Exit => {}
             }

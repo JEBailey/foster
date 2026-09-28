@@ -1,13 +1,11 @@
 //! Enum construction and exhaustive pattern matching over associated values.
 
-type Score = { name: String, value: Int }
-
-enum ScoreResult = Ok(Score)
+enum ScoreResult = Ok(String, Int)
     | Error(String)
 
 func describe(result: ScoreResult) -> Int {
     branch result {
-        Ok({ name, value }) -> describe_score(name, value)
+        Ok(name, value) -> describe_score(name, value)
         Error(message) -> describe_error(message)
     }
 }
@@ -23,5 +21,5 @@ func describe_error(message: String) -> Int {
 }
 
 func main() -> Int {
-    describe(Ok(Score { name: "Ada", value: 42 })) + describe(Error("missing score"))
+    describe(Ok("Ada", 42)) + describe(Error("missing score"))
 }

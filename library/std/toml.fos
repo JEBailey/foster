@@ -64,12 +64,8 @@ pub type TomlError = {
     pub column: Int
 }
 
-type PathItem = {
-    key: String, index: Int
-}
-
 enum PathPart = Key(String)
-    | ArrayItem(PathItem)
+    | ArrayItem(String, Int)
 
 enum FlatValue = Value(TomlValue)
     | TableMarker
@@ -101,9 +97,7 @@ impl PathPart {
     func copy(self) -> self {
         branch self {
             PathPart.Key(key) -> PathPart.Key(key.copy())
-            PathPart.ArrayItem(item) -> PathPart.ArrayItem(PathItem {
-                key: item.key.copy(), index: item.index
-            })
+            PathPart.ArrayItem(key, index) -> PathPart.ArrayItem(key.copy(), index)
         }
     }
 }
@@ -941,9 +935,7 @@ impl Parser {
         let parent = resolve_header_path(self.entries, [], move parents)
         return self.fail("array of tables conflicts with an existing value") if child_key_conflict?(self.entries, parent, name)
         let index = next_array_index(self.entries, parent, name)
-        let path = parent.append(PathPart.ArrayItem(PathItem {
-            key: move name, index
-        }))
+        let path = parent.append(PathPart.ArrayItem(move name, index))
         let context = [].concat(path)
         self.entries = self.entries.append(FlatEntry {
             path: move path, value: FlatValue.ArrayTableMarker
@@ -1179,9 +1171,7 @@ func resolve_header_path(entries: List<FlatEntry>, prefix: List<PathPart>, keys:
     let name = keys.head
     let index = latest_array_index(entries, prefix, name, -1)
     let next = branch {
-        index >= 0 -> prefix.append(PathPart.ArrayItem(PathItem {
-            key: move name, index
-        }))
+        index >= 0 -> prefix.append(PathPart.ArrayItem(move name, index))
         _ -> prefix.append(PathPart.Key(move name))
     }
     resolve_header_path(entries, move next, keys.rest)
@@ -1208,8 +1198,8 @@ func direct_item_index(path: List<PathPart>, prefix: List<PathPart>, name: Strin
     return -1 if not path_starts_with?(path, prefix)
     branch path.borrow(prefix.length) {
         Option.Some(part) -> branch part {
-            PathPart.ArrayItem(item) -> branch {
-                item.key == name -> item.index
+            PathPart.ArrayItem(key, index) -> branch {
+                key == name -> index
                 _ -> -1
             }
             _ -> -1
@@ -1309,7 +1299,7 @@ func direct_child(path: List<PathPart>, prefix: List<PathPart>) -> Option<Child>
     branch path.borrow(prefix.length) {
         Option.Some(part) -> branch part {
             PathPart.Key(name) -> Option.Some(Child.Table(name.copy()))
-            PathPart.ArrayItem(item) -> Option.Some(Child.Array(item.key.copy()))
+            PathPart.ArrayItem(key, _) -> Option.Some(Child.Array(key.copy()))
         }
         Option.None -> Option.None
     }
@@ -1393,9 +1383,7 @@ func flat_scalar(entry: FlatEntry) -> Option<TomlValue> {
 
 /// Builds consecutive table elements starting at `index`; stops at the first missing marker.
 func materialize_array_items(entries: List<FlatEntry>, prefix: List<PathPart>, name: String, index: Int, output: List<TomlValue>) -> List<TomlValue> [consume output] {
-    let path = prefix.append(PathPart.ArrayItem(PathItem {
-        key: name.slice(0, name.length), index
-    }))
+    let path = prefix.append(PathPart.ArrayItem(name.slice(0, name.length), index))
     return output if not exact_path?(entries, path)
     let table = TomlValue.Table(materialize(entries, path))
     materialize_array_items(entries, prefix, name, index + 1, output.append(move table))

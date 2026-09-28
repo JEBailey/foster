@@ -173,7 +173,7 @@ pub struct TypeInformation {
     pub record_methods: HashMap<RecordId, HashSet<String>>,
     pub variant_names: HashMap<VariantTypeId, String>,
     /// Declared enum-case payload types. `None` denotes a payload-free case.
-    pub variant_payloads: HashMap<VariantId, Option<TypeId>>,
+    pub variant_payloads: HashMap<VariantId, Vec<TypeId>>,
     pub variant_field_types: HashMap<VariantTypeId, Vec<TypeId>>,
 }
 

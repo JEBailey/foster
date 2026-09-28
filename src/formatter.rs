@@ -33,10 +33,10 @@ mod tests {
 
     #[test]
     fn formats_multiline_enum_declarations() {
-        let source = "enum Choice =\nLeft(Int)\n| Right(String)\n";
+        let source = "enum Choice =\nLeft(Int, Bool)\n| Right(String)\n";
         assert_eq!(
             format(source).unwrap(),
-            "enum Choice = Left(Int)\n    | Right(String)\n"
+            "enum Choice = Left(Int, Bool)\n    | Right(String)\n"
         );
     }
 

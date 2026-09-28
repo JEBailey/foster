@@ -164,7 +164,7 @@ pub struct RuntimeVariant {
     /// Generic parameters of the parent enum in declaration order.
     pub parameters: Vec<String>,
     pub alternative: Arc<str>,
-    /// Enum cases currently have zero or one declared payload value.
+    /// Enum cases have zero or more positional payload values.
     pub payload: Vec<ExecutableType>,
 }
 

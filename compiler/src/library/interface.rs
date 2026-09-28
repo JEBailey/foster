@@ -713,7 +713,7 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
             match a {
                 ast::VariantAlternative::AliasTarget { ty: t, .. } => ty(t, names),
                 ast::VariantAlternative::EnumCase { payload, .. } => {
-                    if let Some(t) = payload {
+                    for t in payload {
                         ty(t, names);
                     }
                 }
