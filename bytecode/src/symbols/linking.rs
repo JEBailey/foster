@@ -99,7 +99,7 @@ impl Table {
                     .functions
                     .get(&function_id(definition.function))
                     .ok_or_else(|| error("missing implementation"))?;
-                if definition.descriptor.parameters.len() != usize::from(function.parameters)
+                if definition.descriptor.parameters.len() != usize::from(function.parameter_count())
                     || definition
                         .descriptor
                         .constraints
@@ -117,7 +117,7 @@ impl Table {
                         .parameters
                         .iter()
                         .map(|p| p.mode)
-                        .ne(function.parameter_modes.iter().copied().map(Mode::from))
+                        .ne(function.parameters.iter().map(|p| p.mode).map(Mode::from))
                     || definition
                         .descriptor
                         .result_dependencies
@@ -131,7 +131,7 @@ impl Table {
                     .descriptor
                     .parameters
                     .iter()
-                    .zip(&function.parameter_types)
+                    .zip(function.parameters.iter().map(|p| &p.ty))
                     .all(|(p, wire)| wire_matches(&p.ty, wire, &types, program, &mut generics))
                     || !wire_matches(
                         &definition.descriptor.result,
@@ -251,7 +251,7 @@ pub fn link(program: &mut Program) -> Result<(), FosterError> {
                 .functions
                 .get_mut(&function_id(definition.function))
                 .ok_or_else(|| error("missing implementation"))?;
-            for instruction in &mut function.instructions {
+            for instruction in function.body.instructions_mut() {
                 let Some(old_target) = target(instruction) else {
                     continue;
                 };

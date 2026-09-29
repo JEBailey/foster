@@ -107,7 +107,9 @@ mod tests {
                 )
                 .unwrap();
                 assert_eq!(
-                    crate::vm::Machine::new(&program).run_main().unwrap(),
+                    crate::vm::Machine::new(&program.clone().into_verified().unwrap())
+                        .run_main()
+                        .unwrap(),
                     crate::vm::Value::Bool(expected)
                 );
             }
@@ -156,7 +158,9 @@ mod tests {
             let program = crate::codegen::vm::lower_shared_program(shared).unwrap();
             crate::vm::verify(&program).unwrap();
             assert_eq!(
-                crate::vm::Machine::new(&program).run_main().unwrap(),
+                crate::vm::Machine::new(&program.clone().into_verified().unwrap())
+                    .run_main()
+                    .unwrap(),
                 crate::vm::Value::Integer(42)
             );
         }
@@ -180,7 +184,9 @@ mod tests {
             );
             let program = crate::codegen::vm::lower_shared_program(shared).unwrap();
             assert_eq!(
-                crate::vm::Machine::new(&program).run_main().is_ok(),
+                crate::vm::Machine::new(&program.clone().into_verified().unwrap())
+                    .run_main()
+                    .is_ok(),
                 succeeds
             );
         }

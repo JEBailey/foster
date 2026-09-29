@@ -403,37 +403,41 @@ mod tests {
                 seed
             };
             let mut function = template.clone();
-            function.instructions = (0..64)
-                .map(|_| {
-                    let opcode = next() % 7;
-                    let destination = Slot((next() % 128) as u16);
-                    let source = Slot((next() % 128) as u16);
-                    let target = next() as usize % 64;
-                    match opcode {
-                        0 => Instruction::LoadConstant {
-                            destination,
-                            constant: 0,
-                        },
-                        1 => Instruction::Move {
-                            destination,
-                            source,
-                        },
-                        2 => Instruction::Binary {
-                            destination,
-                            operator: crate::ast::BinaryOp::Add,
-                            left: source,
-                            right: Slot(64),
-                        },
-                        3 => Instruction::JumpIfFalse {
-                            condition: source,
-                            target,
-                        },
-                        4 => Instruction::Jump { target },
-                        5 => Instruction::Return { source },
-                        _ => Instruction::Drop { register: source },
-                    }
-                })
-                .collect();
+            function.body = crate::codegen::storage::InstructionBody::new(
+                ((0..64)
+                    .map(|_| {
+                        let opcode = next() % 7;
+                        let destination = Slot((next() % 128) as u16);
+                        let source = Slot((next() % 128) as u16);
+                        let target = next() as usize % 64;
+                        match opcode {
+                            0 => Instruction::LoadConstant {
+                                destination,
+                                constant: 0,
+                            },
+                            1 => Instruction::Move {
+                                destination,
+                                source,
+                            },
+                            2 => Instruction::Binary {
+                                destination,
+                                operator: crate::ast::BinaryOp::Add,
+                                left: source,
+                                right: Slot(64),
+                            },
+                            3 => Instruction::JumpIfFalse {
+                                condition: source,
+                                target,
+                            },
+                            4 => Instruction::Jump { target },
+                            5 => Instruction::Return { source },
+                            _ => Instruction::Drop { register: source },
+                        }
+                    })
+                    .collect::<Vec<_>>())
+                .into_iter()
+                .map(|i| (i, 0..0)),
+            );
             let exits = HashSet::from([Slot(0), Slot(63), Slot(127)]);
             let actual = liveness_with_exit_uses(&function, &exits);
             let expected = reference(&function, &exits);
@@ -460,13 +464,21 @@ mod tests {
             .find(|f| f.name == "main")
             .unwrap()
             .clone();
-        function.instructions.clear();
+        function.body = Default::default();
         assert!(liveness(&function).live_in.is_empty());
-        function.instructions = vec![Instruction::Jump { target: 0 }];
+        function.body = crate::codegen::storage::InstructionBody::new(
+            (vec![Instruction::Jump { target: 0 }])
+                .into_iter()
+                .map(|i| (i, 0..0)),
+        );
         assert_eq!(liveness(&function).live_in, vec![HashSet::new()]);
-        function.instructions = vec![Instruction::Return {
-            source: Slot(65534),
-        }];
+        function.body = crate::codegen::storage::InstructionBody::new(
+            (vec![Instruction::Return {
+                source: Slot(65534),
+            }])
+            .into_iter()
+            .map(|i| (i, 0..0)),
+        );
         let exits = HashSet::from([Slot(65535)]);
         let actual = liveness_with_exit_uses(&function, &exits);
         assert_eq!(actual.live_in, reference(&function, &exits).live_in);
@@ -484,16 +496,23 @@ mod tests {
             .find(|f| f.name == "main")
             .unwrap()
             .clone();
-        function.instructions = vec![
-            Instruction::Move {
-                destination: Slot(65534),
-                source: Slot(65533)
-            };
-            2048
-        ];
-        function.instructions.push(Instruction::Return {
-            source: Slot(65534),
-        });
+        function.body = crate::codegen::storage::InstructionBody::new(
+            (vec![
+                Instruction::Move {
+                    destination: Slot(65534),
+                    source: Slot(65533)
+                };
+                2048
+            ])
+            .into_iter()
+            .map(|i| (i, 0..0)),
+        );
+        function.body.push(
+            Instruction::Return {
+                source: Slot(65534),
+            },
+            0..0,
+        );
         let actual = liveness(&function);
         let expected = reference(&function, &HashSet::new());
         assert_eq!(actual.live_in, expected.live_in);

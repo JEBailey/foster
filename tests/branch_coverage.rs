@@ -7,7 +7,7 @@ fn expanded_branch_coverage_executes_all_cases() {
             foster::vm::compile_with_options(&compilation, foster::vm::CompileOptions { optimize })
                 .unwrap();
         assert_eq!(
-            foster::vm::Machine::new(&program)
+            foster::vm::Machine::new(&program.clone().into_verified().unwrap())
                 .run_main()
                 .unwrap()
                 .to_string(),

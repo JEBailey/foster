@@ -37,7 +37,9 @@ fn type_branch_preserves_the_original_place() {
     )
     .unwrap();
     assert_eq!(
-        foster::vm::Machine::new(&program).run_main().unwrap(),
+        foster::vm::Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap(),
         foster::vm::Value::Integer(42)
     );
 }
@@ -61,7 +63,9 @@ fn type_branch_format_and_bytecode_round_trip() {
             foster::vm::decode_program(&foster::vm::encode_program(&program).unwrap()).unwrap();
         assert_eq!(program, decoded);
         assert_eq!(
-            foster::vm::Machine::new(&decoded).run_main().unwrap(),
+            foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             foster::vm::Value::Integer(42)
         );
     }

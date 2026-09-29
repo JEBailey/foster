@@ -55,17 +55,18 @@ fn program_sealing_restores_functions_after_an_error() {
         vm::BytecodeFunction {
             name: "invalid".into(),
             intrinsic_stub: false,
-            parameters: 0,
-            parameter_types: vec![],
-            parameter_modes: vec![],
-            mutable_parameters: vec![],
+
+            parameters: vec![],
             returns_reference: false,
             captures: 0,
             capture_types: vec![],
             result_type: ExecutableType::Unit,
             registers: 0,
-            instructions: vec![vm::Instruction::Jump { target: 1 }],
-            instruction_spans: vec![span],
+            body: crate::codegen::storage::InstructionBody::try_from_parts(
+                vec![vm::Instruction::Jump { target: 1 }],
+                vec![span],
+            )
+            .expect("paired instruction fixture"),
         },
     );
     let original = program.clone();
@@ -78,17 +79,12 @@ fn program_sealing_restores_functions_after_an_error() {
 fn program_consumers_reject_the_same_invalid_construction() {
     let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
     let program = crate::vm::compile(&compilation).unwrap();
-    for defect in ["entry", "spans", "types", "symbols"] {
+    for defect in ["entry", "empty body", "types", "symbols"] {
         let mut invalid = program.clone();
         let main = invalid.metadata.main.unwrap();
         match defect {
             "entry" => invalid.metadata.main_arguments = true,
-            "spans" => invalid
-                .functions
-                .get_mut(&main)
-                .unwrap()
-                .instruction_spans
-                .clear(),
+            "empty body" => invalid.functions.get_mut(&main).unwrap().body = Default::default(),
             "types" => invalid.functions.get_mut(&main).unwrap().result_type = ExecutableType::Bool,
             "symbols" => invalid.metadata.symbols.version = u16::MAX,
             _ => unreachable!(),
@@ -121,35 +117,36 @@ fn vm_lowering_rolls_back_constants_after_successful_sealing() {
         vm::BytecodeFunction {
             name: "full_constant_pool".into(),
             intrinsic_stub: false,
-            parameters: 0,
-            parameter_types: vec![],
-            parameter_modes: vec![],
-            mutable_parameters: vec![],
+
+            parameters: vec![],
             returns_reference: false,
             captures: 0,
             capture_types: vec![],
             result_type: ExecutableType::Integer,
             registers: 2,
-            instructions: vec![
-                vm::Instruction::LoadConstant {
-                    destination: Register(0),
-                    constant: 0,
-                },
-                vm::Instruction::Drop {
-                    register: Register(0),
-                },
-                vm::Instruction::Drop {
-                    register: Register(0),
-                },
-                vm::Instruction::LoadConstant {
-                    destination: Register(1),
-                    constant: 0,
-                },
-                vm::Instruction::Return {
-                    source: Register(1),
-                },
-            ],
-            instruction_spans: vec![0..1, 1..2, 2..3, 3..4, 4..5],
+            body: crate::codegen::storage::InstructionBody::try_from_parts(
+                vec![
+                    vm::Instruction::LoadConstant {
+                        destination: Register(0),
+                        constant: 0,
+                    },
+                    vm::Instruction::Drop {
+                        register: Register(0),
+                    },
+                    vm::Instruction::Drop {
+                        register: Register(0),
+                    },
+                    vm::Instruction::LoadConstant {
+                        destination: Register(1),
+                        constant: 0,
+                    },
+                    vm::Instruction::Return {
+                        source: Register(1),
+                    },
+                ],
+                vec![0..1, 1..2, 2..3, 3..4, 4..5],
+            )
+            .expect("paired instruction fixture"),
         },
     );
     seal_program(program.clone()).unwrap();
@@ -181,21 +178,24 @@ fn sealed_program_rejects_invalid_metadata_and_keeps_signatures_consistent() {
     assert_eq!(sealed.metadata(), &program.metadata);
     let restored = lower_shared_program(sealed).unwrap();
     assert_eq!(
-        Machine::new(&restored).run_main().unwrap(),
-        Machine::new(&program).run_main().unwrap()
+        Machine::new(&restored.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap(),
+        Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap()
     );
     let mut invalid = program;
     invalid
         .functions
         .get_mut(&invalid.metadata.main.unwrap())
         .unwrap()
-        .instruction_spans
-        .clear();
+        .body = Default::default();
     assert!(
         seal_program(invalid)
             .unwrap_err()
             .to_string()
-            .contains("span")
+            .contains("no instructions")
     );
 }
 
@@ -322,7 +322,7 @@ fn branch_edges_receive_distinct_parallel_copies() {
             .iter()
             .any(|instruction| matches!(instruction, vm::Instruction::JumpIfFalse { .. }))
     );
-    assert_eq!(lowered.parameters, 3);
+    assert_eq!(lowered.parameter_count(), 3);
     assert!(lowered.registers >= 6);
 }
 
@@ -443,7 +443,9 @@ fn de_ssa_bytecode_verifies_and_executes() {
     program.functions.insert(main, lowered);
     crate::vm::verify(&program).unwrap();
     assert_eq!(
-        Machine::new(&program).run_main().unwrap(),
+        Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap(),
         vm::Value::Integer(41)
     );
 }

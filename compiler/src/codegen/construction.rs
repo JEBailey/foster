@@ -323,6 +323,8 @@ impl Compiler<'_> {
         function_id: FunctionId,
     ) -> Result<HashMap<LocalId, Slot>, FosterError> {
         let function = &self.hir.functions[function_id];
+        u16::try_from(function.parameters.len())
+            .map_err(|_| FosterError::runtime("too many function parameters"))?;
         let mut lower = FunctionCompiler {
             hir: self.hir,
             types: self.types,
@@ -437,51 +439,56 @@ impl Compiler<'_> {
             Function {
                 name: function.name.clone(),
                 intrinsic_stub: matches!(intrinsic, Some(Intrinsic::Builtin(_))),
-                parameters: function.parameters.len() as u16,
-                parameter_types: self
-                    .types
-                    .function_type(function_id)
-                    .map(|signature| {
-                        signature
-                            .parameters
-                            .iter()
-                            .map(|ty| verification_type(self.hir, self.types, ty.ty, 0))
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec![ExecutableType::Unknown; function.parameters.len()]),
-                parameter_modes: self
-                    .types
-                    .function_type(function_id)
-                    .map(|signature| signature.parameters.iter().map(|p| p.mode).collect())
-                    .unwrap_or_else(|| {
-                        vec![crate::ast::ParameterMode::Borrow; function.parameters.len()]
-                    }),
-                mutable_parameters: function
-                    .parameters
-                    .iter()
-                    .enumerate()
-                    .map(|(index, parameter)| {
-                        let Some(signature) = self.types.function_type(function_id) else {
-                            return false;
-                        };
-                        if signature.parameters[index].mode != crate::ast::ParameterMode::Borrow {
-                            return false;
-                        }
-                        let group = match &self.types.types[signature.parameters[index].ty] {
-                            crate::types::Type::Reference { group, .. } => group,
-                            _ if !self.types.is_copy(signature.parameters[index].ty) => {
-                                &self.hir.locals[parameter.local].name
+
+                parameters: {
+                    let mutable: Vec<bool> = function
+                        .parameters
+                        .iter()
+                        .enumerate()
+                        .map(|(index, parameter)| {
+                            let Some(signature) = self.types.function_type(function_id) else {
+                                return false;
+                            };
+                            if signature.parameters[index].mode != crate::ast::ParameterMode::Borrow
+                            {
+                                return false;
                             }
-                            _ => return false,
-                        };
-                        function.effects.iter().any(|effect| {
-                            matches!(
-                                effect.kind,
-                                crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
-                            ) && effect.target.root == *group
+                            let group = match &self.types.types[signature.parameters[index].ty] {
+                                crate::types::Type::Reference { group, .. } => group,
+                                _ if !self.types.is_copy(signature.parameters[index].ty) => {
+                                    &self.hir.locals[parameter.local].name
+                                }
+                                _ => return false,
+                            };
+                            function.effects.iter().any(|effect| {
+                                matches!(
+                                    effect.kind,
+                                    crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
+                                ) && effect.target.root == *group
+                            })
                         })
-                    })
-                    .collect(),
+                        .collect();
+                    function
+                        .parameters
+                        .iter()
+                        .enumerate()
+                        .map(|(index, _)| {
+                            let parameter = self
+                                .types
+                                .function_type(function_id)
+                                .map(|s| &s.parameters[index]);
+                            crate::codegen::storage::ExecutableParameter {
+                                ty: parameter
+                                    .map(|p| verification_type(self.hir, self.types, p.ty, 0))
+                                    .unwrap_or(ExecutableType::Unknown),
+                                mode: parameter
+                                    .map(|p| p.mode)
+                                    .unwrap_or(crate::ast::ParameterMode::Borrow),
+                                mutable: mutable[index],
+                            }
+                        })
+                        .collect()
+                },
                 returns_reference: self
                     .types
                     .function_type(function_id)
@@ -499,8 +506,10 @@ impl Compiler<'_> {
                     .map(|signature| verification_type(self.hir, self.types, signature.result, 0))
                     .unwrap_or(ExecutableType::Unknown),
                 registers: lower.next_register,
-                instructions: lower.instructions,
-                instruction_spans: lower.spans,
+                body: crate::codegen::storage::InstructionBody::try_from_parts(
+                    lower.instructions,
+                    lower.spans,
+                )?,
             },
         );
         Ok(lower.locals)

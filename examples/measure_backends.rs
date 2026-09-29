@@ -20,7 +20,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_options = foster::native::CompileOptions { optimize: true };
     for sample in 0..10 {
         let start = Instant::now();
-        let program = foster::vm::compile_with_options(&compilation, vm_options)?;
+        let program =
+            foster::vm::compile_with_options(&compilation, vm_options)?.into_verified()?;
         let compile_time = start.elapsed().as_secs_f64() * 1000.0;
         let start = Instant::now();
         let result = foster::vm::Machine::new(&program).run_main()?;

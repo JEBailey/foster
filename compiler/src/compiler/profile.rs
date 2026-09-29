@@ -178,8 +178,13 @@ mod tests {
                 "../../../tests/fixtures/programs/closures.fos"
             ))
         });
-        let mut compilation = compilation.unwrap();
+        let compilation = compilation.unwrap();
         assert!(!report.phases.contains_key("types.final"));
+        assert_eq!(
+            crate::vm::run(&compilation).unwrap(),
+            crate::vm::Value::Integer(36)
+        );
+        let mut compilation = compilation.into_analysis();
         let effects = compilation
             .hir
             .functions
@@ -196,10 +201,6 @@ mod tests {
                 .iter()
                 .map(|(_, function)| (function.effects.clone(), function.suspends))
                 .collect::<Vec<_>>()
-        );
-        assert_eq!(
-            crate::vm::run(&compilation).unwrap(),
-            crate::vm::Value::Integer(36)
         );
     }
 

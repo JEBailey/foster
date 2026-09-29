@@ -706,7 +706,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
 fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
     let mut types = BTreeSet::new();
     for function in program.functions.values() {
-        types.extend(function.parameter_types.iter().cloned());
+        types.extend(function.parameters.iter().map(|p| p.ty.clone()));
         types.extend(function.capture_types.iter().cloned());
         types.insert(function.result_type.clone());
         for instruction in &function.instructions {
@@ -821,7 +821,7 @@ fn canonicalize_and_verify(program: &mut Program, registry: &Registry) -> Result
         .map(|(id, function)| (*id, (function.name.clone(), function.captures)))
         .collect::<HashMap<_, _>>();
     for function in program.functions.values_mut() {
-        for instruction in &mut function.instructions {
+        for instruction in function.body.instructions_mut() {
             match instruction {
                 Instruction::MakeRecord { record, fields, .. } => {
                     let Some(layout) = registry.record(*record) else {
@@ -933,10 +933,8 @@ mod tests {
             BytecodeFunction {
                 name: "f".into(),
                 intrinsic_stub: false,
-                parameters: 0,
-                parameter_types: vec![],
-                parameter_modes: vec![],
-                mutable_parameters: vec![],
+
+                parameters: vec![],
                 returns_reference: false,
                 captures: 0,
                 capture_types: vec![],
@@ -945,13 +943,16 @@ mod tests {
                     arguments: Vec::new(),
                 },
                 registers: 3,
-                instructions: vec![Instruction::MakeRecord {
-                    destination: Register(2),
-                    record,
-                    type_arguments: Vec::new(),
-                    fields: vec![("b".into(), Register(1)), ("a".into(), Register(0))],
-                }],
-                instruction_spans: std::iter::once(0..0).collect(),
+                body: crate::codegen::storage::InstructionBody::try_from_parts(
+                    vec![Instruction::MakeRecord {
+                        destination: Register(2),
+                        record,
+                        type_arguments: Vec::new(),
+                        fields: vec![("b".into(), Register(1)), ("a".into(), Register(0))],
+                    }],
+                    std::iter::once(0..0).collect(),
+                )
+                .expect("paired instruction fixture"),
             },
         );
         let registry = legalize(&mut program).unwrap();

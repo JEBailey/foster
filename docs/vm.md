@@ -1,5 +1,23 @@
 # Foster register VM
 
+## Executable and analysis boundaries
+
+`foster_bytecode::Program` is editable compiler output. Convert it with
+`Program::into_verified()` before constructing a `foster_vm::Machine`.
+`VerifiedProgram::decode()` decodes, links, and verifies serialized bytecode.
+Verified programs expose read-only access and share their storage through `Arc`;
+creating another machine does not clone the instruction and metadata tables.
+
+Executable parameters keep their type, ownership mode, and mutation flag in one
+record. Parameter counts are derived. `InstructionBody` checks separately supplied
+instructions and locations, and its editing methods preserve their alignment.
+The wire format still validates its independently encoded counts during decoding.
+
+`compiler::Compilation` exposes immutable checked analysis. Consuming it with
+`into_analysis()` gives editable data without the checked guarantee. Editor
+recovery returns `RecoveryCompilation`, which cannot be passed to code generation.
+Only the strict compiler pipeline creates an executable compilation.
+
 Foster uses a custom register VM as its executable semantic reference. The pipeline is:
 
 ```text

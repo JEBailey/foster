@@ -4,7 +4,7 @@ use super::analysis::{definitions, uses};
 use std::collections::HashSet;
 
 pub(super) fn pinned(function: &BytecodeFunction) -> HashSet<Register> {
-    let prefix = function.captures.saturating_add(function.parameters);
+    let prefix = function.captures.saturating_add(function.parameter_count());
     let mut pinned = (0..prefix).map(Register).collect::<HashSet<_>>();
     for instruction in &function.instructions {
         match instruction {

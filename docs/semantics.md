@@ -93,11 +93,51 @@ also fails on zero and otherwise truncates toward zero. `Float` uses IEEE-754 bi
 and comparisons; it is not implicitly interchangeable with `Int`. This draft does not prescribe
 NaN payload bits or cross-platform floating-point text formatting.
 
+With `core.float`, `sqrt()` returns the correctly rounded binary64 square root.
+Both signed zeros and positive infinity are preserved; negative nonzero values
+(including negative infinity) and NaN produce NaN. Domain errors do not fail execution.
+`sin()` and `cos()` take radians, return values in `[-1, 1]` for finite inputs, and
+return NaN for infinite or NaN inputs. Sine preserves signed zero; cosine of either
+zero is `1.0`.
+
+`y.atan2(x)` returns the quadrant-aware angle of `(x, y)` in radians in `[-pi, pi]`.
+Either NaN input gives NaN. Special cases are evaluated after that NaN rule:
+
+| Inputs | Result |
+| --- | --- |
+| y is signed zero; x has positive sign (including +0 and +infinity) | y |
+| y is signed zero; x has negative sign (including -0 and -infinity) | pi with y's sign |
+| y is nonzero; x is either zero | pi/2 with y's sign |
+| y is infinite; x is finite | pi/2 with y's sign |
+| y is finite; x is +infinity | zero with y's sign |
+| y is finite; x is -infinity | pi with y's sign |
+| Both infinite; x is positive | pi/4 with y's sign |
+| Both infinite; x is negative | 3*pi/4 with y's sign |
+
+All four methods leave inputs usable. Trigonometric operations use platform math
+precision: no fixed error bound, correct-rounding guarantee, or bit-identical results
+across targets/builds is promised. NaN result sign and payload bits are unspecified.
+
 `Byte` ranges from 0 through 255. Its bitwise operations produce bytes; shifts require a count
 from 0 through 7 and left shifts discard bits beyond the byte. `CodePoint` is a Unicode scalar
 value, excluding surrogates. `Byte` and `CodePoint` widen losslessly when `Int` is expected;
 integer arithmetic on them produces `Int`. Narrowing requires the appropriate checked API.
 There is no universal nullable type; absence is represented explicitly, commonly by `Option<T>`.
+
+The read-only computed `.bytes` member encodes `Int` as eight two's-complement bytes,
+`Float` as eight IEEE-754 binary64 bytes, `CodePoint` as four Unicode scalar bytes,
+`Byte` as one byte, and `Bool` as one byte (`0` or `1`). Multi-byte scalar encodings
+default to little-endian on every target. `String.bytes` is UTF-8; `Bytes.bytes`
+returns an independent immutable byte value. Reading these properties does not consume
+the receiver. Scalar APIs require their corresponding core module imports.
+
+`Int`, `Float`, and `CodePoint` provide `to_le_bytes()` and `to_be_bytes()` for explicit
+byte order. `Float.to_f32_le_bytes()` and `Float.to_f32_be_bytes()` narrow to IEEE binary32
+with round-to-nearest, ties-to-even, infinity on overflow, and gradual underflow.
+They preserve signed zero and encode every NaN as `0x7fc00000`. Binary64 encoding preserves
+the value's existing bits; arithmetic does not promise a particular NaN payload.
+These encodings contain no object headers, pointers, padding, or collection framing.
+They do not define automatic serialization for records, enums, or lists.
 
 **S-07 — Owned data and representation.** Physical sharing of ordinary owned record, list, and
 byte storage must not make mutation of an independently obtained owned value mutate another
@@ -149,7 +189,7 @@ that shared result rather than inferring ownership from the member's spelling.
 | --- | --- |
 | Declared field | Stored place when its receiver is a place |
 | `empty?`, `whitespace?`, `length`, `capacity`, scalar `head` | Computed copy value |
-| `String.bytes`, owned `head`, and `rest` | Independent owned value; immutable storage may be shared |
+| Core `.bytes`, owned `head`, and `rest` | Independent owned value; immutable storage may be shared |
 | A computed result whose declared type is a reference | Borrowed value retaining its group origin |
 | `iterator` selection | Method; calling it creates an independent owned cursor |
 | `List.at` | `Result<T, ListReadError>` containing an explicit copy or a typed bounds/capability error |
@@ -500,3 +540,20 @@ Remaining work is organized in the [roadmap](roadmap.md). The main semantic limi
 Resolving an open decision requires a documented rule, implementation, and conformance tests.
 Fixing an implementation violation should restore the contract without redefining the violating
 behavior as valid Foster semantics.
+
+## Numeric conversion and rounding
+
+Import `core.float` for `Float.from(integer)` and Float rounding methods, and
+`core.int` for `Int.from(float)` and `IntConversionError`. Integer-to-Float conversion
+rounds to nearest, ties to even; values outside +/-2^53 may lose precision.
+Float-to-Int conversion truncates toward zero and returns a Result: `NotFinite`
+for NaN or either infinity, and `OutOfRange` when the truncated result cannot fit
+signed 64-bit Int. Both signed zeros convert to integer zero. The binary64 range
+check is inclusive at -2^63 and exclusive at +2^63; it never saturates or wraps.
+
+`floor()`, `ceil()`, `round()`, and `truncate()` return Float and respectively round
+toward negative infinity, positive infinity, nearest with ties to even, and zero.
+They preserve infinities and signed zero; NaN returns NaN with unspecified payload.
+Zero results retain the input sign. All these APIs preserve their inputs and have
+the same contract in the VM and native backend. Numeric conversion does not reinterpret
+bytes, and arithmetic does not implicitly convert between Int and Float.

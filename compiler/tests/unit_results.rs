@@ -14,7 +14,7 @@ fn unit_results_accept_explicit_unit_bodies() {
             foster_vm::decode_program(&foster_compiler::vm::encode_program(&program).unwrap())
                 .unwrap();
         assert_eq!(
-            foster_vm::Machine::new(&program)
+            foster_vm::Machine::new(&program.into_verified().unwrap())
                 .run_main()
                 .unwrap()
                 .to_string(),

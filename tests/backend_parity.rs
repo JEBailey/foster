@@ -2098,8 +2098,8 @@ func main() -> Int { (await completed()).unwrap_or(0) }
 }
 
 #[test]
-fn remote_shutdown_resolves_pending_futures_without_draining() {
-    let mut compilation = foster::compile(
+fn vm_remote_shutdown_resolves_pending_futures_without_draining() {
+    let compilation = foster::compile(
         r#"
 import core.result
 import core.remote_error
@@ -2136,18 +2136,50 @@ func main() -> Bool {
 "#,
     )
     .unwrap();
-    // Remove the completion witness after semantic checking to exercise the runtime
-    // backstop independently of the compiler's rejection of pending owner exits.
-    let waits = compilation.hir.expressions.iter().filter_map(|(id, expression)| match expression {
-        foster::hir::Expr::Await(value) => match &compilation.hir.expressions[*value] {
-            foster::hir::Expr::Call { callee, .. } if matches!(&compilation.hir.expressions[*callee], foster::hir::Expr::Member { name, .. } if name == "barrier") => Some(id),
-            _ => None,
-        },
-        _ => None,
-    }).collect::<Vec<_>>();
-    assert_eq!(waits.len(), 1);
-    compilation.hir.expressions[waits[0]] = foster::hir::Expr::Unit;
-    check_compilation("remote-shutdown", &compilation, Ok("true"));
+    // Exercise the runtime backstop using editable bytecode, then verify it again.
+    // Checked HIR and its ownership evidence must remain immutable. Native shutdown
+    // is covered directly by the native runtime's owner-shutdown test.
+    for optimize in [false, true] {
+        let mut program =
+            vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
+        let unit = u16::try_from(program.metadata.constants.len()).unwrap();
+        program.metadata.constants.push(vm::Constant::Unit);
+        let resolvers = program
+            .functions
+            .iter()
+            .filter_map(|(id, f)| f.name.ends_with(".resolve").then_some(*id))
+            .collect::<Vec<_>>();
+        let start = program
+            .functions
+            .values_mut()
+            .find(|f| f.name == "start")
+            .unwrap();
+        let mut removed = 0;
+        for instruction in start.body.instructions_mut() {
+            let destination = match instruction {
+                vm::Instruction::Await { destination, .. } => Some(*destination),
+                vm::Instruction::CallMethod {
+                    destination,
+                    function,
+                    ..
+                } if resolvers.contains(function) => Some(*destination),
+                _ => None,
+            };
+            if let Some(destination) = destination {
+                *instruction = vm::Instruction::LoadConstant {
+                    destination,
+                    constant: unit,
+                };
+                removed += 1;
+            }
+        }
+        assert_eq!(removed, 1);
+        let program = program.into_verified().unwrap();
+        assert_eq!(
+            vm::Machine::new(&program).run_main().unwrap(),
+            vm::Value::Bool(true)
+        );
+    }
 }
 
 #[test]
@@ -3027,5 +3059,41 @@ fn enum_parameter_examples_agree_in_both_backends() {
         "enum-showcase",
         include_str!("../examples/showcase/enums.fos"),
         "Ada scored 42\nError: missing score\n42",
+    );
+}
+
+#[test]
+fn list_constants_agree_in_both_backends() {
+    check(
+        "list-constants",
+        include_str!("fixtures/programs/list_constants.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn core_bytes_agree_in_both_backends() {
+    check(
+        "core-bytes",
+        include_str!("fixtures/programs/core_bytes.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn float_math_agrees_in_both_backends() {
+    check(
+        "float-math",
+        include_str!("fixtures/programs/float_math.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn numeric_conversions_agree_in_both_backends() {
+    check(
+        "numeric-conversions",
+        include_str!("fixtures/programs/numeric_conversions.fos"),
+        Ok("42"),
     );
 }

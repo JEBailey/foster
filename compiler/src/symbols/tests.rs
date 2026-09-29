@@ -146,7 +146,9 @@ fn module_imports_round_trip_and_link_to_new_implementation_ids() {
     assert!(vm::verify(&program).is_err());
     link(&mut program).unwrap();
     assert_eq!(
-        Machine::new(&program).run_main().unwrap(),
+        Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap(),
         Value::Integer(42)
     );
     let bytes = vm::encode_program(&program).unwrap();
@@ -197,7 +199,9 @@ fn linking_translates_generic_specialization_keys_after_renaming() {
         .unwrap();
     assert_eq!(call[0].0, "U");
     assert_eq!(
-        Machine::new(&program).run_main().unwrap(),
+        Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap(),
         Value::Integer(42)
     );
 }
@@ -309,7 +313,9 @@ fn overloads_and_multiple_closures_have_distinct_symbols() {
         "pub func value(x: Int) -> Int { x }\npub func value(x: Bool) -> Bool { x }\nfunc main() -> Int { let a = (x: Int) -> x\nlet b = (x: Int) -> x + 1\na(b(41)) }",
     );
     assert_eq!(
-        Machine::new(&program).run_main().unwrap(),
+        Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap(),
         Value::Integer(42)
     );
     let overloads = program

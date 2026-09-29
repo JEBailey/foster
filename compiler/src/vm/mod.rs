@@ -21,7 +21,7 @@ pub fn run_with_options(
     options: CompileOptions,
 ) -> Result<Value, crate::error::FosterError> {
     let program = compile_with_options(compilation, options)?;
-    verify(&program)?;
+    let program = program.into_verified()?;
     Machine::new(&program).run_main()
 }
 
@@ -32,7 +32,7 @@ pub fn run_with_arguments(
     arguments: &crate::entry::CommandArguments,
 ) -> Result<Value, crate::error::FosterError> {
     let program = compile_with_options(compilation, options)?;
-    verify(&program)?;
+    let program = program.into_verified()?;
     Machine::new(&program).run_main_with_arguments(arguments)
 }
 
@@ -52,7 +52,9 @@ mod tests {
         let program = compile(&compilation).unwrap();
         verify(&program).unwrap();
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
         assert!(
@@ -93,14 +95,16 @@ func main() -> Int {
         assert!(preserve.returns_reference);
         assert!(!main.returns_reference);
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
         assert_eq!(run(&compilation).unwrap(), Value::Integer(42));
     }
 
     #[test]
-    fn returned_references_keep_structural_generation_checks() {
+    fn verification_rejects_forged_reference_returns_before_structural_mutation() {
         let compilation = crate::compile(
             "func select(values: List<Int>) -> Int { values[0] }\n\
              func main() -> Int {\n\
@@ -122,7 +126,7 @@ func main() -> Int {
             .find(|(_, function)| function.name == "select")
             .unwrap();
         select.returns_reference = true;
-        for instruction in &mut select.instructions {
+        for instruction in select.body.instructions_mut() {
             if let Instruction::Index {
                 destination,
                 object,
@@ -138,18 +142,18 @@ func main() -> Int {
             }
         }
 
-        let error = Machine::new(&program).run_main().unwrap_err();
+        let error = program.into_verified().unwrap_err();
         assert!(
             error
                 .message
-                .contains("reference was invalidated by structural mutation"),
+                .contains("returns a reference but declares a non-reference result"),
             "{}",
             error.message
         );
     }
 
     #[test]
-    fn returned_reference_to_destroyed_frame_storage_expires_safely() {
+    fn verification_rejects_forged_reference_returns_from_frame_storage() {
         let compilation = crate::compile(
             "func select() -> Int {\n\
                  let values = [10]\n\
@@ -169,7 +173,7 @@ func main() -> Int {
             .find(|(_, function)| function.name == "select")
             .unwrap();
         select.returns_reference = true;
-        for instruction in &mut select.instructions {
+        for instruction in select.body.instructions_mut() {
             if let Instruction::Index {
                 destination,
                 object,
@@ -185,22 +189,20 @@ func main() -> Int {
             }
         }
 
-        let error = Machine::new(&program).run_main().unwrap_err();
+        let error = program.into_verified().unwrap_err();
         assert!(
-            error.message.contains("borrowed place has expired"),
+            error
+                .message
+                .contains("returns a reference but declares a non-reference result"),
             "{}",
             error.message
         );
     }
 
     fn remove_drops(function: &mut BytecodeFunction) {
-        let (instructions, spans) = std::mem::take(&mut function.instructions)
-            .into_iter()
-            .zip(std::mem::take(&mut function.instruction_spans))
-            .filter(|(instruction, _)| !matches!(instruction, Instruction::Drop { .. }))
-            .unzip();
-        function.instructions = instructions;
-        function.instruction_spans = spans;
+        function
+            .body
+            .retain(|instruction| !matches!(instruction, Instruction::Drop { .. }));
     }
 
     #[test]
@@ -221,8 +223,12 @@ func main() -> Int {
             verify(&optimized).unwrap();
             verify(&unoptimized).unwrap();
             assert_eq!(
-                Machine::new(&optimized).run_main().unwrap(),
-                Machine::new(&unoptimized).run_main().unwrap(),
+                Machine::new(&optimized.clone().into_verified().unwrap())
+                    .run_main()
+                    .unwrap(),
+                Machine::new(&unoptimized.clone().into_verified().unwrap())
+                    .run_main()
+                    .unwrap(),
                 "optimization changed program behavior for {source}"
             );
         }
@@ -242,7 +248,9 @@ func main() -> Int {
                     .any(|instruction| matches!(instruction, Instruction::Drop { .. }))
             }));
             assert_eq!(
-                Machine::new(&program).run_main().unwrap(),
+                Machine::new(&program.clone().into_verified().unwrap())
+                    .run_main()
+                    .unwrap(),
                 Value::Integer(42)
             );
         }
@@ -270,8 +278,12 @@ func main() -> Int {
         assert!(optimized_metrics.registers < unoptimized_metrics.registers);
         assert!(optimized_metrics.constants <= unoptimized_metrics.constants);
         assert_eq!(
-            Machine::new(&optimized).run_main().unwrap(),
-            Machine::new(&unoptimized).run_main().unwrap()
+            Machine::new(&optimized.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
+            Machine::new(&unoptimized.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap()
         );
     }
 
@@ -280,7 +292,12 @@ func main() -> Int {
         let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
         let mut program = compile(&compilation).unwrap();
         let main = program.metadata.main.unwrap();
-        program.functions.get_mut(&main).unwrap().instructions[0] = Instruction::LoadConstant {
+        program
+            .functions
+            .get_mut(&main)
+            .unwrap()
+            .body
+            .instructions_mut()[0] = Instruction::LoadConstant {
             destination: Register(u16::MAX),
             constant: 0,
         };
@@ -302,15 +319,16 @@ func main() -> Int {
             .unwrap();
         let register = Register(function.registers);
         function.registers += 1;
-        function.instructions.insert(
+        function.body.insert(
             return_index,
             Instruction::LoadConstant {
                 destination: register,
                 constant: bool_constant,
             },
+            0..0,
         );
-        function.instruction_spans.insert(return_index, 0..0);
-        function.instructions[return_index + 1] = Instruction::Return { source: register };
+        function.body.instructions_mut()[return_index + 1] =
+            Instruction::Return { source: register };
 
         let error = verify(&program).unwrap_err();
         assert!(error.message.contains("return value type"));
@@ -331,9 +349,8 @@ func main() -> Int {
             unreachable!()
         };
         function
-            .instructions
-            .insert(return_index, Instruction::Drop { register: source });
-        function.instruction_spans.insert(return_index, 0..0);
+            .body
+            .insert(return_index, Instruction::Drop { register: source }, 0..0);
 
         let error = verify(&program).unwrap_err();
         assert!(error.message.contains("reads unavailable"));
@@ -354,30 +371,33 @@ func main() -> Int {
         program.metadata.constants.push(Constant::Bool(true));
         let function = program.functions.get_mut(&main).unwrap();
         function.registers = 2;
-        function.instructions = vec![
-            Instruction::LoadConstant {
-                destination: Register(0),
-                constant: boolean,
-            },
-            // The logical verifier does not evaluate unary operations: both edges remain possible.
-            Instruction::Unary {
-                destination: Register(0),
-                operator: crate::ast::UnaryOp::Not,
-                operand: Register(0),
-            },
-            Instruction::JumpIfFalse {
-                condition: Register(0),
-                target: 4,
-            },
-            Instruction::LoadConstant {
-                destination: Register(1),
-                constant: integer,
-            },
-            Instruction::Return {
-                source: Register(1),
-            },
-        ];
-        function.instruction_spans = vec![0..0; function.instructions.len()];
+        function.body = crate::codegen::storage::InstructionBody::new(
+            (vec![
+                Instruction::LoadConstant {
+                    destination: Register(0),
+                    constant: boolean,
+                },
+                // The logical verifier does not evaluate unary operations: both edges remain possible.
+                Instruction::Unary {
+                    destination: Register(0),
+                    operator: crate::ast::UnaryOp::Not,
+                    operand: Register(0),
+                },
+                Instruction::JumpIfFalse {
+                    condition: Register(0),
+                    target: 4,
+                },
+                Instruction::LoadConstant {
+                    destination: Register(1),
+                    constant: integer,
+                },
+                Instruction::Return {
+                    source: Register(1),
+                },
+            ])
+            .into_iter()
+            .map(|i| (i, 0..0)),
+        );
 
         let error = verify(&program).unwrap_err();
         assert!(error.message.contains("reads unavailable"));
@@ -404,11 +424,12 @@ func main() -> Int {
                 _ => None,
             })
             .unwrap();
-        program.functions.get_mut(&target).unwrap().parameter_modes[0] =
+        program.functions.get_mut(&target).unwrap().parameters[0].mode =
             crate::ast::ParameterMode::Consume;
         let function = program.functions.get_mut(&main).unwrap();
         let return_instruction = function
-            .instructions
+            .body
+            .instructions_mut()
             .iter_mut()
             .find(|instruction| matches!(instruction, Instruction::Return { .. }))
             .unwrap();
@@ -437,15 +458,17 @@ func main() -> Int {
             .unwrap();
         let register = Register(function.registers);
         function.registers += 1;
-        function.instructions.insert(
+        function.body.insert(
             call_index,
             Instruction::LoadConstant {
                 destination: register,
                 constant: bool_constant,
             },
+            0..0,
         );
-        function.instruction_spans.insert(call_index, 0..0);
-        let Instruction::Call { arguments, .. } = &mut function.instructions[call_index + 1] else {
+        let Instruction::Call { arguments, .. } =
+            &mut function.body.instructions_mut()[call_index + 1]
+        else {
             unreachable!()
         };
         arguments[0] = register;
@@ -484,7 +507,9 @@ func main() -> Int {
             Instruction::Binary { .. } | Instruction::JumpIfFalse { .. }
         )));
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
     }
@@ -519,7 +544,9 @@ func main() -> Int {
         // share two temporary homes without writing through borrowed storage.
         assert_eq!(function.registers, 3);
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
     }
@@ -542,7 +569,9 @@ func main() -> Int {
         );
         assert_eq!(main.instructions.len(), main.instruction_spans.len());
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
 
@@ -584,7 +613,9 @@ func main() -> Int {
             Instruction::MakeClosure { .. } | Instruction::CallValue { .. }
         )));
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
 
@@ -603,7 +634,12 @@ func main() -> Int {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::CallClosure { .. }))
         );
-        assert_eq!(Machine::new(&named).run_main().unwrap(), Value::Integer(42));
+        assert_eq!(
+            Machine::new(&named.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
+            Value::Integer(42)
+        );
 
         let borrowed = crate::compile(
             "func main() -> Int {
@@ -621,7 +657,9 @@ func main() -> Int {
                 .any(|instruction| matches!(instruction, Instruction::CallClosure { .. }))
         );
         assert_eq!(
-            Machine::new(&borrowed).run_main().unwrap(),
+            Machine::new(&borrowed.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
     }

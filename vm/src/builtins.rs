@@ -76,6 +76,18 @@ direct_builtin_handlers!(
     FromCodePoint,
     ParseFloat,
     FormatFloat,
+    FloatBits,
+    FloatFromInt,
+    IntFromFloat,
+    FloatFloor,
+    FloatCeil,
+    FloatRound,
+    FloatTruncate,
+    FloatSqrt,
+    FloatSin,
+    FloatCos,
+    FloatAtan2,
+    Float32Bits,
     ByteValid,
     ByteUnchecked,
     BytesEmpty,
@@ -342,6 +354,22 @@ fn dispatch_core(
         (Builtin::FormatFloat, [Value::Float(value)]) => {
             Ok(Value::string(string_record, value.to_string()))
         }
+        (Builtin::FloatBits, [Value::Float(value)]) => Ok(Value::Integer(value.to_bits() as i64)),
+        (Builtin::FloatSqrt, [Value::Float(value)]) => Ok(Value::Float(value.sqrt())),
+        (Builtin::FloatSin, [Value::Float(value)]) => Ok(Value::Float(value.sin())),
+        (Builtin::FloatCos, [Value::Float(value)]) => Ok(Value::Float(value.cos())),
+        (Builtin::FloatFromInt, [Value::Integer(value)]) => Ok(Value::Float(*value as f64)),
+        (Builtin::IntFromFloat, [Value::Float(value)]) => Ok(Value::Integer(*value as i64)),
+        (Builtin::FloatFloor, [Value::Float(value)]) => Ok(Value::Float(value.floor())),
+        (Builtin::FloatCeil, [Value::Float(value)]) => Ok(Value::Float(value.ceil())),
+        (Builtin::FloatRound, [Value::Float(value)]) => Ok(Value::Float(value.round_ties_even())),
+        (Builtin::FloatTruncate, [Value::Float(value)]) => Ok(Value::Float(value.trunc())),
+        (Builtin::FloatAtan2, [Value::Float(y), Value::Float(x)]) => Ok(Value::Float(y.atan2(*x))),
+        (Builtin::Float32Bits, [Value::Float(value)]) => Ok(Value::Integer(if value.is_nan() {
+            0x7fc0_0000
+        } else {
+            i64::from((*value as f32).to_bits())
+        })),
         (Builtin::ByteValid, [Value::Integer(value)]) => {
             Ok(Value::Bool(u8::try_from(*value).is_ok()))
         }

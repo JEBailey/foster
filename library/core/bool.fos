@@ -5,14 +5,28 @@
 //!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
+import core.byte
+import core.bytes
+
 impl Bool {
+    /// Reads `.bytes`: one byte, `0` for false or `1` for true, leaving `self` unchanged.
+    pub func bytes(self) -> Bytes [read self] {
+        Bytes.from([Byte.unchecked(branch {
+            self -> 1 _ -> 0
+        })])
+    }
+
     /// Returns `true` or `false` as text without consuming this value.
     pub func as_string(self) -> String [read self] {
-        branch { self -> "true" _ -> "false" }
+        branch {
+            self -> "true" _ -> "false"
+        }
     }
 
     /// Explicitly copies this scalar value.
-    pub func copy(self) -> self [read self] { self }
+    pub func copy(self) -> self [read self] {
+        self
+    }
 
     /// Returns true when exactly one value is true.
     pub func xor(self, right: Bool) -> Bool {

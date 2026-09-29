@@ -12,10 +12,8 @@ use std::ops::Range;
 #[derive(Debug, Clone, Default)]
 pub struct FunctionMetadata {
     pub intrinsic_stub: bool,
-    pub parameter_modes: Vec<crate::ast::ParameterMode>,
-    pub mutable_parameters: Vec<bool>,
+    pub parameters: Vec<crate::codegen::storage::ExecutableParameter>,
     pub returns_reference: bool,
-    pub parameter_types: Vec<ExecutableType>,
     pub capture_types: Vec<ExecutableType>,
     pub result_type: Option<ExecutableType>,
 }
@@ -26,10 +24,8 @@ impl FunctionMetadata {
     ) -> Self {
         Self {
             intrinsic_stub: function.intrinsic_stub,
-            parameter_modes: function.parameter_modes.clone(),
-            mutable_parameters: function.mutable_parameters.clone(),
+            parameters: function.parameters.clone(),
             returns_reference: function.returns_reference,
-            parameter_types: function.parameter_types.clone(),
             capture_types: function.capture_types.clone(),
             result_type: Some(function.result_type.clone()),
         }
@@ -247,34 +243,27 @@ pub(super) fn lower_verified_function(
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
     let (instructions, spans) = lowered.into_iter().unzip();
-    let parameter_types = if metadata.parameter_types.is_empty() {
+    let parameters = if metadata.parameters.is_empty() {
         function
             .signature
             .parameters
             .iter()
             .copied()
-            .map(verification_type)
+            .map(|ty| crate::codegen::storage::ExecutableParameter {
+                ty: verification_type(ty),
+                mode: crate::ast::ParameterMode::Borrow,
+                mutable: false,
+            })
             .collect::<Vec<_>>()
     } else {
-        metadata.parameter_types
+        metadata.parameters
     };
-    let parameter_count = parameter_types.len();
+    u16::try_from(parameters.len())
+        .map_err(|_| LowerError("too many function parameters".into()))?;
     Ok(vm::BytecodeFunction {
         name: function.name.clone(),
         intrinsic_stub: metadata.intrinsic_stub,
-        parameters: u16::try_from(parameter_count)
-            .map_err(|_| LowerError("too many function parameters".into()))?,
-        parameter_types,
-        parameter_modes: if metadata.parameter_modes.is_empty() {
-            vec![crate::ast::ParameterMode::Borrow; parameter_count]
-        } else {
-            metadata.parameter_modes
-        },
-        mutable_parameters: if metadata.mutable_parameters.is_empty() {
-            vec![false; parameter_count]
-        } else {
-            metadata.mutable_parameters
-        },
+        parameters: parameters,
         returns_reference: metadata.returns_reference,
         captures: u16::try_from(function.captures.len())
             .map_err(|_| LowerError("too many function captures".into()))?,
@@ -292,8 +281,8 @@ pub(super) fn lower_verified_function(
             .result_type
             .unwrap_or_else(|| verification_type(function.signature.result)),
         registers: next,
-        instructions,
-        instruction_spans: spans,
+        body: crate::codegen::storage::InstructionBody::try_from_parts(instructions, spans)
+            .map_err(|e| LowerError(e.to_string()))?,
     })
 }
 

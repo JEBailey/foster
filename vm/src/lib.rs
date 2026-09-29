@@ -2,7 +2,8 @@
 #![allow(clippy::result_large_err)]
 pub use foster_bytecode::{
     BinaryError, BytecodeFunction, Constant, FORMAT_VERSION, Instruction, Program, ProgramMetrics,
-    Register, RuntimeRecord, RuntimeVariant, decode_program, encode_program, verify,
+    Register, RuntimeRecord, RuntimeVariant, VerifiedProgram, decode_program, encode_program,
+    verify,
 };
 pub use foster_bytecode::{ast, codegen, entry, error, hir, intrinsics, types};
 pub(crate) mod builtins;
@@ -25,7 +26,6 @@ mod foreign {
 }
 // Execution modules use a common namespace for VM values and host state.
 pub(crate) use crate as vm;
-pub fn run(program: &Program) -> Result<Value, error::FosterError> {
-    verify(program)?;
+pub fn run(program: &VerifiedProgram) -> Result<Value, error::FosterError> {
     Machine::new(program).run_main()
 }

@@ -245,7 +245,7 @@ fn map_contract_borrows_preserve_storage() {
             foster::vm::compile_with_options(&compilation, foster::vm::CompileOptions { optimize })
                 .unwrap();
         assert_eq!(
-            foster::vm::Machine::new(&program)
+            foster::vm::Machine::new(&program.clone().into_verified().unwrap())
                 .run_main()
                 .unwrap()
                 .to_string(),
@@ -254,7 +254,7 @@ fn map_contract_borrows_preserve_storage() {
         let encoded = foster::vm::encode_program(&program).unwrap();
         let decoded = foster::vm::decode_program(&encoded).unwrap();
         assert_eq!(
-            foster::vm::Machine::new(&decoded)
+            foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
                 .run_main()
                 .unwrap()
                 .to_string(),

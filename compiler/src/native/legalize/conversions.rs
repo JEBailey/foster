@@ -116,7 +116,7 @@ pub(super) fn allocate_shared_value(values: &mut ir::ValueBuilder, ty: NativeTyp
 
 pub(super) fn shared_call_arguments(
     arguments: &[ir::Value],
-    modes: &[ParameterMode],
+    modes: impl ExactSizeIterator<Item = ParameterMode>,
     expected_types: &[NativeType],
     environment: NativeIrEnvironment<'_>,
     values: &mut ir::ValueBuilder,
@@ -134,7 +134,7 @@ pub(super) fn shared_call_arguments(
         let source_type = values[argument.index()];
         let pointee_type = dereference_native_type(source_type, environment)?;
         let loaded;
-        let argument = if *mode == ParameterMode::Borrow
+        let argument = if mode == ParameterMode::Borrow
             && source_type != pointee_type
             && source_type != *expected
         {
@@ -166,7 +166,7 @@ pub(super) fn shared_call_arguments(
                 Vec::new(),
             ));
             lowered.push(callable);
-            if *mode == ParameterMode::Consume {
+            if mode == ParameterMode::Consume {
                 instructions.push((
                     ir::Instruction::Portable(ir::PortableInstruction::Drop { value: *argument }),
                     Vec::new(),
@@ -190,7 +190,7 @@ pub(super) fn shared_call_arguments(
                 Vec::new(),
             ));
             lowered.push(converted);
-            if *mode == ParameterMode::Consume {
+            if mode == ParameterMode::Consume {
                 instructions.push((
                     ir::Instruction::Portable(ir::PortableInstruction::Drop { value: *argument }),
                     Vec::new(),
@@ -198,8 +198,7 @@ pub(super) fn shared_call_arguments(
             }
             continue;
         }
-        if *mode == ParameterMode::Borrow
-            && matches!(ty, NativeType::Object(_) | NativeType::String)
+        if mode == ParameterMode::Borrow && matches!(ty, NativeType::Object(_) | NativeType::String)
         {
             let retained = allocate_shared_value(values, ty);
             instructions.push((
@@ -212,7 +211,7 @@ pub(super) fn shared_call_arguments(
             lowered.push(retained);
         } else {
             lowered.push(*argument);
-            if *mode == ParameterMode::Consume {
+            if mode == ParameterMode::Consume {
                 consumed.push(*argument);
             }
         }

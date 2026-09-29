@@ -781,10 +781,8 @@ impl Package {
                         .functions
                         .iter()
                         .any(|function| function.name == format!("{}.{}", record.name, method.name))
-                        || matches!(
-                            method.name.as_str(),
-                            "empty?" | "length" | "head" | "rest" | "bytes"
-                        )
+                        || matches!(method.name.as_str(), "empty?" | "length" | "head" | "rest")
+                        || (bootstrap.name == "core.string" && method.name == "bytes")
                 });
             }
             for variant in &mut program.variants {
@@ -1190,7 +1188,13 @@ impl Package {
                         && !program.records.iter().any(|record| record.name == owner)
                         && !matches!(
                             owner,
-                            "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+                            "Int"
+                                | "Float"
+                                | "Byte"
+                                | "Bytes"
+                                | "ByteBuffer"
+                                | "CodePoint"
+                                | "String"
                         )
                     {
                         return Err(FosterError::runtime(format!(

@@ -426,6 +426,48 @@ See [type patterns](language-design.md#type-patterns) for the bounds.
 | Familiar numeric edge cases are handled automatically | Read bounds, overflow, and division preconditions in the method comments |
 | Generated signatures are ready-to-paste source | They include resolved reference notation; copy source declarations instead |
 
+## Floating-point mathematics
+
+Import `core.float` for `sqrt()`, `sin()`, `cos()`, and `atan2(x)`. Angles use radians;
+`y.atan2(x)` returns the angle of `(x, y)`, with the y coordinate as receiver. Domain
+errors such as a negative square root return NaN. Trigonometric precision can vary
+across targets, so compare approximate results using a tolerance.
+
+```foster
+import core.float
+
+func main() -> Int {
+    let x = 3.0
+    let y = 4.0
+    assert((x * x + y * y).sqrt() == 5.0)
+    let angle = y.atan2(x)
+    assert((angle.sin() - 0.8).absolute() < 1e-14)
+    assert((angle.cos() - 0.6).absolute() < 1e-14)
+    42
+}
+```
+
+## Byte encoding
+
+Core values expose their default encoding through the read-only `.bytes` property.
+Numeric defaults use little-endian; text uses UTF-8. Choose numeric byte order with
+`to_le_bytes()` or `to_be_bytes()`. A Float's default is binary64; use the explicit
+binary32 methods for GPU data. These operations preserve their receiver.
+
+```foster
+import core.int
+import core.float
+import core.bytes
+
+func main() -> Int {
+    let value = 42
+    assert(value.bytes.hex() == "2a00000000000000")
+    assert(value.to_be_bytes().hex() == "000000000000002a")
+    assert(1.0.to_f32_le_bytes().hex() == "0000803f")
+    value
+}
+```
+
 ## Check the program before delivering it
 
 From the repository root:
@@ -484,5 +526,31 @@ func main() -> Int {
     let item = Item { value: 42 }
     let borrowed = :request { :inspect { borrow(item) } }
     borrowed.value
+}
+```
+
+## Numeric conversions
+
+Conversions preserve their inputs. `Float.from` can round large integers;
+`Int.from` truncates toward zero and rejects nonfinite or out-of-range values.
+Rounding methods return Float, so choose rounding before converting when needed.
+
+```foster
+import core.float
+import core.int
+import core.result
+
+func whole(value: Float) -> Result<Int, IntConversionError> {
+    let integer = try Int.from(value.floor())
+    Result.Ok(integer)
+}
+
+func main() -> Int {
+    assert(Float.from(42) == 42.0)
+    assert(2.5.round() == 2.0)
+    branch whole(42.9) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> 0
+    }
 }
 ```

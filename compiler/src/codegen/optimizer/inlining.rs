@@ -34,7 +34,11 @@ fn acyclic(body: &ir::Function) -> bool {
 fn eligible(body: &ir::Function, declaration: &super::super::program::FunctionDeclaration) -> bool {
     body.captures.is_empty()
         && !declaration.returns_reference
-        && !declaration.mutable_parameters.iter().any(|value| *value)
+        && !declaration
+            .parameters
+            .iter()
+            .map(|p| &p.mutable)
+            .any(|value| *value)
         && body.values.iter().all(scalar)
         && body
             .blocks
@@ -79,8 +83,9 @@ pub(super) fn run(
             let caller = program.bodies.get_mut(&id).unwrap();
             if !caller.values.iter().all(scalar)
                 || program.functions[&id]
-                    .mutable_parameters
+                    .parameters
                     .iter()
+                    .map(|p| &p.mutable)
                     .any(|value| *value)
                 || program.functions[&id].returns_reference
             {

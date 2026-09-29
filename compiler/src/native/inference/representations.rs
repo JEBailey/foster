@@ -33,10 +33,14 @@ pub(super) fn join_representation(
             } => {
                 let function = &environment.program.functions[function];
                 ExecutableType::Function {
-                    parameters: crate::types::Parameter::from_parts(
-                        function.parameter_types.clone(),
-                        function.parameter_modes.clone(),
-                    ),
+                    parameters: function
+                        .parameters
+                        .iter()
+                        .map(|p| crate::types::Parameter {
+                            ty: p.ty.clone(),
+                            mode: p.mode,
+                        })
+                        .collect(),
                     result: Box::new(function.result_type.clone()),
                 }
                 .specialize(specialization)

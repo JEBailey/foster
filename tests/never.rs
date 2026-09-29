@@ -93,7 +93,9 @@ fn never_survives_bytecode_round_trip() {
             .any(|function| function.name == "fail"
                 && function.result_type == foster::codegen::types::ExecutableType::Never)
     );
-    let error = foster::vm::Machine::new(&decoded).run_main().unwrap_err();
+    let error = foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
+        .run_main()
+        .unwrap_err();
     assert!(error.to_string().contains("serialized panic"));
 }
 

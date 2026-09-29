@@ -404,7 +404,7 @@ test "another case" {}
             .all(|function| !compilation.hir.tests.contains(function))
     );
     let program = foster::vm::compile(&compilation).unwrap();
-    let machine = foster::vm::Machine::new(&program);
+    let machine = foster::vm::Machine::new(&program.clone().into_verified().unwrap());
     for test in &tests {
         assert_eq!(machine.run_function(*test).unwrap(), Value::Unit);
     }

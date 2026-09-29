@@ -242,10 +242,15 @@ struct SharedCommit {
     _lease: AccessLease,
 }
 
+/// An execution context for an immutable verified executable.
+/// ```compile_fail
+/// let raw = foster_vm::Program::default();
+/// let machine = foster_vm::Machine::new(&raw);
+/// ```
 pub struct Machine {
     debugger: Option<Arc<dyn super::debug::Observer>>,
     cancellation: Option<Arc<crate::remote::Control>>,
-    program: Arc<Program>,
+    program: super::VerifiedProgram,
     host: Arc<super::host::HostContext>,
 }
 
@@ -264,7 +269,7 @@ pub fn release_value(value: Value) -> Result<(), FosterError> {
 
 #[derive(Clone)]
 pub(super) struct Cleanup {
-    program: Arc<Program>,
+    program: super::VerifiedProgram,
     host: Arc<super::host::HostContext>,
     function: FunctionId,
     record: Option<crate::hir::RecordId>,
@@ -373,18 +378,18 @@ impl Machine {
         })
     }
 
-    pub fn new(program: &Program) -> Self {
+    pub fn new(program: &super::VerifiedProgram) -> Self {
         let host = super::host::HostContext::current()
             .unwrap_or_else(|_| super::host::HostContext::new("."));
         Self::with_host_context(program, host)
     }
 
     pub fn with_host_context(
-        program: &Program,
+        program: &super::VerifiedProgram,
         host: impl Into<Arc<super::host::HostContext>>,
     ) -> Self {
         Self {
-            program: Arc::new(program.clone()),
+            program: program.clone(),
             host: host.into(),
             cancellation: None,
             debugger: None,
@@ -442,7 +447,7 @@ impl Machine {
             .functions
             .get(&function)
             .ok_or_else(|| RuntimeError::runtime("bytecode references an unknown function"))?;
-        if definition.parameters != 0 || definition.captures != 0 {
+        if definition.parameter_count() != 0 || definition.captures != 0 {
             return Err(RuntimeError::runtime(format!(
                 "VM entry function `{}` must have no parameters or captures",
                 definition.name
@@ -1237,20 +1242,23 @@ impl Machine {
                                 if candidate_slot != slot {
                                     return None;
                                 }
-                                let matches =
-                                    match self.program.functions[target].parameter_types.first() {
-                                        Some(crate::codegen::types::ExecutableType::List(_)) => {
-                                            value.list_value().is_some()
-                                        }
-                                        Some(crate::codegen::types::ExecutableType::Bytes) => {
-                                            value.bytes_value().is_some()
-                                        }
-                                        Some(crate::codegen::types::ExecutableType::ByteBuffer) => {
-                                            value.byte_buffer_value().is_some()
-                                                || value.byte_buffer_list_value().is_some()
-                                        }
-                                        _ => false,
-                                    };
+                                let matches = match self.program.functions[target]
+                                    .parameters
+                                    .first()
+                                    .map(|p| &p.ty)
+                                {
+                                    Some(crate::codegen::types::ExecutableType::List(_)) => {
+                                        value.list_value().is_some()
+                                    }
+                                    Some(crate::codegen::types::ExecutableType::Bytes) => {
+                                        value.bytes_value().is_some()
+                                    }
+                                    Some(crate::codegen::types::ExecutableType::ByteBuffer) => {
+                                        value.byte_buffer_value().is_some()
+                                            || value.byte_buffer_list_value().is_some()
+                                    }
+                                    _ => false,
+                                };
                                 matches.then_some(*target)
                             },
                         );
@@ -1671,7 +1679,7 @@ impl Machine {
         {
             return Err("retained callbacks require owned data without borrowed references or nested callables".into());
         }
-        if self.program.functions[&function].parameters != 1 {
+        if self.program.functions[&function].parameter_count() != 1 {
             return Err("callback adapter requires one packet argument".into());
         }
         let mut slots = Vec::new();
@@ -1735,13 +1743,13 @@ impl Machine {
         let arguments = arguments.into_iter();
         let bytecode = &self.program.functions[&function];
         if captures.len() != usize::from(bytecode.captures)
-            || arguments.len() != usize::from(bytecode.parameters)
+            || arguments.len() != usize::from(bytecode.parameter_count())
         {
             return Err(RuntimeError::runtime(format!(
                 "VM call to `{}` has an invalid capture or parameter layout (expected {}/{}, received {}/{})",
                 bytecode.name,
                 bytecode.captures,
-                bytecode.parameters,
+                bytecode.parameter_count(),
                 captures.len(),
                 arguments.len()
             )));
@@ -1764,7 +1772,7 @@ impl Machine {
             registers,
             debug_live: self.debugger.as_ref().map(|_| {
                 (0..bytecode.registers)
-                    .map(|register| register < bytecode.captures + bytecode.parameters)
+                    .map(|register| register < bytecode.captures + bytecode.parameter_count())
                     .collect()
             }),
             instruction: 0,
@@ -1813,9 +1821,9 @@ impl Machine {
         let bytecode = frame.function;
         let offset = usize::from(bytecode.captures);
         for (index, argument) in arguments.iter().copied().enumerate() {
-            frame.registers[offset + index] = match bytecode.parameter_modes[index] {
+            frame.registers[offset + index] = match bytecode.parameters[index].mode {
                 crate::ast::ParameterMode::Consume => RegisterCell::Inline(take(caller, argument)),
-                crate::ast::ParameterMode::Borrow if bytecode.mutable_parameters[index] => {
+                crate::ast::ParameterMode::Borrow if bytecode.parameters[index].mutable => {
                     RegisterCell::Place(place(caller, argument))
                 }
                 crate::ast::ParameterMode::Borrow => borrow_parameter(caller, argument),
@@ -1842,9 +1850,9 @@ impl Machine {
         let offset = usize::from(bytecode.captures);
         for (index, argument) in arguments.iter().copied().enumerate() {
             let parameter = index + 1;
-            frame.registers[offset + parameter] = match bytecode.parameter_modes[parameter] {
+            frame.registers[offset + parameter] = match bytecode.parameters[parameter].mode {
                 crate::ast::ParameterMode::Consume => RegisterCell::Inline(take(caller, argument)),
-                crate::ast::ParameterMode::Borrow if bytecode.mutable_parameters[parameter] => {
+                crate::ast::ParameterMode::Borrow if bytecode.parameters[parameter].mutable => {
                     RegisterCell::Place(place(caller, argument))
                 }
                 crate::ast::ParameterMode::Borrow => borrow_parameter(caller, argument),
@@ -2062,7 +2070,7 @@ mod register_storage_tests {
     fn frame_recycling_detaches_surviving_places_and_resets_registers() {
         let compiled = foster_compiler::compile("func main() -> Int { 42 }").unwrap();
         let program = foster_compiler::vm::compile(&compiled).unwrap();
-        let machine = Machine::new(&program);
+        let machine = Machine::new(&program.clone().into_verified().unwrap());
         let entry = program.metadata.main.unwrap();
         REGISTER_POOL.with(|pool| *pool.borrow_mut() = RegisterPool::default());
         let mut frame = machine.frame(entry, vec![], vec![], None).unwrap();
@@ -2130,8 +2138,10 @@ func main() -> Int {
             let path = directory.clone();
             let (send, receive) = std::sync::mpsc::channel();
             let worker = std::thread::spawn(move || {
-                let mut machine =
-                    Machine::with_host_context(&program, super::super::HostContext::new(path));
+                let mut machine = Machine::with_host_context(
+                    &program.into_verified().unwrap(),
+                    super::super::HostContext::new(path),
+                );
                 machine.cancellation = Some(control);
                 send.send(
                     machine

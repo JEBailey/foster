@@ -78,7 +78,9 @@ fn check(source: &str) {
             vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
         let program = vm::decode_program(&vm::encode_program(&program).unwrap()).unwrap();
         assert_eq!(
-            vm::Machine::new(&program).run_main().unwrap(),
+            vm::Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(42)
         );
     }

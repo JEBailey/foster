@@ -33,16 +33,14 @@ pub(crate) fn lower_shared_program(shared: SharedProgram) -> Result<vm::Program,
                 index
             };
             let result = declaration
-                .parameters
+                .parameter_count()
                 .checked_add(declaration.captures)
                 .ok_or_else(|| LowerError("intrinsic register prefix overflow".into()))?;
             vm::BytecodeFunction {
                 name: declaration.name.clone(),
                 intrinsic_stub: true,
-                parameters: declaration.parameters,
-                parameter_types: declaration.parameter_types.clone(),
-                parameter_modes: declaration.parameter_modes.clone(),
-                mutable_parameters: declaration.mutable_parameters.clone(),
+
+                parameters: declaration.parameters.clone(),
                 returns_reference: declaration.returns_reference,
                 captures: declaration.captures,
                 capture_types: declaration.capture_types.clone(),
@@ -50,16 +48,19 @@ pub(crate) fn lower_shared_program(shared: SharedProgram) -> Result<vm::Program,
                 registers: result
                     .checked_add(1)
                     .ok_or_else(|| LowerError("intrinsic register prefix overflow".into()))?,
-                instructions: vec![
-                    vm::Instruction::LoadConstant {
-                        destination: vm::Register(result),
-                        constant,
-                    },
-                    vm::Instruction::Return {
-                        source: vm::Register(result),
-                    },
-                ],
-                instruction_spans: vec![0..0, 0..0],
+                body: crate::codegen::storage::InstructionBody::try_from_parts(
+                    vec![
+                        vm::Instruction::LoadConstant {
+                            destination: vm::Register(result),
+                            constant,
+                        },
+                        vm::Instruction::Return {
+                            source: vm::Register(result),
+                        },
+                    ],
+                    vec![0..0, 0..0],
+                )
+                .expect("paired instruction fixture"),
             }
         } else {
             lower_verified_function(

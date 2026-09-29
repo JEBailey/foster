@@ -4,7 +4,7 @@ use lsp_types::{
     ParameterInformation, ParameterLabel, SignatureHelp, SignatureHelpParams, SignatureInformation,
 };
 
-use crate::compiler::Compilation;
+use crate::compiler::RecoveryCompilation as Compilation;
 use crate::hir::visit::Visitor;
 use crate::hir::{Expr, ExprId, LocalKind};
 

@@ -523,7 +523,9 @@ mod tests {
             .unwrap();
             program.functions.insert(id, body);
             crate::vm::verify(&program).unwrap();
-            crate::vm::Machine::new(&program).run_main().unwrap()
+            crate::vm::Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap()
         };
         verify(&f);
         assert_eq!(execute(&f), crate::vm::Value::Bool(true));

@@ -11,7 +11,7 @@ pub(super) fn propagate(program: &mut Program) -> bool {
     let mut changed = false;
     for function in program.functions.values_mut() {
         let incoming = available_copies(function);
-        for (index, instruction) in function.instructions.iter_mut().enumerate() {
+        for (index, instruction) in function.body.instructions_mut().iter_mut().enumerate() {
             changed |= rewrite_uses(instruction, &incoming[index]);
         }
     }

@@ -437,7 +437,10 @@ pub(super) fn lower_shared_instruction(
             }];
             let (arguments, consumed) = shared_call_arguments(
                 arguments,
-                &environment.program.functions[function].parameter_modes,
+                environment.program.functions[function]
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode),
                 &environment.function_types[&target].parameters,
                 environment,
                 values,
@@ -474,12 +477,14 @@ pub(super) fn lower_shared_instruction(
             // of the ordinary parameter mode inferred for `self`. Transfer a
             // retained reference to the native callee, which releases its input.
             let mut modes = environment.program.functions[function]
-                .parameter_modes
-                .clone();
+                .parameters
+                .iter()
+                .map(|p| p.mode)
+                .collect::<Vec<_>>();
             modes[0] = ParameterMode::Borrow;
             let (arguments, consumed) = shared_call_arguments(
                 &sources,
-                &modes,
+                modes.iter().copied(),
                 &environment.function_types[&target].parameters,
                 environment,
                 values,
@@ -520,7 +525,10 @@ pub(super) fn lower_shared_instruction(
             )?;
             let (ordinary, ordinary_consumed) = shared_call_arguments(
                 arguments,
-                &environment.program.functions[function].parameter_modes,
+                environment.program.functions[function]
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode),
                 &environment.function_types[&target].parameters[captures.len()..],
                 environment,
                 values,
@@ -626,8 +634,10 @@ pub(super) fn lower_shared_instruction(
                     }];
                     (
                         environment.program.functions[target]
-                            .parameter_modes
-                            .clone(),
+                            .parameters
+                            .iter()
+                            .map(|p| p.mode)
+                            .collect::<Vec<_>>(),
                         environment.function_types[&target_instance].parameters[captures.len()..]
                             .to_vec(),
                     )
@@ -657,7 +667,7 @@ pub(super) fn lower_shared_instruction(
             };
             let (arguments, consumed) = shared_call_arguments(
                 arguments,
-                &modes,
+                modes.iter().copied(),
                 &expected,
                 environment,
                 values,
@@ -826,7 +836,11 @@ pub(super) fn lower_shared_instruction(
             let mut lowered = Vec::new();
             let (arguments, consumed) = if let Some(first) = candidates.first() {
                 let target = &environment.function_types[&first.function];
-                let modes = &environment.program.functions[&first.implementation].parameter_modes;
+                let modes = &environment.program.functions[&first.implementation]
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode)
+                    .collect::<Vec<_>>();
                 if target.parameters.len() != arguments.len() + 1
                     || modes.len() != arguments.len() + 1
                 {
@@ -836,7 +850,7 @@ pub(super) fn lower_shared_instruction(
                 }
                 shared_call_arguments(
                     arguments,
-                    &modes[1..],
+                    modes[1..].iter().copied(),
                     &target.parameters[1..],
                     environment,
                     values,
@@ -942,7 +956,7 @@ pub(super) fn lower_shared_instruction(
             let mut result = Vec::new();
             let (lowered, consumed) = shared_call_arguments(
                 &sources,
-                &modes,
+                modes.iter().copied(),
                 &environment.function_types[&target].parameters[1..],
                 environment,
                 values,

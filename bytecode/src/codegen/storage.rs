@@ -708,23 +708,27 @@ impl Instruction {
     }
 }
 
+/// One executable parameter, including its ownership and mutation contract.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecutableParameter {
+    pub ty: ExecutableType,
+    pub mode: crate::ast::ParameterMode,
+    pub mutable: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
     /// A source intrinsic declaration whose executable call sites lower to `Builtin`.
     pub intrinsic_stub: bool,
-    pub parameters: u16,
-    pub parameter_types: Vec<ExecutableType>,
-    pub parameter_modes: Vec<crate::ast::ParameterMode>,
-    pub mutable_parameters: Vec<bool>,
+    pub parameters: Vec<ExecutableParameter>,
     /// Whether `Return` transfers a live place handle instead of reading its current value.
     pub returns_reference: bool,
     pub captures: u16,
     pub capture_types: Vec<ExecutableType>,
     pub result_type: ExecutableType,
     pub registers: u16,
-    pub instructions: Vec<Instruction>,
-    pub instruction_spans: Vec<Range<usize>>,
+    pub body: InstructionBody,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -758,5 +762,101 @@ impl Program {
                 .sum(),
             constants: self.metadata.constants.len(),
         }
+    }
+}
+
+impl Function {
+    pub fn parameter_count(&self) -> u16 {
+        u16::try_from(self.parameters.len()).expect("executable parameter count exceeds u16")
+    }
+}
+
+/// Instruction locations are built and resized together.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct InstructionBody {
+    tables: InstructionTables,
+}
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct InstructionTables {
+    pub instructions: Vec<Instruction>,
+    pub instruction_spans: Vec<Range<usize>>,
+}
+impl std::ops::Deref for InstructionBody {
+    type Target = InstructionTables;
+    fn deref(&self) -> &Self::Target {
+        &self.tables
+    }
+}
+impl std::ops::Deref for Function {
+    type Target = InstructionBody;
+    fn deref(&self) -> &Self::Target {
+        &self.body
+    }
+}
+impl InstructionBody {
+    pub fn try_from_parts(
+        instructions: Vec<Instruction>,
+        instruction_spans: Vec<Range<usize>>,
+    ) -> Result<Self, crate::error::FosterError> {
+        if instructions.len() != instruction_spans.len() {
+            return Err(crate::error::FosterError::runtime(
+                "mismatched instruction and span tables",
+            ));
+        }
+        Ok(Self {
+            tables: InstructionTables {
+                instructions,
+                instruction_spans,
+            },
+        })
+    }
+    pub fn new(entries: impl IntoIterator<Item = (Instruction, Range<usize>)>) -> Self {
+        let (instructions, instruction_spans) = entries.into_iter().unzip();
+        Self {
+            tables: InstructionTables {
+                instructions,
+                instruction_spans,
+            },
+        }
+    }
+    pub fn into_parts(self) -> (Vec<Instruction>, Vec<Range<usize>>) {
+        (self.tables.instructions, self.tables.instruction_spans)
+    }
+    pub fn instructions_mut(&mut self) -> &mut [Instruction] {
+        &mut self.tables.instructions
+    }
+    pub fn push(&mut self, instruction: Instruction, span: Range<usize>) {
+        self.tables.instructions.push(instruction);
+        self.tables.instruction_spans.push(span);
+    }
+    pub fn insert(&mut self, index: usize, instruction: Instruction, span: Range<usize>) {
+        self.tables.instructions.insert(index, instruction);
+        self.tables.instruction_spans.insert(index, span);
+    }
+    pub fn retain(&mut self, mut keep: impl FnMut(&Instruction) -> bool) {
+        let entries = std::mem::take(self).into_parts();
+        *self = Self::new(
+            entries
+                .0
+                .into_iter()
+                .zip(entries.1)
+                .filter(|(instruction, _)| keep(instruction)),
+        );
+    }
+}
+
+#[cfg(test)]
+mod construction_tests {
+    use super::*;
+    #[test]
+    fn bodies_reject_misaligned_locations_and_keep_edits_paired() {
+        let instruction = Instruction::Return { source: Slot(0) };
+        assert!(InstructionBody::try_from_parts(vec![instruction.clone()], vec![]).is_err());
+        let mut body = InstructionBody::new([(instruction.clone(), 1..2)]);
+        body.insert(0, Instruction::Drop { register: Slot(0) }, 3..4);
+        body.push(instruction, 5..6);
+        body.retain(|i| !matches!(i, Instruction::Drop { .. }));
+        assert_eq!(body.instruction_spans, vec![1..2, 5..6]);
+        assert_eq!(body.instructions.len(), 2);
     }
 }

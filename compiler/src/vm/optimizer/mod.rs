@@ -116,29 +116,32 @@ mod tests {
             vm::BytecodeFunction {
                 name: "main".into(),
                 intrinsic_stub: false,
-                parameters: 0,
-                parameter_types: vec![],
-                parameter_modes: vec![],
-                mutable_parameters: vec![],
+
+                parameters: vec![],
                 returns_reference: false,
                 captures: 0,
                 capture_types: vec![],
                 result_type: ExecutableType::Integer,
                 registers: 5,
-                instruction_spans: vec![0..0; instructions.len()],
-                instructions,
+                body: crate::codegen::storage::InstructionBody::new(
+                    instructions.into_iter().map(|i| (i, 0..0)),
+                ),
             },
         );
         vm::verify(&program).unwrap();
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(7)
         );
         finish_backend(&mut program);
         finalize_register_drops(&mut program);
         vm::verify(&program).unwrap();
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(7)
         );
         assert!(program.functions[&id].registers < 5);
@@ -194,7 +197,9 @@ mod tests {
                 .filter(|i| matches!(i, Instruction::Binary { .. }))
                 .count()
         };
-        let expected = Machine::new(&program).run_main().unwrap();
+        let expected = Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap();
         optimize(&mut program).unwrap();
         vm::verify(&program).unwrap();
         assert!(count(&program.functions[&id]) < count(&original));
@@ -205,7 +210,12 @@ mod tests {
                 .iter()
                 .all(|span| original.instruction_spans.contains(span))
         );
-        assert_eq!(Machine::new(&program).run_main().unwrap(), expected);
+        assert_eq!(
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
+            expected
+        );
         assert_eq!(expected, Value::Integer(66));
     }
 
@@ -229,7 +239,9 @@ mod tests {
                 vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
             vm::verify(&program).unwrap();
             assert_eq!(
-                Machine::new(&program).run_main().unwrap(),
+                Machine::new(&program.clone().into_verified().unwrap())
+                    .run_main()
+                    .unwrap(),
                 Value::Integer(42)
             );
         }
@@ -252,7 +264,9 @@ mod tests {
         .unwrap();
         let mut program =
             vm::compile_with_options(&compilation, vm::CompileOptions { optimize: false }).unwrap();
-        let baseline = Machine::new(&program).run_main().unwrap();
+        let baseline = Machine::new(&program.clone().into_verified().unwrap())
+            .run_main()
+            .unwrap();
         let barrier_id = *program
             .functions
             .iter()
@@ -262,7 +276,12 @@ mod tests {
         let before = program.functions[&barrier_id].clone();
         optimize(&mut program).unwrap();
         vm::verify(&program).unwrap();
-        assert_eq!(Machine::new(&program).run_main().unwrap(), baseline);
+        assert_eq!(
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
+            baseline
+        );
         assert_eq!(baseline, Value::Integer(49));
         let answer = program
             .functions
@@ -286,7 +305,12 @@ mod tests {
         assert!(after.instructions.iter().any(|i| matches!(i, Instruction::LoadConstant { constant, .. } if program.metadata.constants[usize::from(*constant)] == Constant::Integer(7))));
         let bytes = vm::encode_program(&program).unwrap();
         let decoded = vm::decode_program(&bytes).unwrap();
-        assert_eq!(Machine::new(&decoded).run_main().unwrap(), baseline);
+        assert_eq!(
+            Machine::new(&decoded.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
+            baseline
+        );
     }
 
     #[test]
@@ -313,7 +337,9 @@ mod tests {
                 .any(|i| matches!(i, Instruction::Binary { .. }))
         );
         assert_eq!(
-            Machine::new(&program).run_main().unwrap(),
+            Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             Value::Integer(84)
         );
     }

@@ -188,14 +188,15 @@ pub(crate) fn link(
             }
             let mut function = function.clone();
             for ty in function
-                .parameter_types
+                .parameters
                 .iter_mut()
+                .map(|p| &mut p.ty)
                 .chain(&mut function.capture_types)
                 .chain(std::iter::once(&mut function.result_type))
             {
                 mapping.ty(ty);
             }
-            for instruction in &mut function.instructions {
+            for instruction in function.body.instructions_mut() {
                 mapping.instruction(instruction)?;
             }
             program.functions.insert(target, function);
@@ -285,7 +286,7 @@ pub(crate) fn link(
     if !queries.is_empty() {
         let checked = crate::typecheck::check_runtime_type_queries(&compilation.hir, queries)?;
         for (function, body) in &mut program.functions {
-            for instruction in &mut body.instructions {
+            for instruction in body.body.instructions_mut() {
                 let I::MatchPattern { pattern, .. } = instruction else {
                     continue;
                 };

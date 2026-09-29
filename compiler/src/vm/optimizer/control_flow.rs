@@ -33,7 +33,7 @@ fn redirect_jump_chains(function: &mut BytecodeFunction) -> bool {
             _ => None,
         })
         .collect::<Vec<_>>();
-    for instruction in &mut function.instructions {
+    for instruction in function.body.instructions_mut() {
         let target = match instruction {
             Instruction::Jump { target } | Instruction::JumpIfFalse { target, .. } => target,
             _ => continue,
@@ -87,12 +87,8 @@ fn retain(function: &mut BytecodeFunction, keep: Vec<bool>) -> bool {
     let mut old_to_new = vec![None; old_len];
     let mut instructions = Vec::new();
     let mut spans = Vec::new();
-    for (old, (instruction, span)) in function
-        .instructions
-        .drain(..)
-        .zip(function.instruction_spans.drain(..))
-        .enumerate()
-    {
+    let old_body = std::mem::take(&mut function.body).into_parts();
+    for (old, (instruction, span)) in old_body.0.into_iter().zip(old_body.1).enumerate() {
         if keep[old] {
             old_to_new[old] = Some(instructions.len());
             instructions.push(instruction);
@@ -106,7 +102,7 @@ fn retain(function: &mut BytecodeFunction, keep: Vec<bool>) -> bool {
             *target = old_to_new[retained].expect("retained instruction has a new index");
         }
     }
-    function.instructions = instructions;
-    function.instruction_spans = spans;
+    function.body = crate::codegen::storage::InstructionBody::try_from_parts(instructions, spans)
+        .expect("paired instruction emission");
     true
 }

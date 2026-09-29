@@ -124,7 +124,7 @@ pub(super) fn seal_function_with_evidence(
     let mut reference_homes = function
         .capture_types
         .iter()
-        .chain(&function.parameter_types)
+        .chain(function.parameters.iter().map(|p| &p.ty))
         .enumerate()
         .filter_map(|(index, ty)| {
             matches!(ty, ExecutableType::Reference(_)).then_some(Slot(index as u16))
@@ -183,7 +183,7 @@ pub(super) fn seal_function_with_evidence(
         .iter()
         .copied()
         .enumerate()
-        .take(usize::from(function.captures + function.parameters))
+        .take(usize::from(function.captures + function.parameter_count()))
     {
         externals.push(allocate_lifted_value(
             &mut values,
@@ -570,7 +570,8 @@ pub(super) fn seal_function_with_evidence(
         ir::Function {
             name: function.name.clone(),
             signature: ir::Signature {
-                parameters: (capture_count..capture_count + usize::from(function.parameters))
+                parameters: (capture_count
+                    ..capture_count + usize::from(function.parameter_count()))
                     .map(|register| hints[register])
                     .collect(),
                 result: shared_type(&function.result_type),
@@ -672,7 +673,7 @@ fn register_type_hints(
     for (index, ty) in function
         .capture_types
         .iter()
-        .chain(&function.parameter_types)
+        .chain(function.parameters.iter().map(|p| &p.ty))
         .enumerate()
     {
         hints[index] = shared_type(ty);

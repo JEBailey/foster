@@ -13,7 +13,7 @@ pub(super) fn validate_program(
 ) -> Result<(), FosterError> {
     let main = program.metadata.main.expect("validated above");
     let main_function = &program.functions[&main];
-    if main_function.parameters != u16::from(program.metadata.main_arguments)
+    if main_function.parameter_count() != u16::from(program.metadata.main_arguments)
         || main_function.captures != 0
     {
         return Err(native_error(
@@ -22,7 +22,7 @@ pub(super) fn validate_program(
     }
     for instance in instances {
         let body = &program.functions[&instance.key.function];
-        if usize::from(body.captures) + usize::from(body.parameters)
+        if usize::from(body.captures) + usize::from(body.parameter_count())
             != function_types[&instance.ir_function].parameters.len()
         {
             return Err(native_error(format!(

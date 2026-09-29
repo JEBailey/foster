@@ -117,7 +117,7 @@ pub fn run(
             return Ok(0);
         }
     }
-    let result = vm::Machine::new(&debug.program)
+    let result = vm::Machine::new(&debug.program.into_verified()?)
         .with_debugger(session.clone())
         .run_main_with_arguments(arguments);
     let mut state = session.state.lock().unwrap();

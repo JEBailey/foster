@@ -226,7 +226,7 @@ pub(super) fn deduplicate(program: &mut Program) {
     ids.sort();
     for id in ids {
         let function = program.functions.get_mut(&id).unwrap();
-        for instruction in &mut function.instructions {
+        for instruction in function.body.instructions_mut() {
             if let Instruction::LoadConstant { constant, .. } = instruction {
                 let old_index = usize::from(*constant);
                 *constant = *remapped[old_index].get_or_insert_with(|| {
@@ -496,7 +496,14 @@ mod tests {
             .values_mut()
             .find(|f| f.name == "main")
             .unwrap();
-        function.instructions = indices.iter().map(|&index| load(0, index)).collect();
+        function.body = crate::codegen::storage::InstructionBody::new(
+            (indices
+                .iter()
+                .map(|&index| load(0, index))
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(|i| (i, 0..0)),
+        );
         program.metadata.constants = old.clone();
         deduplicate(&mut program);
         let function = program

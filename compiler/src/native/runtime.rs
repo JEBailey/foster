@@ -696,8 +696,9 @@ func main(args: Arguments) -> String {
                     if kind != "host" {
                         let arguments =
                             crate::entry::CommandArguments::new("cleanup", [mode, kind]);
-                        let outcome =
-                            vm::Machine::new(&vm_program).run_main_with_arguments(&arguments);
+                        let outcome = vm_program.clone().into_verified().and_then(|program| {
+                            vm::Machine::new(&program).run_main_with_arguments(&arguments)
+                        });
                         if mode == "main" {
                             let error = outcome.unwrap_err();
                             assert!(

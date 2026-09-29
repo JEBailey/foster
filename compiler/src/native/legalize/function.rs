@@ -50,7 +50,7 @@ pub(in crate::native) fn lower_shared_to_native_ir(
     let external_types = metadata
         .capture_types
         .iter()
-        .chain(&metadata.parameter_types);
+        .chain(metadata.parameters.iter().map(|p| &p.ty));
     let reference_homes = external_values
         .zip(external_types)
         .filter_map(|(value, ty)| {
@@ -443,7 +443,7 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                 metadata
                     .capture_types
                     .iter()
-                    .chain(&metadata.parameter_types),
+                    .chain(metadata.parameters.iter().map(|p| &p.ty)),
             )
         {
             let crate::codegen::types::ExecutableType::Reference(pointee) = input_type else {

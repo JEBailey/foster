@@ -921,6 +921,16 @@ The unit type is written `()`. The bootstrap compiler also resolves `Bool`, `Int
 representation erasure, records,
 enums, type aliases, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
+
+Import `core.float` for backend-supported `value.sqrt()`, `angle.sin()`, `angle.cos()`,
+and `y.atan2(x)`. Angles and the `atan2` result use radians. Square root preserves
+signed zero and positive infinity; negative nonzero inputs return NaN. Sine and cosine
+return NaN for infinity. All four propagate NaN without failing execution, and leave
+their inputs usable. `atan2` handles all quadrants, signed-zero axes, and infinities;
+its range is `[-pi, pi]`. See [scalar semantics](semantics.md#3-values-and-primitive-operations)
+for the complete special-value table. Trigonometric precision depends on platform math;
+use tolerance comparisons rather than requiring identical last bits across targets.
+
 `Byte` and `CodePoint` widen to `Int` when an assignment, stored field, argument, branch arm, or
 function result has an expected `Int` type. The compiler records the conversion in typed output and
 produces an `Int` value; it does not merely reinterpret the source value. Widening is not reversed,
@@ -1179,6 +1189,20 @@ are invalidated by structural changes, and converting a buffer without copying r
 explicit move through `(move buffer).freeze()`. `buffer.snapshot()` is the copying alternative.
 Strings never convert to bytes implicitly: `.bytes` exposes immutable UTF-8 bytes, and
 `String.from_utf8(move bytes)` validates and transfers byte storage into a String.
+
+The same read-only `.bytes` property is available for `Int` (eight two's-complement
+bytes), `Float` (eight IEEE binary64 bytes), `CodePoint` (four scalar bytes, not UTF-8),
+`Byte` (one byte), `Bool` (one byte: zero or one), and `Bytes` (an independent copy).
+Import the corresponding core modules to use their APIs. Multi-byte scalar defaults
+are little-endian regardless of the machine. `Int`, `Float`, and `CodePoint` also expose
+`to_le_bytes()` and `to_be_bytes()`. These operations leave the receiver usable.
+
+For binary32 formats such as GPU vertex data, use `Float.to_f32_le_bytes()` or
+`Float.to_f32_be_bytes()`. They round to nearest with ties to even, preserve signed zero,
+support subnormals, produce infinity on overflow, and canonicalize NaN to `0x7fc00000`.
+Byte order is selected while encoding a typed value; arbitrary byte sequences do not
+carry a numeric width or byte order. Records, enums, and lists require an explicit
+serialization format.
 
 ## Resource identity and capabilities
 
@@ -1529,3 +1553,11 @@ concrete VM operations.
 - [Effect derivation](effect-derivation.md)
 - [Virtual machine](vm.md)
 - [Native compilation](native.md)
+
+## Numeric conversions
+
+Use `Float.from(integer)` for nearest, ties-to-even conversion and `Int.from(float)`
+for checked truncation toward zero. The latter returns `Result<Int, IntConversionError>`;
+use `try` to propagate failure. Choose rounding explicitly with Float's `floor()`,
+`ceil()`, `round()` (nearest, ties to even), or `truncate()` before conversion.
+These are ordinary associated functions and methods, not cast syntax.

@@ -66,8 +66,9 @@ pub(super) fn reachable_instances(
             ))
         })?;
         for ty in body
-            .parameter_types
+            .parameters
             .iter()
+            .map(|p| &p.ty)
             .chain(&body.capture_types)
             .chain(std::iter::once(&body.result_type))
             .map(|ty| ty.specialize(&instance.substitutions))
@@ -626,13 +627,14 @@ pub(super) fn contract_argument_matches(
     let signature = &environment.program.functions[function];
     let substitutions = specialization.iter().cloned().collect::<HashMap<_, _>>();
     signature
-        .parameter_modes
+        .parameters
         .iter()
-        .copied()
+        .map(|p| p.mode)
         .eq(parameters.iter().map(|p| p.mode))
         && signature
-            .parameter_types
+            .parameters
             .iter()
+            .map(|p| &p.ty)
             .map(|ty| ty.substitute(&substitutions))
             .collect::<Vec<_>>()
             == parameters.iter().map(|p| p.ty.clone()).collect::<Vec<_>>()

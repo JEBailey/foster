@@ -12,7 +12,7 @@ pub fn run_with_options(
     options: CompileOptions,
 ) -> Result<Value, crate::error::FosterError> {
     let program = compile_with_options(compilation, options)?;
-    verify(&program)?;
+    let program = program.into_verified()?;
     Machine::new(&program).run_main()
 }
 
@@ -22,6 +22,6 @@ pub fn run_with_arguments(
     arguments: &crate::entry::CommandArguments,
 ) -> Result<Value, crate::error::FosterError> {
     let program = compile_with_options(compilation, options)?;
-    verify(&program)?;
+    let program = program.into_verified()?;
     Machine::new(&program).run_main_with_arguments(arguments)
 }

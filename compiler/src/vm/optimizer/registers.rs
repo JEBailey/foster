@@ -37,7 +37,7 @@ pub(super) fn eliminate_dead_writes(program: &mut Program) -> bool {
 pub(super) fn compact(program: &mut Program) -> bool {
     let mut changed = false;
     for function in program.functions.values_mut() {
-        let prefix = function.captures.saturating_add(function.parameters);
+        let prefix = function.captures.saturating_add(function.parameter_count());
         let live = liveness(function);
         let pinned = pinned(function);
         let mut registers = (0..prefix).map(Register).collect::<HashSet<_>>();
@@ -120,7 +120,7 @@ pub(super) fn compact(program: &mut Program) -> bool {
         }
         changed |= function.registers != next_color
             || mapping.iter().any(|(before, after)| before != after);
-        for instruction in &mut function.instructions {
+        for instruction in function.body.instructions_mut() {
             rewrite_registers(instruction, &mapping);
         }
         function.registers = next_color;
@@ -157,20 +157,14 @@ fn retain_without_jumps(function: &mut BytecodeFunction, keep: Vec<bool>) {
         }
     }
     old_to_new[keep.len()] = keep.len() - removed;
-    for instruction in &mut function.instructions {
+    for instruction in function.body.instructions_mut() {
         if let Instruction::Jump { target } | Instruction::JumpIfFalse { target, .. } = instruction
         {
             *target = old_to_new[*target];
         }
     }
     let mut index = 0;
-    function.instructions.retain(|_| {
-        let retained = keep[index];
-        index += 1;
-        retained
-    });
-    index = 0;
-    function.instruction_spans.retain(|_| {
+    function.body.retain(|_| {
         let retained = keep[index];
         index += 1;
         retained

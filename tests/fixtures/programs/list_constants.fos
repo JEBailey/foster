@@ -1,0 +1,26 @@
+const MAP_ROWS = ["abc", "def"]
+const ROWS = MAP_ROWS
+const NUMBERS = [20, 22]
+const GRID = [NUMBERS, [1, 2]]
+
+func parse_map() -> Int {
+    let total = 0
+    for row in ROWS {
+        total = total + row.length
+    }
+    total
+}
+
+func sum(values: List<Int>) -> Int {
+    values[0] + values[1]
+}
+
+func main() -> Int {
+    assert(parse_map() == 6)
+    assert(sum(GRID[0]) == 42)
+    assert(sum(GRID[1]) == 3)
+    let first = NUMBERS
+    first[0] = 0
+    assert(sum(NUMBERS) == 42)
+    sum(NUMBERS)
+}

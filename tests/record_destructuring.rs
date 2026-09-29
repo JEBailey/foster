@@ -6,7 +6,7 @@ fn check(source: &str, expected: i64) {
         let program =
             foster::vm::compile_with_options(&compilation, CompileOptions { optimize }).unwrap();
         assert_eq!(
-            foster::vm::Machine::new(&program)
+            foster::vm::Machine::new(&program.clone().into_verified().unwrap())
                 .run_main()
                 .unwrap_or_else(|e| panic!("direct optimize={optimize}: {e}")),
             Value::Integer(expected)
@@ -14,7 +14,7 @@ fn check(source: &str, expected: i64) {
         let bytes = foster::vm::encode_program(&program).unwrap();
         let decoded = foster::vm::decode_program(&bytes).unwrap();
         assert_eq!(
-            foster::vm::Machine::new(&decoded)
+            foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
                 .run_main()
                 .unwrap_or_else(|e| panic!("optimize={optimize}: {e}")),
             Value::Integer(expected)
@@ -213,7 +213,7 @@ fn malformed_record_pattern_metadata_is_rejected() {
     let pattern = program
         .functions
         .values_mut()
-        .flat_map(|f| &mut f.instructions)
+        .flat_map(|f| f.body.instructions_mut())
         .find_map(|instruction| {
             if let foster::vm::Instruction::MatchPattern { pattern, .. } = instruction {
                 Some(pattern)

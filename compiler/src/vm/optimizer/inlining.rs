@@ -23,7 +23,11 @@ fn scalar(ty: &ExecutableType) -> bool {
 fn eligible(function: &BytecodeFunction) -> bool {
     if function.captures != 0
         || function.returns_reference
-        || function.mutable_parameters.iter().any(|mutable| *mutable)
+        || function
+            .parameters
+            .iter()
+            .map(|p| &p.mutable)
+            .any(|mutable| *mutable)
         || function.instructions.iter().any(|instruction| {
             matches!(
                 instruction,
@@ -50,7 +54,9 @@ fn eligible(function: &BytecodeFunction) -> bool {
     });
     // Broaden control-flow inlining for scalar bodies first. Aggregate branches
     // require modelling path-dependent ownership and cleanup when removing a frame.
-    if branching && (!function.parameter_types.iter().all(scalar) || !scalar(&function.result_type))
+    if branching
+        && (!function.parameters.iter().map(|p| &p.ty).all(scalar)
+            || !scalar(&function.result_type))
     {
         return false;
     }
@@ -89,7 +95,7 @@ fn eligible(function: &BytecodeFunction) -> bool {
 
 fn expansion_size(callee: &BytecodeFunction) -> usize {
     // Every early return needs a result move and a jump to the continuation.
-    usize::from(callee.parameters)
+    usize::from(callee.parameter_count())
         + callee.instructions.len()
         + callee
             .instructions
@@ -111,12 +117,8 @@ fn inline_calls(
     let mut instructions = Vec::new();
     let mut spans = Vec::new();
     let mut changed = false;
-    for (old_index, (instruction, span)) in caller
-        .instructions
-        .drain(..)
-        .zip(caller.instruction_spans.drain(..))
-        .enumerate()
-    {
+    let old_body = std::mem::take(&mut caller.body).into_parts();
+    for (old_index, (instruction, span)) in old_body.0.into_iter().zip(old_body.1).enumerate() {
         old_to_new[old_index] = instructions.len();
         let candidate = match &instruction {
             Instruction::Call {
@@ -128,7 +130,7 @@ fn inline_calls(
                 .get(function)
                 .filter(|callee| {
                     *function != caller_id
-                        && arguments.len() == usize::from(callee.parameters)
+                        && arguments.len() == usize::from(callee.parameter_count())
                         && projected_len - 1 + expansion_size(callee) <= CALLER_INSTRUCTION_BUDGET
                 })
                 .and_then(|callee| {
@@ -216,8 +218,8 @@ fn inline_calls(
             *target = old_to_new[*target];
         }
     }
-    caller.instructions = instructions;
-    caller.instruction_spans = spans;
+    caller.body = crate::codegen::storage::InstructionBody::try_from_parts(instructions, spans)
+        .expect("paired instruction emission");
     changed
 }
 
@@ -233,7 +235,9 @@ mod tests {
                 vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
             vm::verify(&program).unwrap();
             assert_eq!(
-                Machine::new(&program).run_main().unwrap(),
+                Machine::new(&program.clone().into_verified().unwrap())
+                    .run_main()
+                    .unwrap(),
                 Value::Integer(expected)
             );
             assert!(
@@ -319,7 +323,7 @@ mod tests {
                 vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
             vm::verify(&program).unwrap();
             assert!(
-                Machine::new(&program)
+                Machine::new(&program.clone().into_verified().unwrap())
                     .run_main()
                     .unwrap_err()
                     .message
@@ -348,11 +352,13 @@ mod tests {
         let candidates = HashMap::from([(*callee_id, callee.clone())]);
         let mut caller = template.clone();
         while caller.instructions.len() < CALLER_INSTRUCTION_BUDGET {
-            caller.instructions.push(Instruction::LoadConstant {
-                destination: Register(0),
-                constant: 0,
-            });
-            caller.instruction_spans.push(0..0);
+            caller.body.push(
+                Instruction::LoadConstant {
+                    destination: Register(0),
+                    constant: 0,
+                },
+                0..0,
+            );
         }
         let before = caller.clone();
         assert!(!inline_calls(caller_id, &mut caller, &candidates));
@@ -386,8 +392,8 @@ mod tests {
         assert!(!eligible(&function));
         function.returns_reference = false;
         function
-            .instructions
-            .insert(0, Instruction::Jump { target: 0 });
+            .body
+            .insert(0, Instruction::Jump { target: 0 }, 0..0);
         assert!(!eligible(&function));
     }
 }

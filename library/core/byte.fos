@@ -6,10 +6,18 @@
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.result
+import core.bytes
 
 impl Byte {
+    /// Reads `.bytes`: a one-byte immutable sequence, leaving `self` unchanged.
+    pub func bytes(self) -> Bytes [read self] {
+        Bytes.from([self])
+    }
+
     /// Explicitly copies this scalar value.
-    pub func copy(self) -> self [read self] { self }
+    pub func copy(self) -> self [read self] {
+        self
+    }
 
     /// Returns whether an integer fits in a byte.
     pub func valid(value: Int) -> Bool {
@@ -23,7 +31,9 @@ impl Byte {
     /// Converts an integer in the inclusive range 0 through 255 to `Byte`.
     pub func from(value: Int) -> Result<Byte, ByteError> {
         return Result.Ok(Byte.unchecked(value)) if Byte.valid(value)
-        Result.Error(ByteError { value, message: "Byte must be between 0 and 255" })
+        Result.Error(ByteError {
+            value, message: "Byte must be between 0 and 255"
+        })
     }
 }
 

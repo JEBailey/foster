@@ -1,0 +1,100 @@
+import core.float
+import core.bytes
+
+func close(actual: Float, expected: Float) -> () {
+    assert((actual - expected).absolute() < 1e-14)
+}
+
+func nan(value: Float) -> () {
+    assert(value != value)
+}
+
+func positive_zero(value: Float) -> () {
+    assert(value.bytes.hex() == "0000000000000000")
+}
+
+func negative_zero(value: Float) -> () {
+    assert(value.bytes.hex() == "0000000000000080")
+}
+
+func exercise(value: Float) -> () {
+    assert(value.sqrt() == 3.0)
+    assert(value == 9.0)
+}
+
+func main() -> Int {
+    let pi = 3.141592653589793
+    let infinity = parse_float("inf")
+    let invalid = parse_float("NaN")
+    exercise(9.0)
+    positive_zero(0.0.sqrt())
+    negative_zero((-0.0).sqrt())
+    assert(infinity.sqrt() == infinity)
+    nan((-1.0).sqrt())
+    nan((-infinity).sqrt())
+    nan(invalid.sqrt())
+    close(2.0.sqrt(), 1.4142135623730951)
+    assert(2.0.sqrt().to_be_bytes().hex() == "3ff6a09e667f3bcd")
+    assert(1e-300.sqrt() > 0.0)
+    assert(1e300.sqrt() < infinity)
+    close(parse_float("5e-324").sqrt() / 2.2227587494850775e-162, 1.0)
+    assert(parse_float("5e-324").sqrt().to_be_bytes().hex() == "1e60000000000000")
+    positive_zero(0.0.sin())
+    negative_zero((-0.0).sin())
+    assert(0.0.cos() == 1.0)
+    assert((-0.0).cos() == 1.0)
+    close((pi / 2.0).sin(), 1.0)
+    close((-pi / 2.0).sin(), -1.0)
+    close(pi.cos(), -1.0)
+    close((pi / 2.0).cos(), 0.0)
+    close(0.5.sin(), 0.479425538604203)
+    close(0.5.cos(), 0.8775825618903728)
+    assert(1e300.sin().between?(-1.0, 1.0))
+    assert(1e300.cos().between?(-1.0, 1.0))
+    nan(infinity.sin())
+    nan((-infinity).sin())
+    nan(invalid.sin())
+    nan(infinity.cos())
+    nan((-infinity).cos())
+    nan(invalid.cos())
+    close(1.0.atan2(1.0), pi / 4.0)
+    close(1.0.atan2(-1.0), 3.0 * pi / 4.0)
+    close((-1.0).atan2(-1.0), -3.0 * pi / 4.0)
+    close((-1.0).atan2(1.0), -pi / 4.0)
+    close(2.0.atan2(1.0), 1.1071487177940904)
+    close(1e300.atan2(1e-300), pi / 2.0)
+    positive_zero(0.0.atan2(0.0))
+    negative_zero((-0.0).atan2(0.0))
+    close(0.0.atan2(-0.0), pi)
+    close((-0.0).atan2(-0.0), -pi)
+    for x in [1.0, infinity] {
+        positive_zero(0.0.atan2(x))
+        negative_zero((-0.0).atan2(x))
+        close(0.0.atan2(-x), pi)
+        close((-0.0).atan2(-x), -pi)
+    }
+    for x in [0.0, -0.0, 1.0, -1.0] {
+        close(infinity.atan2(x), pi / 2.0)
+        close((-infinity).atan2(x), -pi / 2.0)
+    }
+    for x in [0.0, -0.0] {
+        close(1.0.atan2(x), pi / 2.0)
+        close((-1.0).atan2(x), -pi / 2.0)
+    }
+    for y in [1.0, -1.0] {
+        branch {
+            y > 0.0 -> positive_zero(y.atan2(infinity))
+            _ -> negative_zero(y.atan2(infinity))
+        }
+        close(y.atan2(-infinity), y * pi)
+    }
+    close(infinity.atan2(infinity), pi / 4.0)
+    close(infinity.atan2(-infinity), 3.0 * pi / 4.0)
+    close((-infinity).atan2(infinity), -pi / 4.0)
+    close((-infinity).atan2(-infinity), -3.0 * pi / 4.0)
+    for value in [0.0, -0.0, 1.0, -1.0, infinity, -infinity, invalid] {
+        nan(value.atan2(invalid))
+        nan(invalid.atan2(value))
+    }
+    42
+}

@@ -1,16 +1,33 @@
-use crate::compiler::{Compilation, profile};
+use crate::compiler::{Compilation, CompilationData, profile};
 use crate::error::CompileError;
 use crate::hir::PackageHir;
 use crate::package::Package;
 
 pub(super) fn check(package: Package) -> Result<Compilation, CompileError> {
-    check_impl(package, false, None).map_err(|errors| errors.into_iter().next().unwrap())
+    for module in package
+        .modules
+        .values()
+        .filter(|m| m.origin == crate::package::ModuleOrigin::Input)
+    {
+        if module
+            .program
+            .as_ref()
+            .is_some_and(|p| p.functions.iter().any(|f| f.body_is_recovery_stub))
+        {
+            return Err(CompileError::lowering(crate::error::FosterError::runtime(
+                "strict compilation cannot contain recovery stubs",
+            )));
+        }
+    }
+    check_impl(package, false, None)
+        .map(|data| Compilation { data })
+        .map_err(|errors| errors.into_iter().next().unwrap())
 }
 
 pub(super) fn check_collecting(
     package: Package,
     cache: Option<crate::typecheck::incremental::SharedBodyCache>,
-) -> Result<Compilation, Vec<CompileError>> {
+) -> Result<CompilationData, Vec<CompileError>> {
     check_impl(package, true, cache)
 }
 
@@ -18,7 +35,7 @@ fn check_impl(
     package: Package,
     recover: bool,
     cache: Option<crate::typecheck::incremental::SharedBodyCache>,
-) -> Result<Compilation, Vec<CompileError>> {
+) -> Result<CompilationData, Vec<CompileError>> {
     fn types(
         hir: &mut PackageHir,
         recover: bool,
@@ -105,7 +122,7 @@ fn check_impl(
     if let Some(cache) = &cache {
         profile::measure("cache.complete", || cache.borrow_mut().complete(&hir));
     }
-    let compilation = Compilation {
+    let compilation = CompilationData {
         package,
         hir,
         types,

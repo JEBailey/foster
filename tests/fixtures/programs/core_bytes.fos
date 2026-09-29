@@ -1,0 +1,66 @@
+import core.int
+import core.float
+import core.bool
+import core.byte
+import core.bytes
+import core.code_point
+import core.string
+
+type Packet = {
+    bytes: Int
+}
+
+func borrowed_bytes(value: ref[value] Int) -> Bytes [read value] {
+    value.bytes
+}
+
+func main() -> Int {
+    assert(0.bytes.hex() == "0000000000000000")
+    assert(1.bytes.hex() == "0100000000000000")
+    assert((-1).bytes.hex() == "ffffffffffffffff")
+    assert((-256).bytes.hex() == "00ffffffffffffff")
+    assert((-9223372036854775807 - 1).bytes.hex() == "0000000000000080")
+    assert(9223372036854775807.to_be_bytes().hex() == "7fffffffffffffff")
+    assert(258.to_le_bytes().hex() == "0201000000000000")
+    assert(258.to_be_bytes().hex() == "0000000000000102")
+    assert(1.0.bytes.hex() == "000000000000f03f")
+    assert(1.0.to_be_bytes().hex() == "3ff0000000000000")
+    assert((-0.0).bytes.hex() == "0000000000000080")
+    assert(1.0.to_f32_le_bytes().hex() == "0000803f")
+    assert(1.0.to_f32_be_bytes().hex() == "3f800000")
+    assert((-0.0).to_f32_be_bytes().hex() == "80000000")
+    assert(1.000000059604644775390625.to_f32_be_bytes().hex() == "3f800000")
+    assert(1.000000178813934326171875.to_f32_be_bytes().hex() == "3f800002")
+    assert(1e300.to_f32_be_bytes().hex() == "7f800000")
+    assert((-1e300).to_f32_be_bytes().hex() == "ff800000")
+    assert(1.401298464324817e-45.to_f32_le_bytes().hex() == "01000000")
+    assert(1e-300.to_f32_be_bytes().hex() == "00000000")
+    assert(parse_float("NaN").to_f32_be_bytes().hex() == "7fc00000")
+    assert(parse_float("inf").to_be_bytes().hex() == "7ff0000000000000")
+    assert(parse_float("-inf").to_be_bytes().hex() == "fff0000000000000")
+    assert(parse_float("inf").to_f32_be_bytes().hex() == "7f800000")
+    assert(false.bytes.hex() == "00")
+    assert(true.bytes.hex() == "01")
+    assert(Byte.unchecked(255).bytes.hex() == "ff")
+    assert('λ'.bytes.hex() == "bb030000")
+    assert('λ'.to_be_bytes().hex() == "000003bb")
+    assert('😀'.bytes.hex() == "00f60100")
+    assert("λ".bytes.hex() == "cebb")
+    let original = "Foster".bytes
+    let copied = original.bytes
+    assert(copied.hex() == original.hex())
+    assert(original.length == 6)
+    let number = 42
+    let encoded = number.bytes
+    assert(number == 42)
+    assert(encoded.length == 8)
+    let borrowed = borrowed_bytes(ref number)
+    number = 7
+    assert(borrowed.hex() == "2a00000000000000")
+    let packet = Packet {
+        bytes: 1
+    }
+    packet.bytes = 42
+    assert(packet.bytes == 42)
+    42
+}

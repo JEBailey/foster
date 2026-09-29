@@ -120,20 +120,44 @@ impl<'a> Reader<'a> {
         Ok(self.u32()? as usize..self.u32()? as usize)
     }
     pub(super) fn function(&mut self) -> Result<BytecodeFunction, BinaryError> {
+        let name = self.string()?;
+        let intrinsic_stub = self.bool()?;
+        let parameters = self.u16()?;
+        let types = self.vec(|r| r.verification_type(0))?;
+        let modes = self.vec(|r| r.parameter_mode())?;
+        let mutable = self.vec(|r| r.bool())?;
+        if types.len() != parameters as usize
+            || modes.len() != types.len()
+            || mutable.len() != types.len()
+        {
+            return Err(BinaryError::new("invalid executable parameter counts"));
+        }
+        let parameters = types
+            .into_iter()
+            .zip(modes)
+            .zip(mutable)
+            .map(
+                |((ty, mode), mutable)| crate::codegen::storage::ExecutableParameter {
+                    ty,
+                    mode,
+                    mutable,
+                },
+            )
+            .collect();
         Ok(BytecodeFunction {
-            name: self.string()?,
-            intrinsic_stub: self.bool()?,
-            parameters: self.u16()?,
-            parameter_types: self.vec(|r| r.verification_type(0))?,
-            parameter_modes: self.vec(|r| r.parameter_mode())?,
-            mutable_parameters: self.vec(|r| r.bool())?,
+            name,
+            intrinsic_stub,
+            parameters,
             returns_reference: self.bool()?,
             captures: self.u16()?,
             capture_types: self.vec(|r| r.verification_type(0))?,
             result_type: self.verification_type(0)?,
             registers: self.u16()?,
-            instructions: self.vec(|r| r.instruction())?,
-            instruction_spans: self.vec(|r| r.range())?,
+            body: crate::codegen::storage::InstructionBody::try_from_parts(
+                self.vec(|r| r.instruction())?,
+                self.vec(|r| r.range())?,
+            )
+            .map_err(|e| BinaryError::new(e.to_string()))?,
         })
     }
     pub(super) fn verification_type(

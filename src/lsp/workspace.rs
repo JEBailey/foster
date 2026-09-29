@@ -715,7 +715,7 @@ impl Workspace {
 
     fn semantic_snapshot<'a>(
         &'a self,
-        compilation: &'a crate::compiler::Compilation,
+        compilation: &'a crate::compiler::RecoveryCompilation,
         uri: &Uri,
     ) -> Option<SemanticSnapshot<'a>> {
         let semantic_source = source_for_uri(compilation, uri)?;
@@ -728,7 +728,7 @@ impl Workspace {
 
     fn remap_semantic_location(
         &self,
-        compilation: &crate::compiler::Compilation,
+        compilation: &crate::compiler::RecoveryCompilation,
         mut location: Location,
     ) -> Option<Location> {
         let Some(document) = self.documents.get(&location.uri) else {
@@ -739,7 +739,10 @@ impl Workspace {
         Some(location)
     }
 
-    fn compilation_sources_are_current(&self, compilation: &crate::compiler::Compilation) -> bool {
+    fn compilation_sources_are_current(
+        &self,
+        compilation: &crate::compiler::RecoveryCompilation,
+    ) -> bool {
         self.documents.iter().all(|(uri, document)| {
             source_for_uri(compilation, uri).is_none_or(|source| source == document.text)
         })
@@ -748,7 +751,7 @@ impl Workspace {
 
 // A renamed shorthand local must retain the stored field's name.
 fn record_shorthand_spans(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     local: crate::hir::LocalId,
 ) -> Vec<std::ops::Range<usize>> {
     use crate::hir::{self, visit::Visitor};
@@ -930,7 +933,7 @@ pub(super) enum SymbolIdentity {
 }
 
 fn expression_at(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     offset: usize,
 ) -> Option<crate::hir::ExprId> {
@@ -952,7 +955,7 @@ fn expression_at(
 }
 
 fn symbol_at(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module_id: crate::hir::ModuleId,
     source: &str,
     offset: usize,
@@ -1104,7 +1107,7 @@ fn symbol_at(
 }
 
 fn symbol_hover(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     symbol: SymbolIdentity,
 ) -> Option<String> {
     match symbol {
@@ -1170,7 +1173,7 @@ fn symbol_hover(
 }
 
 fn declaration_identity(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     name: &str,
 ) -> Option<SymbolIdentity> {
@@ -1205,7 +1208,7 @@ fn declaration_identity(
 }
 
 fn symbol_locations(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     symbol: SymbolIdentity,
 ) -> Vec<Location> {
     let mut locations = Vec::new();
@@ -1246,7 +1249,7 @@ fn symbol_locations(
     locations
 }
 
-fn symbol_name(compilation: &crate::compiler::Compilation, symbol: SymbolIdentity) -> &str {
+fn symbol_name(compilation: &crate::compiler::RecoveryCompilation, symbol: SymbolIdentity) -> &str {
     match symbol {
         SymbolIdentity::Local(local) => &compilation.hir.locals[local].name,
         SymbolIdentity::Constant(constant) => &compilation.hir.constants[constant].name,
@@ -1261,7 +1264,7 @@ fn symbol_name(compilation: &crate::compiler::Compilation, symbol: SymbolIdentit
 }
 
 pub(super) fn symbol_declaration(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     symbol: SymbolIdentity,
 ) -> Option<Location> {
     match symbol {
@@ -1362,7 +1365,7 @@ fn valid_identifier(name: &str) -> bool {
 }
 
 fn function_at(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     offset: usize,
 ) -> Option<crate::hir::FunctionId> {
@@ -1380,7 +1383,7 @@ fn function_at(
 }
 
 fn declaration_hover(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     name: &str,
 ) -> Option<String> {
@@ -1430,7 +1433,7 @@ fn declaration_hover(
 }
 
 fn add_module_completions(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     public_only: bool,
     items: &mut std::collections::BTreeMap<String, CompletionItem>,
@@ -1525,7 +1528,7 @@ fn add_module_completions(
 }
 
 fn add_associated_completions(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     current_module: crate::hir::ModuleId,
     type_name: &str,
     items: &mut std::collections::BTreeMap<String, CompletionItem>,
@@ -1633,7 +1636,7 @@ pub(super) struct CallablePresentation {
 }
 
 pub(super) fn callable_presentation(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     callee: crate::hir::ExprId,
 ) -> Option<CallablePresentation> {
     let (function, receiver) = match &compilation.hir.expressions[callee] {
@@ -1697,14 +1700,14 @@ pub(super) fn callable_presentation(
 }
 
 fn selected_function_for_callee(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     callee: crate::hir::ExprId,
 ) -> Option<crate::hir::FunctionId> {
     compilation.types.resolved_function_for_callee(callee)
 }
 
 fn selected_requirement_for_callee(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     callee: crate::hir::ExprId,
 ) -> Option<(crate::hir::RecordId, usize)> {
     match compilation.types.resolved_call(callee)? {
@@ -1714,7 +1717,7 @@ fn selected_requirement_for_callee(
 }
 
 fn member_function(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     object: crate::hir::ExprId,
     member: &str,
 ) -> Option<crate::hir::FunctionId> {
@@ -1724,7 +1727,7 @@ fn member_function(
 }
 
 fn member_function_for_owner(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     owner: NominalOwner,
     member: &str,
 ) -> Option<crate::hir::FunctionId> {
@@ -1817,7 +1820,7 @@ fn nominal_owner_from_type(
 }
 
 fn required_method(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     object: crate::hir::ExprId,
     member: &str,
 ) -> Option<(crate::hir::RecordId, usize)> {
@@ -1844,7 +1847,7 @@ fn record_from_type(
 }
 
 pub(super) fn function_signature(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     function_id: crate::hir::FunctionId,
     omit_receiver: bool,
 ) -> String {
@@ -1985,7 +1988,7 @@ fn method_requirement_signature(method: &crate::ast::MethodRequirement) -> Strin
 }
 
 fn variant_signature(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     variant_id: crate::hir::VariantTypeId,
 ) -> String {
     let variant = &compilation.hir.variant_types[variant_id];
@@ -2254,7 +2257,7 @@ fn symbol(
 }
 
 fn definition_in_module(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     name: &str,
 ) -> Option<Location> {
@@ -2286,7 +2289,7 @@ fn definition_in_module(
 }
 
 fn module_location(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
 ) -> Option<Location> {
     location(compilation, module, 0..0, "")
@@ -2301,7 +2304,7 @@ fn embedded_module_location(module: &str) -> Option<Location> {
 }
 
 fn location(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     module: crate::hir::ModuleId,
     span: std::ops::Range<usize>,
     name: &str,
@@ -2321,7 +2324,7 @@ fn location(
 }
 
 pub(super) fn module_for_uri(
-    compilation: &crate::compiler::Compilation,
+    compilation: &crate::compiler::RecoveryCompilation,
     uri: &Uri,
 ) -> Option<crate::hir::ModuleId> {
     let path = uri_to_path(uri)?;
@@ -2335,7 +2338,7 @@ pub(super) fn module_for_uri(
 }
 
 pub(super) fn source_for_uri<'a>(
-    compilation: &'a crate::compiler::Compilation,
+    compilation: &'a crate::compiler::RecoveryCompilation,
     uri: &Uri,
 ) -> Option<&'a str> {
     let module = module_for_uri(compilation, uri)?;

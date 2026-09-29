@@ -11,15 +11,62 @@ use crate::error::FosterError;
 use crate::package::Package;
 
 /// A package after lowering, type checking, effect validation, and ownership analysis.
+///
+/// Analysis remains readable but cannot be mutated while retaining this guarantee.
+/// ```compile_fail
+/// fn invalidate(mut checked: foster_compiler::compiler::Compilation) {
+///     checked.diagnostics.clear();
+/// }
+/// ```
 #[derive(Debug)]
 pub struct Compilation {
+    data: CompilationData,
+}
+
+/// Read-only analysis shared by strict compilation and editor recovery.
+#[derive(Debug)]
+pub struct CompilationData {
     pub package: Package,
     pub hir: crate::hir::PackageHir,
     pub types: crate::types::TypeInformation,
     pub diagnostics: Vec<crate::diagnostic::Diagnostic>,
     pub ownership: crate::ownership::Program,
 }
-
+impl Compilation {
+    /// Consume the checked guarantee to obtain independently editable analysis.
+    pub fn into_analysis(self) -> CompilationData {
+        self.data
+    }
+}
+impl std::ops::Deref for Compilation {
+    type Target = CompilationData;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+/// Editor analysis, potentially containing recovery stubs; never executable.
+/// ```compile_fail
+/// fn emit(recovered: &foster_compiler::compiler::RecoveryCompilation) {
+///     let _ = foster_compiler::vm::compile(recovered);
+/// }
+/// ```
+#[derive(Debug)]
+pub struct RecoveryCompilation {
+    data: CompilationData,
+}
+impl std::ops::Deref for RecoveryCompilation {
+    type Target = CompilationData;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+impl From<Compilation> for RecoveryCompilation {
+    fn from(compilation: Compilation) -> Self {
+        Self {
+            data: compilation.data,
+        }
+    }
+}
 /// Stateless facade for running Foster's checked front-end pipeline.
 ///
 /// The type provides a stable home for compiler configuration and reusable source state as those
@@ -55,14 +102,14 @@ pub fn check(package: Package) -> Result<Compilation, FosterError> {
 /// the current source rather than from the language server's last-good snapshot. Strict compiler
 /// entry points continue to reject the original program.
 #[cfg(test)]
-pub(crate) fn check_recovering(package: Package) -> Result<Compilation, FosterError> {
+pub(crate) fn check_recovering(package: Package) -> Result<RecoveryCompilation, FosterError> {
     check_recovering_cached(package, Default::default())
 }
 
 pub fn check_recovering_cached(
     mut package: Package,
     cache: crate::typecheck::incremental::SharedBodyCache,
-) -> Result<Compilation, FosterError> {
+) -> Result<RecoveryCompilation, FosterError> {
     #[derive(Clone)]
     struct RecoveredBody {
         module: String,
@@ -100,7 +147,7 @@ pub fn check_recovering_cached(
                         .unwrap_or_default();
                     crate::diagnostic::Diagnostic::from_source_error(source, &body.error)
                 }));
-                return Ok(compilation);
+                return Ok(RecoveryCompilation { data: compilation });
             }
             Err(errors) => {
                 for error in errors {
@@ -169,6 +216,26 @@ mod recovery_tests {
             Package::from_program_with_core("main", crate::parse(source).unwrap()).unwrap();
         package.modules.get_mut("main").unwrap().source = Some(source.to_owned());
         package
+    }
+
+    #[test]
+    fn strict_check_rejects_recovery_stubs() {
+        let mut input = package("func main() -> Int { 42 }");
+        input
+            .modules
+            .get_mut("main")
+            .unwrap()
+            .program
+            .as_mut()
+            .unwrap()
+            .functions[0]
+            .body_is_recovery_stub = true;
+        assert!(
+            check(input)
+                .unwrap_err()
+                .to_string()
+                .contains("recovery stubs")
+        );
     }
 
     #[test]

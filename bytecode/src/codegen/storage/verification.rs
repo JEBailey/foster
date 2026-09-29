@@ -8,6 +8,11 @@ use super::{Function, Instruction, Program};
 use crate::codegen::types::ExecutableType;
 
 pub fn verify(program: &Program) -> Result<(), FosterError> {
+    for function in program.functions.values() {
+        if function.parameters.len() > u16::MAX as usize {
+            return Err(FosterError::runtime("too many executable parameters"));
+        }
+    }
     verify_program_metadata(program)?;
     for (id, function) in &program.functions {
         verify_function_structure(program, *id, function)?;
@@ -31,7 +36,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             .get(&main)
             .ok_or_else(|| FosterError::runtime("bytecode references a missing `main` function"))?;
         let expected = u16::from(program.metadata.main_arguments);
-        if main.parameters != expected || main.captures != 0 {
+        if main.parameter_count() != expected || main.captures != 0 {
             return Err(FosterError::runtime(format!(
                 "bytecode `main` must have {expected} parameter(s) and no captures"
             )));
@@ -147,14 +152,18 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
         }
         if *slot == crate::types::COPY_SLOT || *slot == crate::types::DEINIT_SLOT {
             let result_valid = if *slot == crate::types::COPY_SLOT {
-                target.parameter_types.first() == Some(&target.result_type)
+                target.parameters.first().map(|p| &p.ty) == Some(&target.result_type)
             } else {
                 target.result_type == ExecutableType::Unit
             };
-            if target.parameters != 1
+            if target.parameter_count() != 1
                 || target.captures != 0
-                || target.parameter_modes != [ParameterMode::Borrow]
-                || target.mutable_parameters != [false]
+                || target
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode)
+                    .ne([ParameterMode::Borrow])
+                || target.parameters.iter().any(|p| p.mutable)
                 || !result_valid
             {
                 return Err(FosterError::runtime(
@@ -261,24 +270,14 @@ fn verify_function_structure(
     _id: FunctionId,
     function: &Function,
 ) -> Result<(), FosterError> {
-    let parameter_count = usize::from(function.parameters);
     let capture_count = usize::from(function.captures);
-    if function.parameter_types.len() != parameter_count
-        || function.parameter_modes.len() != parameter_count
-        || function.mutable_parameters.len() != parameter_count
-    {
-        return Err(FosterError::runtime(format!(
-            "bytecode function `{}` has invalid parameter metadata",
-            function.name
-        )));
-    }
     if function.capture_types.len() != capture_count {
         return Err(FosterError::runtime(format!(
             "bytecode function `{}` has invalid capture type metadata",
             function.name
         )));
     }
-    if function.captures.saturating_add(function.parameters) > function.registers {
+    if function.captures.saturating_add(function.parameter_count()) > function.registers {
         return Err(FosterError::runtime(format!(
             "bytecode function `{}` has an invalid capture/parameter register prefix",
             function.name
@@ -299,7 +298,7 @@ fn verify_function_structure(
     for ty in function
         .capture_types
         .iter()
-        .chain(&function.parameter_types)
+        .chain(function.parameters.iter().map(|p| &p.ty))
         .chain(std::iter::once(&function.result_type))
     {
         verify_type(program, function, ty, 0)?;
@@ -356,7 +355,7 @@ fn verify_function_structure(
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
-                    || arguments.len() != usize::from(target.parameters)
+                    || arguments.len() != usize::from(target.parameter_count())
                 {
                     return invalid_instruction(
                         function,
@@ -375,7 +374,7 @@ fn verify_function_structure(
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
-                    || arguments.len().saturating_add(1) != usize::from(target.parameters)
+                    || arguments.len().saturating_add(1) != usize::from(target.parameter_count())
                 {
                     return invalid_instruction(
                         function,
@@ -392,7 +391,7 @@ fn verify_function_structure(
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
-                    || arguments.len().saturating_add(1) != usize::from(target.parameters)
+                    || arguments.len().saturating_add(1) != usize::from(target.parameter_count())
                 {
                     return invalid_instruction(
                         function,
@@ -412,7 +411,7 @@ fn verify_function_structure(
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || captures.len() != usize::from(target.captures)
-                    || arguments.len() != usize::from(target.parameters)
+                    || arguments.len() != usize::from(target.parameter_count())
                 {
                     return invalid_instruction(
                         function,

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use foster::vm::{CompileOptions, Machine, Program, ProgramMetrics};
+use foster::vm::{CompileOptions, Machine, ProgramMetrics};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = Options::parse()?;
@@ -37,8 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         foster::vm::compile_with_options(&compilation, CompileOptions { optimize: false })?;
     let optimized =
         foster::vm::compile_with_options(&compilation, CompileOptions { optimize: true })?;
-    foster::vm::verify(&unoptimized)?;
-    foster::vm::verify(&optimized)?;
+    let unoptimized = unoptimized.into_verified()?;
+    let optimized = optimized.into_verified()?;
 
     let unoptimized_result = Machine::new(&unoptimized).run_main()?;
     let optimized_result = Machine::new(&optimized).run_main()?;
@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn benchmark_program(
-    program: &Program,
+    program: &foster::vm::VerifiedProgram,
     iterations: u32,
 ) -> Result<Duration, Box<dyn std::error::Error>> {
     let machine = Machine::new(program);

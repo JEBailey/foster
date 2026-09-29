@@ -60,7 +60,7 @@ fn processes_capture_poll_terminate_and_cleanup_on_both_backends() {
     let encoded = foster::vm::encode_program(&program).unwrap();
     let decoded = foster::vm::decode_program(&encoded).unwrap();
     assert_eq!(
-        foster::vm::Machine::new(&decoded)
+        foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
             .run_main_with_arguments(&arguments)
             .unwrap()
             .to_string(),

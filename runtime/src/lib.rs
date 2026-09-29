@@ -461,6 +461,71 @@ extern "C" fn foster_rt_v4_format_float(value: f64) -> usize {
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_bits(value: f64) -> i64 {
+    value.to_bits() as i64
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_from_int(value: i64) -> f64 {
+    value as f64
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_int_from_float(value: f64) -> i64 {
+    value as i64
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_floor(value: f64) -> f64 {
+    value.floor()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_ceil(value: f64) -> f64 {
+    value.ceil()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_round(value: f64) -> f64 {
+    value.round_ties_even()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_truncate(value: f64) -> f64 {
+    value.trunc()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_sqrt(value: f64) -> f64 {
+    value.sqrt()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_sin(value: f64) -> f64 {
+    value.sin()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_cos(value: f64) -> f64 {
+    value.cos()
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float_atan2(y: f64, x: f64) -> f64 {
+    y.atan2(x)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_float32_bits(value: f64) -> i64 {
+    // Narrow with IEEE round-to-nearest, ties-to-even; stabilize NaN encoding.
+    if value.is_nan() {
+        0x7fc0_0000
+    } else {
+        i64::from((value as f32).to_bits())
+    }
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_ref_load_i8(reference: usize) -> u8 {
     unsafe { *(reference as *const u8) }
 }

@@ -62,7 +62,9 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
     let code = foster::vm::compile(compilation).unwrap();
     let bytes = foster::vm::encode_program(&code).unwrap();
     let code = foster::vm::decode_program(&bytes).unwrap();
-    foster::vm::Machine::new(&code).run_main().unwrap()
+    foster::vm::Machine::new(&code.clone().into_verified().unwrap())
+        .run_main()
+        .unwrap()
 }
 
 #[test]
@@ -640,6 +642,15 @@ fn enum_parameters_are_relocated() {
 }
 
 #[test]
+fn list_constants_preserve_layouts_across_library_imports() {
+    let w = Workspace::new();
+    w.library("pub const ROWS = [\"abc\", \"def\"]\npub const GRID = [[20, 22], [1, 2]]");
+    let app = w.consumer("import api\nfunc main() -> Int { let length = 0\nfor row in ROWS { length = length + row.length }\nassert(length == 6)\nlet values = GRID[0]\nvalues[0] + values[1] }").unwrap();
+    assert_eq!(run(&app), Value::Integer(42));
+    foster::native::prepare(&app).unwrap();
+}
+
+#[test]
 fn imported_code_builds_as_native() {
     let w = Workspace::new();
     w.library("func bump(x: Int) -> Int { x + 1 }\npub func identity<T>(x: T) -> T [consume x] { x }\npub func multiplier(factor: Int) -> func(Int) -> Int { (x: Int) -> factor * bump(x) }");
@@ -655,6 +666,19 @@ fn imported_code_builds_as_native() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "42");
+}
+
+#[test]
+fn core_byte_encodings_survive_library_imports() {
+    let w = Workspace::new();
+    w.library(
+        "import core.int\nimport core.float\nimport core.bytes\npub func integer(value: Int) -> Bytes { value.bytes }\npub func vertex(value: Float) -> Bytes { value.to_f32_le_bytes() }",
+    );
+    let app = w.consumer(
+        "import api\nimport core.bytes\nfunc main() -> Int { assert(integer(42).hex() == \"2a00000000000000\")\nassert(vertex(1.0).hex() == \"0000803f\")\n42 }",
+    ).unwrap();
+    assert_eq!(run(&app), Value::Integer(42));
+    foster::native::prepare(&app).unwrap();
 }
 
 #[test]

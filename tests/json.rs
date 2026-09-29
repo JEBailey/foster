@@ -38,7 +38,7 @@ fn json_public_api_runs_on_vm_bytecode_and_native() {
         let binary = foster::vm::encode_program(&program).unwrap();
         let decoded = foster::vm::decode_program(&binary).unwrap();
         assert_eq!(
-            foster::vm::Machine::new(&decoded)
+            foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
                 .run_main()
                 .unwrap()
                 .to_string(),

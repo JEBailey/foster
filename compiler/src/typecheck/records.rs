@@ -482,7 +482,7 @@ impl Checker<'_> {
         ) {
             return self
                 .infer_member(function, actual, name)
-                .map(Some)
+                .map(|member| matches!(member, Ty::Callable { .. }).then_some(member))
                 .or(Ok(None));
         }
         if let Some(method) = self.builtin_collection_method(&actual, name) {

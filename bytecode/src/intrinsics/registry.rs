@@ -219,6 +219,42 @@ macro_rules! native_builtin {
     (FormatFloat) => {
         NativeIntrinsic::Runtime(crate::native::abi::FORMAT_FLOAT)
     };
+    (FloatFromInt) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_FROM_INT)
+    };
+    (IntFromFloat) => {
+        NativeIntrinsic::Runtime(crate::native::abi::INT_FROM_FLOAT)
+    };
+    (FloatFloor) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_FLOOR)
+    };
+    (FloatCeil) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_CEIL)
+    };
+    (FloatRound) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_ROUND)
+    };
+    (FloatTruncate) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_TRUNCATE)
+    };
+    (FloatSqrt) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_SQRT)
+    };
+    (FloatSin) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_SIN)
+    };
+    (FloatCos) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_COS)
+    };
+    (FloatAtan2) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_ATAN2)
+    };
+    (FloatBits) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT_BITS)
+    };
+    (Float32Bits) => {
+        NativeIntrinsic::Runtime(crate::native::abi::FLOAT32_BITS)
+    };
     (BytesFromList) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesFromList)
     };
@@ -348,6 +384,30 @@ macro_rules! native_builtin {
 }
 
 builtin_descriptors! {
+    FloatTruncate = 91, source: None, intrinsic: Some("float.truncate") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    FloatRound = 90, source: None, intrinsic: Some("float.round") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    FloatCeil = 89, source: None, intrinsic: Some("float.ceil") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    FloatFloor = 88, source: None, intrinsic: Some("float.floor") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    IntFromFloat = 87, source: None, intrinsic: Some("int.from_float") => Some("core.int"),
+        execution: Direct, signature: [Read Float] -> Integer;
+    FloatFromInt = 86, source: None, intrinsic: Some("float.from_int") => Some("core.float"),
+        execution: Direct, signature: [Read Integer] -> Float;
+    FloatSqrt = 82, source: None, intrinsic: Some("float.sqrt") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    FloatSin = 83, source: None, intrinsic: Some("float.sin") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    FloatCos = 84, source: None, intrinsic: Some("float.cos") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Float;
+    FloatAtan2 = 85, source: None, intrinsic: Some("float.atan2") => Some("core.float"),
+        execution: Direct, signature: [Read Float, Read Float] -> Float;
+    FloatBits = 80, source: None, intrinsic: Some("float.bits") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Integer;
+    Float32Bits = 81, source: None, intrinsic: Some("float.f32_bits") => Some("core.float"),
+        execution: Direct, signature: [Read Float] -> Integer;
     CCallbackNew = 76, source: None, intrinsic: Some("c.callback_new") => Some("std.ffi"),
         execution: ConsumeFirst, signature: [Consume Any, Read String, Read Integer] -> String;
     CCallbackRelease = 77, source: None, intrinsic: Some("c.callback_release") => Some("std.ffi"),
@@ -833,6 +893,18 @@ mod tests {
         assert_eq!(
             lowered_in_process,
             vec![
+                Builtin::FloatTruncate,
+                Builtin::FloatRound,
+                Builtin::FloatCeil,
+                Builtin::FloatFloor,
+                Builtin::IntFromFloat,
+                Builtin::FloatFromInt,
+                Builtin::FloatSqrt,
+                Builtin::FloatSin,
+                Builtin::FloatCos,
+                Builtin::FloatAtan2,
+                Builtin::FloatBits,
+                Builtin::Float32Bits,
                 Builtin::CCallbackNew,
                 Builtin::CCallbackRelease,
                 Builtin::CCallbackPoll,

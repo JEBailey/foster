@@ -4,7 +4,7 @@ use foster::foreign::Manifest;
 fn ffi_packet_validation_tests_run_in_library_context() {
     let compilation = foster::compile("import std.ffi\nfunc main() {}\n").unwrap();
     let program = foster::vm::compile(&compilation).unwrap();
-    let machine = foster::vm::Machine::new(&program);
+    let machine = foster::vm::Machine::new(&program.clone().into_verified().unwrap());
     let mut count = 0;
     for test in &compilation.hir.tests {
         let function = &compilation.hir.functions[*test];

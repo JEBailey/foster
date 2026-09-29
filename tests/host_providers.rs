@@ -77,7 +77,7 @@ func main() -> Int {
                 .unwrap();
         foster::vm::verify(&program).unwrap();
         let machine = foster::vm::Machine::with_host_context(
-            &program,
+            &program.into_verified().unwrap(),
             HostContext::with_provider(".", provider.clone()),
         );
         assert_eq!(machine.run_main().unwrap(), foster::vm::Value::Integer(587));

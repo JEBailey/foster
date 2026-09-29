@@ -318,7 +318,8 @@ impl FunctionCompiler<'_> {
                 .copied()
                 .ok_or_else(|| self.unsupported("captured local")),
             hir::Expr::Name(ResolvedName::Constant(constant)) => {
-                self.constant_value(&self.hir.constants[*constant].value, span)
+                let ty = verification_type(self.hir, self.types, self.types.constants[constant], 0);
+                self.constant_value(&self.hir.constants[*constant].value, &ty, span)
             }
             hir::Expr::Name(ResolvedName::Function(function)) => {
                 let destination = self.allocate();
@@ -970,6 +971,50 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Member { object, name } => {
+                if name == "bytes" {
+                    let mut ty = self.types.expression_type(*object);
+                    while let Some(id) = ty {
+                        if let crate::types::Type::Reference { value, .. } = &self.types.types[id] {
+                            ty = Some(*value);
+                        } else {
+                            break;
+                        }
+                    }
+                    let accessor = ty.and_then(|ty| match &self.types.types[ty] {
+                        crate::types::Type::Int => Some(("core.int", "Int.bytes")),
+                        crate::types::Type::Float => Some(("core.float", "Float.bytes")),
+                        crate::types::Type::Bool => Some(("core.bool", "Bool.bytes")),
+                        crate::types::Type::Byte => Some(("core.byte", "Byte.bytes")),
+                        crate::types::Type::CodePoint => {
+                            Some(("core.code_point", "CodePoint.bytes"))
+                        }
+                        crate::types::Type::Record { record, .. }
+                            if Some(*record) == self.types.core.bytes =>
+                        {
+                            Some(("core.bytes", "Bytes.bytes"))
+                        }
+                        _ => None,
+                    });
+                    if let Some((module, method)) = accessor {
+                        let function = self
+                            .hir
+                            .module_named(module)
+                            .and_then(|module| self.hir.function_named(module, method))
+                            .ok_or_else(|| self.unsupported("core byte accessor"))?;
+                        let argument = self.expression(*object)?;
+                        let destination = self.allocate();
+                        self.emit(
+                            Instruction::Call {
+                                destination,
+                                function,
+                                specialization: self.specialization(function, &[*object], id),
+                                arguments: vec![argument],
+                            },
+                            span,
+                        );
+                        return Ok(destination);
+                    }
+                }
                 if name == "value"
                     && self
                         .types
@@ -1222,6 +1267,7 @@ impl FunctionCompiler<'_> {
     fn constant_value(
         &mut self,
         value: &hir::ConstantValue,
+        ty: &ExecutableType,
         span: std::ops::Range<usize>,
     ) -> Result<Slot, FosterError> {
         Ok(match value {
@@ -1243,18 +1289,23 @@ impl FunctionCompiler<'_> {
                 self.load_constant(Constant::Symbol(value.clone()), span)?
             }
             hir::ConstantValue::Constant(constant) => {
-                self.constant_value(&self.hir.constants[*constant].value, span)?
+                self.constant_value(&self.hir.constants[*constant].value, ty, span)?
             }
             hir::ConstantValue::List(values) => {
+                // Constants are expanded at each use, but must retain their checked
+                // element types so native layouts agree with specialized callees.
+                let ExecutableType::List(element_type) = ty else {
+                    return Err(self.unsupported("non-list type for list constant"));
+                };
                 let elements = values
                     .iter()
-                    .map(|value| self.constant_value(value, span.clone()))
+                    .map(|value| self.constant_value(value, element_type, span.clone()))
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
                 self.emit(
                     Instruction::MakeList {
                         destination,
-                        element_type: ExecutableType::Unknown,
+                        element_type: element_type.as_ref().clone(),
                         elements,
                     },
                     span,

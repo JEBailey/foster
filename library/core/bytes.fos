@@ -31,6 +31,9 @@ impl BytesHost {
 pub type Bytes = & Copy & Sequence<Byte> & Collection<Byte> & Equality<Bytes> & Hashing & {
     value: RawBytes
 
+    /// Reads `.bytes`: an independent immutable copy of these bytes, leaving `self` unchanged.
+    pub func bytes(self) -> Bytes [read self]
+
     /// Returns an independent immutable byte value.
     pub func copy(self) -> self [read self]
 
@@ -66,6 +69,11 @@ pub type HexError = {
 }
 
 impl Bytes {
+    /// Reads `.bytes`: an independent immutable copy of these bytes, leaving `self` unchanged.
+    pub func bytes(self) -> Bytes [read self] {
+        self.copy()
+    }
+
     /// Returns an independent immutable byte value.
     pub func copy(self) -> self [read self] {
         BytesHost.from_list(BytesHost.to_list(self))

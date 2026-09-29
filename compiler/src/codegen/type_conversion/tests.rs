@@ -1,6 +1,6 @@
 use super::*;
 use crate::ast::{Effect, EffectKind, GroupPath, ParameterMode};
-use crate::compiler::Compilation;
+use crate::compiler::CompilationData as Compilation;
 use crate::types::{DispatchSlot, FunctionType};
 
 fn fixture() -> Compilation {
@@ -19,6 +19,7 @@ func main() -> Int { 0 }
 "#,
     )
     .unwrap()
+    .into_analysis()
 }
 
 fn record(compilation: &mut Compilation, name: &str, arguments: Vec<TypeId>) -> (RecordId, TypeId) {

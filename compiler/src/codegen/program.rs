@@ -1,6 +1,6 @@
 //! Backend-neutral executable declarations and the authoritative SSA bodies.
 use super::{ir, metadata::ProgramMetadata, types::ExecutableType};
-use crate::ast::ParameterMode;
+
 use crate::hir::FunctionId;
 use std::collections::HashMap;
 
@@ -9,10 +9,7 @@ use std::collections::HashMap;
 pub struct FunctionDeclaration {
     pub name: String,
     pub intrinsic_stub: bool,
-    pub parameters: u16,
-    pub parameter_types: Vec<ExecutableType>,
-    pub parameter_modes: Vec<ParameterMode>,
-    pub mutable_parameters: Vec<bool>,
+    pub parameters: Vec<super::storage::ExecutableParameter>,
     pub returns_reference: bool,
     pub captures: u16,
     pub capture_types: Vec<ExecutableType>,
@@ -24,10 +21,7 @@ impl FunctionDeclaration {
         Self {
             name: body.name.clone(),
             intrinsic_stub: body.intrinsic_stub,
-            parameters: body.parameters,
-            parameter_types: body.parameter_types.clone(),
-            parameter_modes: body.parameter_modes.clone(),
-            mutable_parameters: body.mutable_parameters.clone(),
+            parameters: body.parameters.clone(),
             returns_reference: body.returns_reference,
             captures: body.captures,
             capture_types: body.capture_types.clone(),
@@ -37,10 +31,14 @@ impl FunctionDeclaration {
     pub(crate) fn schema(&self) -> super::flow::FunctionSchema {
         super::flow::FunctionSchema {
             name: self.name.clone(),
-            parameters: crate::types::Parameter::from_parts(
-                self.parameter_types.clone(),
-                self.parameter_modes.clone(),
-            ),
+            parameters: self
+                .parameters
+                .iter()
+                .map(|p| crate::types::Parameter {
+                    ty: p.ty.clone(),
+                    mode: p.mode,
+                })
+                .collect(),
             captures: self.capture_types.clone(),
             result_type: self.result_type.clone(),
             returns_reference: self.returns_reference,
@@ -100,4 +98,10 @@ pub(crate) fn compile_with_locals(
     measure("shared.seal", || super::sealing::seal_program(program)).map_err(|error| {
         crate::error::FosterError::runtime(format!("shared SSA sealing failed: {error}"))
     })
+}
+
+impl FunctionDeclaration {
+    pub fn parameter_count(&self) -> u16 {
+        u16::try_from(self.parameters.len()).expect("executable parameter count exceeds u16")
+    }
 }

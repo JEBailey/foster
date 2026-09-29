@@ -102,17 +102,17 @@ impl Writer {
     pub(super) fn function(&mut self, f: &BytecodeFunction) -> Result<(), BinaryError> {
         self.string(&f.name)?;
         self.u8(u8::from(f.intrinsic_stub));
-        self.u16(f.parameters);
-        self.u32(f.parameter_types.len())?;
-        for ty in &f.parameter_types {
+        self.u16(f.parameter_count());
+        self.u32(f.parameters.len())?;
+        for ty in f.parameters.iter().map(|p| &p.ty) {
             self.verification_type(ty)?;
         }
-        self.u32(f.parameter_modes.len())?;
-        for mode in &f.parameter_modes {
+        self.u32(f.parameters.len())?;
+        for mode in f.parameters.iter().map(|p| &p.mode) {
             self.parameter_mode(*mode);
         }
-        self.u32(f.mutable_parameters.len())?;
-        for value in &f.mutable_parameters {
+        self.u32(f.parameters.len())?;
+        for value in f.parameters.iter().map(|p| &p.mutable) {
             self.u8(*value as u8);
         }
         self.u8(u8::from(f.returns_reference));

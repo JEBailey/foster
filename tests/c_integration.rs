@@ -141,7 +141,7 @@ fn generated_c_bridge_runs_on_vm_and_native_with_exact_cleanup() {
                 .unwrap();
         let binary = foster::vm::encode_program(&program).unwrap();
         let decoded = foster::vm::decode_program(&binary).unwrap();
-        let value = foster::vm::Machine::new(&decoded)
+        let value = foster::vm::Machine::new(&decoded.clone().into_verified().unwrap())
             .run_main_with_arguments(&arguments)
             .unwrap();
         assert_eq!(value.to_string(), "Result.Ok(42)");

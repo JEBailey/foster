@@ -7,7 +7,7 @@ use camino::Utf8PathBuf;
 use lsp_types::Uri;
 
 use super::workspace::{Workspace, path_to_uri, uri_to_path};
-use crate::compiler::Compilation;
+use crate::compiler::RecoveryCompilation as Compilation;
 use crate::error::FosterError;
 
 // Navigation can request files that are not open in the editor. Keep a small working set
@@ -525,12 +525,15 @@ mod tests {
     }
 
     fn snapshot(path: &Path) -> Compilation {
-        let mut compilation = crate::compile("func main() -> Int { 1 }").unwrap();
+        let mut package = crate::package::Package::from_program_with_core(
+            "main",
+            crate::parse("func main() -> Int { 1 }").unwrap(),
+        )
+        .unwrap();
         let path = Utf8PathBuf::from_path_buf(path.to_owned()).unwrap();
-        compilation.package.root = path.clone();
-        let module = compilation.hir.modules.iter().next().unwrap().0;
-        compilation.hir.modules[module].source_path = Some(path);
-        compilation
+        package.root = path.clone();
+        package.modules.get_mut("main").unwrap().source_path = Some(path);
+        crate::compiler::check(package).unwrap().into()
     }
 
     #[test]
@@ -644,16 +647,12 @@ mod tests {
         let second_uri = path_to_uri(&root.join("second.fos")).unwrap();
         let unrelated_uri = path_to_uri(&root.join("unrelated.fos")).unwrap();
         for uri in [&first_uri, &second_uri] {
-            let mut compilation = crate::compile("func main() -> Int { 1 }").unwrap();
-            // Model two independently checked roots containing the same dependency.
-            let module = compilation.hir.modules.iter().next().unwrap().0;
-            compilation.hir.modules[module].source_path =
-                Some(Utf8PathBuf::from_path_buf(shared.clone()).unwrap());
+            let compilation = snapshot(&shared);
             cache.insert(uri.clone(), compilation);
         }
         let unrelated = cache.insert(
             unrelated_uri.clone(),
-            crate::compile("func main() -> Int { 2 }").unwrap(),
+            crate::compile("func main() -> Int { 2 }").unwrap().into(),
         );
         assert!(cache.get(&first_uri).is_some());
         assert!(cache.get(&second_uri).is_some());

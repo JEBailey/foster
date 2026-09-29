@@ -123,7 +123,7 @@ pub(super) fn specialize_non_escaping(program: &mut Program) -> bool {
                 unreachable!("the call was located above")
             };
             changed = true;
-            function.instructions[creation] = Instruction::Move {
+            function.body.instructions_mut()[creation] = Instruction::Move {
                 destination: closure,
                 source: closure,
             };
@@ -131,7 +131,7 @@ pub(super) fn specialize_non_escaping(program: &mut Program) -> bool {
                 .iter()
                 .map(|(_, register)| *register)
                 .collect::<Vec<_>>();
-            function.instructions[call] = Instruction::CallClosure {
+            function.body.instructions_mut()[call] = Instruction::CallClosure {
                 destination,
                 function: target,
                 specialization,
@@ -142,14 +142,15 @@ pub(super) fn specialize_non_escaping(program: &mut Program) -> bool {
             // until the direct call. Remove transport-only closure slots and
             // let final register liveness place the new releases.
             for transport in &transports {
-                function.instructions[*transport] = Instruction::Move {
+                function.body.instructions_mut()[*transport] = Instruction::Move {
                     destination: closure,
                     source: closure,
                 };
             }
             let mut active_aliases = aliases;
             for (index, instruction) in function
-                .instructions
+                .body
+                .instructions_mut()
                 .iter_mut()
                 .enumerate()
                 .skip(creation + 1)

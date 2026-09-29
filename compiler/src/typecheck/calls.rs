@@ -531,6 +531,17 @@ impl Checker<'_> {
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
             Builtin::ParseFloat => (vec![string.clone()], Ty::Float),
             Builtin::FormatFloat => (vec![Ty::Float], string.clone()),
+            Builtin::FloatBits | Builtin::Float32Bits => (vec![Ty::Float], Ty::Int),
+            Builtin::FloatSqrt | Builtin::FloatSin | Builtin::FloatCos => {
+                (vec![Ty::Float], Ty::Float)
+            }
+            Builtin::FloatFromInt => (vec![Ty::Int], Ty::Float),
+            Builtin::IntFromFloat => (vec![Ty::Float], Ty::Int),
+            Builtin::FloatFloor => (vec![Ty::Float], Ty::Float),
+            Builtin::FloatCeil => (vec![Ty::Float], Ty::Float),
+            Builtin::FloatRound => (vec![Ty::Float], Ty::Float),
+            Builtin::FloatTruncate => (vec![Ty::Float], Ty::Float),
+            Builtin::FloatAtan2 => (vec![Ty::Float, Ty::Float], Ty::Float),
             Builtin::ByteValid => (vec![Ty::Int], Ty::Bool),
             Builtin::ByteUnchecked => (vec![Ty::Int], Ty::Byte),
             Builtin::BytesEmpty => (Vec::new(), bytes.clone()),
@@ -679,6 +690,25 @@ impl Checker<'_> {
             == crate::semantics::ExpressionCategory::Place
     }
 
+    pub(super) fn core_bytes_method(
+        &mut self,
+        function: FunctionId,
+        object: Ty,
+    ) -> Result<Option<Ty>, FosterError> {
+        let module = match &object {
+            Ty::Int => Some("core.int"),
+            Ty::Float => Some("core.float"),
+            Ty::Bool => Some("core.bool"),
+            Ty::Byte => Some("core.byte"),
+            Ty::CodePoint => Some("core.code_point"),
+            _ if self.is_bytes_type(&object) => Some("core.bytes"),
+            _ => None,
+        };
+        module
+            .map(|module| self.primitive_method_type(function, object, module, "bytes"))
+            .transpose()
+    }
+
     pub(super) fn infer_member(
         &mut self,
         function: FunctionId,
@@ -694,6 +724,9 @@ impl Checker<'_> {
         }
         if let Ty::Reference(_, value) = object {
             return self.infer_member(function, *value, name);
+        }
+        if name == "bytes" && self.core_bytes_method(function, object.clone())?.is_some() {
+            return Ok(self.bytes_type());
         }
         if self.is_string_type(&object) {
             if name == "value" {

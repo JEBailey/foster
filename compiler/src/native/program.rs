@@ -221,10 +221,10 @@ fn prepare_shared(
         let parameter_offset = lowered
             .parameters
             .len()
-            .saturating_sub(source.mutable_parameters.len());
+            .saturating_sub(source.parameters.len());
         let mut mutable_parameter_homes = lowered.parameters[parameter_offset..]
             .iter()
-            .zip(&source.mutable_parameters)
+            .zip(source.parameters.iter().map(|p| &p.mutable))
             .filter_map(|(value, mutable)| {
                 mutable
                     .then(|| lowered.values.hint(value.index()))
@@ -272,10 +272,14 @@ fn prepare_shared(
             management,
             logical_signature: LogicalSignature {
                 captures: source.capture_types.iter().map(specialize).collect(),
-                parameters: crate::types::Parameter::from_parts(
-                    source.parameter_types.iter().map(specialize).collect(),
-                    source.parameter_modes.clone(),
-                ),
+                parameters: source
+                    .parameters
+                    .iter()
+                    .map(|p| crate::types::Parameter {
+                        ty: specialize(&p.ty),
+                        mode: p.mode,
+                    })
+                    .collect(),
                 result: specialize(&source.result_type),
             },
             logical_value_types,
@@ -504,7 +508,11 @@ func main() -> Int {
         for function in prepared.functions() {
             assert_eq!(function.management().len(), function.ir.values.len());
             assert_eq!(
-                prepared.program.functions[&function.source_function()].parameter_modes,
+                prepared.program.functions[&function.source_function()]
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode)
+                    .collect::<Vec<_>>(),
                 function
                     .logical_signature()
                     .parameters

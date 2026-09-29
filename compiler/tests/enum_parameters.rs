@@ -14,7 +14,7 @@ fn enum_parameters_execute_and_round_trip() {
             foster_vm::decode_program(&foster_compiler::vm::encode_program(&program).unwrap())
                 .unwrap();
         assert_eq!(
-            foster_vm::Machine::new(&decoded)
+            foster_vm::Machine::new(&decoded.into_verified().unwrap())
                 .run_main()
                 .unwrap()
                 .to_string(),

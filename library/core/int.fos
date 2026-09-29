@@ -6,8 +6,13 @@
 //!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
+import core.result as results
+
 import core.ordering
 import core.copy
+import core.bytes
+import core.byte
+import core.list
 
 /// Private signed 64-bit primitive storage.
 intrinsic type RawInt
@@ -16,6 +21,13 @@ intrinsic type RawInt
 /// The compiler keeps this representation inline, including during arithmetic.
 pub type Int = & Copy & {
     value: RawInt
+
+    /// Reads `.bytes`: eight little-endian two's-complement bytes, leaving `self` unchanged.
+    pub func bytes(self) -> Bytes [read self]
+    /// Encodes eight little-endian two's-complement bytes without consuming `self`.
+    pub func to_le_bytes(self) -> Bytes [read self]
+    /// Encodes eight big-endian two's-complement bytes without consuming `self`.
+    pub func to_be_bytes(self) -> Bytes [read self]
 
     /// Returns the distance from zero: negative values become positive; zero and positive values stay the same.
     /// Leaves `self` unchanged. For example, `(-7).absolute()` returns `7`.
@@ -53,9 +65,66 @@ pub type Int = & Copy & {
     pub func as_string(self) -> String [read self]
 }
 
+/// Failure to convert a Float to a signed 64-bit integer.
+/// NotFinite means NaN or infinity; OutOfRange means truncation cannot fit Int.
+pub enum IntConversionError = NotFinite | OutOfRange
+
+type IntHost = {}
+
+impl IntHost {
+    /// Converts a finite value in [-2^63, 2^63) after the public range check.
+    func from_float(value: Float) -> Int = intrinsic("int.from_float")
+}
+
 impl Int {
+    /// Truncates a Float toward zero, preserving the input.
+    /// Returns NotFinite for NaN or infinity, or OutOfRange when the result cannot fit Int.
+    /// Both signed zeros convert to zero. No saturation or wrapping is performed.
+    pub func from(value: Float) -> Result<Int, IntConversionError> [read value] {
+        // Subtracting a nonfinite value from itself produces NaN.
+        let difference = value - value
+        return Result.Error(IntConversionError.NotFinite) if difference != difference
+        if value < -9223372036854775808.0 || value >= 9223372036854775808.0 {
+            return Result.Error(IntConversionError.OutOfRange)
+        }
+        Result.Ok(IntHost.from_float(value))
+    }
+
+    /// Reads `.bytes`: eight little-endian two's-complement bytes, leaving `self` unchanged.
+    pub func bytes(self) -> Bytes [read self] {
+        self.to_le_bytes()
+    }
+
+    /// Encodes eight little-endian two's-complement bytes without consuming `self`.
+    pub func to_le_bytes(self) -> Bytes [read self] {
+        let remaining = self
+        let output = []
+        let index = 0
+        while index < 8 {
+            let remainder = remaining.modulo(256)
+            let octet = branch {
+                remainder < 0 -> remainder + 256 _ -> remainder
+            }
+            output.push(Byte.unchecked(octet))
+            remaining = remaining / 256
+            // Floor division preserves the sign bits, including at Int's minimum.
+            if remainder < 0 remaining = remaining - 1
+            index = index + 1
+        }
+        Bytes.from(move output)
+    }
+
+    /// Encodes eight big-endian two's-complement bytes without consuming `self`.
+    pub func to_be_bytes(self) -> Bytes [read self] {
+        Bytes.from(self.to_le_bytes().list().reverse())
+    }
+
     /// Explicitly copies this scalar value.
-    pub func copy(self) -> self [read self] { Int { value: self.value } }
+    pub func copy(self) -> self [read self] {
+        Int {
+            value: self.value
+        }
+    }
 
     /// Returns the distance from zero, ignoring the sign of this integer.
     ///
@@ -215,5 +284,22 @@ func negative_string(value: Int) -> String {
     branch {
         quotient == 0 -> from_code_point(48 + digit).string
         _ -> negative_string(quotient) + from_code_point(48 + digit).string
+    }
+}
+
+test "checked float conversion truncates and reports invalid input" {
+    branch Int.from(-19.9) {
+        Result.Ok(value) -> {
+            assert(value == -19)
+        }
+        Result.Error(_) -> {
+            panic("finite conversion failed")
+        }
+    }
+    branch Int.from(9223372036854775808.0) {
+        Result.Error(IntConversionError.OutOfRange) -> ()
+        _ -> {
+            panic("out-of-range conversion succeeded")
+        }
     }
 }

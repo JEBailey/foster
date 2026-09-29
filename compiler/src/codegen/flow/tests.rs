@@ -16,27 +16,30 @@ fn reused_storage_keeps_distinct_value_types() {
     ]);
     let body = program.functions.get_mut(&id).unwrap();
     body.registers = 1;
-    body.instructions = vec![
-        vm::Instruction::LoadConstant {
-            destination: vm::Register(0),
-            constant: first_constant,
-        },
-        vm::Instruction::Assert {
-            condition: vm::Register(0),
-            message: None,
-        },
-        vm::Instruction::Drop {
-            register: vm::Register(0),
-        },
-        vm::Instruction::LoadConstant {
-            destination: vm::Register(0),
-            constant: first_constant + 1,
-        },
-        vm::Instruction::Return {
-            source: vm::Register(0),
-        },
-    ];
-    body.instruction_spans = vec![0..0; body.instructions.len()];
+    body.body = crate::codegen::storage::InstructionBody::new(
+        (vec![
+            vm::Instruction::LoadConstant {
+                destination: vm::Register(0),
+                constant: first_constant,
+            },
+            vm::Instruction::Assert {
+                condition: vm::Register(0),
+                message: None,
+            },
+            vm::Instruction::Drop {
+                register: vm::Register(0),
+            },
+            vm::Instruction::LoadConstant {
+                destination: vm::Register(0),
+                constant: first_constant + 1,
+            },
+            vm::Instruction::Return {
+                source: vm::Register(0),
+            },
+        ])
+        .into_iter()
+        .map(|i| (i, 0..0)),
+    );
     let shared = crate::codegen::sealing::seal_program(program).unwrap();
     let function = &shared.functions()[&id];
     let facts = shared.facts(id);

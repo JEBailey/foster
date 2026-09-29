@@ -542,21 +542,11 @@ fn debug(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         .is_file()
         .then(|| fs::read_to_string(&target.source))
         .transpose()?;
-    let mut compilation = if let Some(source) = &source {
+    let compilation = if let Some(source) = &source {
         compile_single_file(&target.source, source, parse_file(&target.source, source)?)?
     } else {
         compile_target(&target)?
     };
-    // Keep the source map tied to the exact text that was checked, even if the file changes.
-    if let Some(source) = source {
-        if let Some(module) = compilation.package.modules.get_mut("main") {
-            module.source = Some(source);
-            module.source_path = Some(
-                camino::Utf8PathBuf::from_path_buf(fs::canonicalize(&target.source)?)
-                    .map_err(|_| "debug source path must be UTF-8")?,
-            );
-        }
-    }
     let command_arguments = foster::entry::CommandArguments::new(
         target.artifact_base().to_string_lossy(),
         arguments
@@ -592,7 +582,7 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     {
         run_archive(path, &command_arguments)?
     } else if path.extension().is_some_and(|extension| extension == "fbc") {
-        let program = foster::vm::decode_program(&fs::read(path)?)?;
+        let program = foster::vm::VerifiedProgram::decode(&fs::read(path)?)?;
         foster::vm::Machine::new(&program).run_main_with_arguments(&command_arguments)?
     } else if path.is_dir() {
         let compilation = compile_target(&target)?;
@@ -617,7 +607,7 @@ fn run_archive(
     arguments: &foster::entry::CommandArguments,
 ) -> Result<foster::vm::Value, Box<dyn Error>> {
     let package = foster::archive::read_package(path)?;
-    let program = foster::vm::decode_program(&package.bytecode)?;
+    let program = foster::vm::VerifiedProgram::decode(&package.bytecode)?;
     let working_directory = PackageWorkingDirectory::create()?;
     working_directory.write_resources(&package.resources)?;
     let host = foster::vm::HostContext::new(working_directory.path());
@@ -683,7 +673,7 @@ fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
             optimize: !arguments.get_flag("no-optimize"),
         },
     )?;
-    let machine = foster::vm::Machine::new(&program);
+    let machine = foster::vm::Machine::new(&program.into_verified()?);
     let requested_root = path.is_dir().then(|| fs::canonicalize(path)).transpose()?;
     let mut tests = compilation
         .hir
@@ -962,7 +952,14 @@ fn compile_single_file(
     source: &str,
     program: foster::ast::Program,
 ) -> Result<foster::compiler::Compilation, Box<dyn Error>> {
-    let package = foster::package::Package::from_program_with_core("main", program)?;
+    let mut package = foster::package::Package::from_program_with_core("main", program)?;
+    // Attach the exact checked source before publishing immutable analysis.
+    let module = package.modules.get_mut("main").expect("single-file module");
+    module.source = Some(source.to_owned());
+    module.source_path = Some(
+        camino::Utf8PathBuf::from_path_buf(fs::canonicalize(path)?)
+            .map_err(|_| "source path must be UTF-8")?,
+    );
     foster::compiler::check(package).map_err(|error| {
         if error
             .source_module

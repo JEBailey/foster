@@ -39,7 +39,9 @@ fn independent_tzdata_library_runs_in_vm_and_native() {
             foster::vm::decode_program(&foster::vm::encode_program(&program).unwrap()).unwrap();
         eprintln!("running VM optimize={optimize}");
         assert_eq!(
-            foster::vm::Machine::new(&program).run_main().unwrap(),
+            foster::vm::Machine::new(&program.clone().into_verified().unwrap())
+                .run_main()
+                .unwrap(),
             foster::vm::Value::Integer(42)
         );
         let executable =

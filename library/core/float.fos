@@ -1,4 +1,8 @@
-//! Binary64 formatting, arithmetic helpers, and comparison-based queries.
+//! Binary64 encoding, mathematics, formatting, and comparison-based queries.
+//!
+//! Angles use radians. Square root and trigonometric methods use backend math
+//! operations and leave their inputs usable. Domain errors return NaN rather than
+//! failing execution. Trigonometric precision can vary across platforms and builds.
 //!
 //! These helpers use ordinary floating-point comparisons. In particular, compare
 //! returns `Equal` when neither operand compares less or greater, including NaN;
@@ -7,20 +11,145 @@
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.ordering
+import core.int
+import core.bytes
+import core.list
 
 type FloatHost = {}
 
 impl FloatHost {
+    /// Converts a signed integer to binary64 with nearest, ties-to-even rounding.
+    func from_int(value: Int) -> Float = intrinsic("float.from_int")
+    /// Rounds toward negative infinity.
+    func floor(value: Float) -> Float = intrinsic("float.floor")
+    /// Rounds toward positive infinity.
+    func ceil(value: Float) -> Float = intrinsic("float.ceil")
+    /// Rounds to nearest with ties to even.
+    func round(value: Float) -> Float = intrinsic("float.round")
+    /// Rounds toward zero.
+    func truncate(value: Float) -> Float = intrinsic("float.truncate")
+    /// Backend binary64 square root.
+    func sqrt(value: Float) -> Float = intrinsic("float.sqrt")
+    /// Backend sine with a radian argument.
+    func sin(value: Float) -> Float = intrinsic("float.sin")
+    /// Backend cosine with a radian argument.
+    func cos(value: Float) -> Float = intrinsic("float.cos")
+    /// Backend four-quadrant arctangent; y is the first argument.
+    func atan2(y: Float, x: Float) -> Float = intrinsic("float.atan2")
+    /// Returns the binary64 bit pattern in signed integer storage.
+    func bits(value: Float) -> Int = intrinsic("float.bits")
+    /// Narrows to binary32 and returns its unsigned bit pattern as an Int.
+    func f32_bits(value: Float) -> Int = intrinsic("float.f32_bits")
     /// Host primitive used by the Foster-written floating-point formatter API.
     func format(value: Float) -> String = intrinsic("float.format")
 }
 
 impl Float {
+    /// Converts an integer to binary64, preserving the input.
+    /// Rounds to nearest with ties to even; integers outside +/-2^53 may lose precision.
+    pub func from(value: Int) -> Float [read value] {
+        FloatHost.from_int(value)
+    }
+
+    /// Rounds toward negative infinity, leaving `self` unchanged.
+    /// Preserves infinities and signed zero; NaN returns NaN. Zero results retain the input sign.
+    pub func floor(self) -> Float [read self] {
+        FloatHost.floor(self)
+    }
+
+    /// Rounds toward positive infinity, leaving `self` unchanged.
+    /// Preserves infinities and signed zero; NaN returns NaN. Zero results retain the input sign.
+    pub func ceil(self) -> Float [read self] {
+        FloatHost.ceil(self)
+    }
+
+    /// Rounds to nearest, choosing the even integer at a tie, leaving `self` unchanged.
+    /// Preserves infinities and signed zero; NaN returns NaN. Zero results retain the input sign.
+    pub func round(self) -> Float [read self] {
+        FloatHost.round(self)
+    }
+
+    /// Removes the fractional part by rounding toward zero, leaving `self` unchanged.
+    /// Preserves infinities and signed zero; NaN returns NaN. Zero results retain the input sign.
+    pub func truncate(self) -> Float [read self] {
+        FloatHost.truncate(self)
+    }
+
+    /// Returns the correctly rounded binary64 square root, leaving `self` unchanged.
+    /// Nonnegative finite inputs produce nonnegative roots. Preserves both signed zeros
+    /// and positive infinity. Negative nonzero inputs, negative infinity, and NaN return NaN.
+    /// NaN sign and payload bits are unspecified; domain errors do not stop execution.
+    pub func sqrt(self) -> Float [read self] {
+        FloatHost.sqrt(self)
+    }
+
+    /// Returns the sine of `self` radians without consuming it.
+    /// Finite inputs produce values in `[-1, 1]`; preserves signed zero.
+    /// Either infinity or NaN returns NaN, with unspecified sign and payload bits.
+    /// Uses platform math precision; results need not be bit-identical across targets or builds.
+    pub func sin(self) -> Float [read self] {
+        FloatHost.sin(self)
+    }
+
+    /// Returns the cosine of `self` radians without consuming it.
+    /// Finite inputs produce values in `[-1, 1]`; either signed zero returns `1.0`.
+    /// Either infinity or NaN returns NaN, with unspecified sign and payload bits.
+    /// Uses platform math precision; results need not be bit-identical across targets or builds.
+    pub func cos(self) -> Float [read self] {
+        FloatHost.cos(self)
+    }
+
+    /// Returns the angle of `(x, self)` in radians in `[-pi, pi]`, leaving both inputs usable.
+    /// Call `y.atan2(x)`; positive angles turn counterclockwise from the positive x axis.
+    /// A NaN input returns NaN with unspecified sign and payload bits.
+    /// For signed-zero y, returns y when x has a positive sign, or pi with y's sign otherwise.
+    /// This includes all four combinations of signed zeros. Nonzero y with zero x returns
+    /// pi/2 with y's sign. Infinite y with finite x does the same. Finite y with positive
+    /// infinite x returns zero with y's sign; negative infinite x returns pi with y's sign.
+    /// When both are infinite, returns pi/4 for positive x or 3*pi/4 for negative x,
+    /// with y's sign. Uses platform math precision; finite results may vary in their last bits.
+    pub func atan2(self, x: Float) -> Float [read self, read x] {
+        FloatHost.atan2(self, x)
+    }
+
+    /// Reads `.bytes`: eight little-endian IEEE binary64 bytes, preserving signed zero and NaN bits.
+    pub func bytes(self) -> Bytes [read self] {
+        self.to_le_bytes()
+    }
+
+    /// Encodes eight little-endian IEEE binary64 bytes, preserving signed zero and NaN bits.
+    pub func to_le_bytes(self) -> Bytes [read self] {
+        FloatHost.bits(self).to_le_bytes()
+    }
+
+    /// Encodes eight big-endian IEEE binary64 bytes, preserving signed zero and NaN bits.
+    pub func to_be_bytes(self) -> Bytes [read self] {
+        FloatHost.bits(self).to_be_bytes()
+    }
+
+    /// Encodes four little-endian IEEE binary32 bytes without consuming `self`.
+    /// Rounds to nearest, ties to even; overflow becomes infinity and underflow supports subnormals.
+    /// Preserves signed zero; every NaN encodes the quiet NaN bit pattern `0x7fc00000`.
+    pub func to_f32_le_bytes(self) -> Bytes [read self] {
+        FloatHost.f32_bits(self).to_le_bytes().slice(0, 4)
+    }
+
+    /// Encodes four big-endian IEEE binary32 bytes without consuming `self`.
+    /// Rounds to nearest, ties to even; overflow becomes infinity and underflow supports subnormals.
+    /// Preserves signed zero; every NaN encodes the quiet NaN bit pattern `0x7fc00000`.
+    pub func to_f32_be_bytes(self) -> Bytes [read self] {
+        Bytes.from(self.to_f32_le_bytes().list().reverse())
+    }
+
     /// Explicitly copies this scalar value.
-    pub func copy(self) -> self [read self] { self }
+    pub func copy(self) -> self [read self] {
+        self
+    }
 
     /// Formats a binary64 value as round-trippable decimal text.
-    pub func as_string(self) -> String { FloatHost.format(self) }
+    pub func as_string(self) -> String {
+        FloatHost.format(self)
+    }
 
     /// Negates `self` when it compares less than zero.
     /// Preserves NaN and negative zero, which do not satisfy that comparison.
@@ -92,4 +221,25 @@ test "floating-point helpers clamp and compare values" {
     assert(4.0.clamp(0.0, 3.0) == 3.0)
     assert(2.0.between?(1.0, 3.0))
     ()
+}
+
+test "backend mathematics use radians and preserve inputs" {
+    let x = 9.0
+    assert(x.sqrt() == 3.0)
+    assert(x == 9.0)
+    assert(0.0.sin() == 0.0)
+    assert(0.0.cos() == 1.0)
+    assert((1.0.atan2(1.0) - 0.7853981633974483).absolute() < 1e-14)
+    let invalid = (-1.0).sqrt()
+    assert(invalid != invalid)
+}
+
+test "numeric conversion and rounding preserve inputs" {
+    let value = 2.5
+    assert(Float.from(42) == 42.0)
+    assert(value.floor() == 2.0)
+    assert(value.ceil() == 3.0)
+    assert(value.round() == 2.0)
+    assert(value.truncate() == 2.0)
+    assert(value == 2.5)
 }

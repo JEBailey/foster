@@ -112,7 +112,7 @@ fn define_arguments(
 ) -> Result<(), FosterError> {
     let objects = backend.objects;
     let main = backend.ir.program.metadata.main.expect("native entry");
-    let ty = &backend.ir.program.functions[&main].parameter_types[0];
+    let ty = &backend.ir.program.functions[&main].parameters[0].ty;
     let NativeType::Object(layout) =
         native_verification_type(&backend.ir.program.metadata, backend.ir.layouts, ty, None)?
     else {

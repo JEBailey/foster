@@ -47,7 +47,7 @@ fn constrained_method_signature_displays_requirements() {
         .hir
         .function_named(module, "Box.copied")
         .unwrap();
-    let signature = function_signature(&compilation, method, false);
+    let signature = function_signature(&compilation.into(), method, false);
     assert!(signature.contains("T & Copy"), "{signature}");
 }
 

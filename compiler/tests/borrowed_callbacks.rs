@@ -74,7 +74,7 @@ fn borrowed_map_string_results_run() {
     .unwrap();
     let program = foster_compiler::vm::compile(&compiled).unwrap();
     assert_eq!(
-        foster_vm::run(&program).unwrap(),
+        foster_vm::run(&program.into_verified().unwrap()).unwrap(),
         foster_vm::Value::Integer(42)
     );
 }

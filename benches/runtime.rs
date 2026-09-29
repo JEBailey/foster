@@ -169,8 +169,8 @@ fn benchmark_workload(criterion: &mut Criterion, name: &str, source: &str) {
     foster::vm::verify(&unoptimized).unwrap();
     foster::vm::verify(&optimized).unwrap();
 
-    let unoptimized_machine = Machine::new(&unoptimized);
-    let optimized_machine = Machine::new(&optimized);
+    let unoptimized_machine = Machine::new(&unoptimized.into_verified().unwrap());
+    let optimized_machine = Machine::new(&optimized.into_verified().unwrap());
     assert_eq!(
         unoptimized_machine.run_main().unwrap(),
         optimized_machine.run_main().unwrap()

@@ -9,7 +9,7 @@ impl FunctionLowerer<'_> {
             [type_name, member] => {
                 if matches!(
                     *type_name,
-                    "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+                    "Int" | "Float" | "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
                 ) {
                     let qualified_name = format!("{type_name}.{member}");
                     let mut candidates = std::iter::once(self.module)
@@ -50,7 +50,7 @@ impl FunctionLowerer<'_> {
                     || self.hir.variant_type_named(module, type_name).is_some()
                     || (matches!(
                         *type_name,
-                        "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+                        "Int" | "Float" | "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
                     ) && self
                         .hir
                         .functions_named(module, &format!("{type_name}.{member}"))

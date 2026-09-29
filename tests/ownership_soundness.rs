@@ -469,7 +469,10 @@ func main() -> Int {
         .values()
         .find(|function| function.name == "set")
         .unwrap();
-    assert_eq!(set.mutable_parameters, [true]);
+    assert_eq!(
+        set.parameters.iter().map(|p| p.mutable).collect::<Vec<_>>(),
+        [true]
+    );
     for optimize in [false, true] {
         assert_eq!(
             foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })

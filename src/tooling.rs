@@ -5,7 +5,7 @@ use crate::{entry::CommandArguments, error::FosterError, vm};
 
 pub(crate) struct Tool {
     bytecode: &'static [u8],
-    program: OnceLock<Result<vm::Program, String>>,
+    program: OnceLock<Result<vm::VerifiedProgram, String>>,
 }
 
 impl Tool {
@@ -19,7 +19,9 @@ impl Tool {
     pub(crate) fn run(&self, arguments: Vec<String>) -> Result<vm::Value, FosterError> {
         let program = self
             .program
-            .get_or_init(|| vm::decode_program(self.bytecode).map_err(|error| error.to_string()))
+            .get_or_init(|| {
+                vm::VerifiedProgram::decode(self.bytecode).map_err(|error| error.to_string())
+            })
             .as_ref()
             .map_err(|error| {
                 FosterError::runtime(format!("cannot initialize Foster tool: {error}"))

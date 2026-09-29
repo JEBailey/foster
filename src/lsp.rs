@@ -936,6 +936,7 @@ pub(super) fn publish(
 fn diagnostics(source: &str) -> Vec<Diagnostic> {
     match crate::compile(source) {
         Ok(compilation) => compilation
+            .into_analysis()
             .diagnostics
             .into_iter()
             .filter(|diagnostic| {

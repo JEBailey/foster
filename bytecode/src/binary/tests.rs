@@ -189,7 +189,8 @@ fn rejects_contract_result_metadata_that_disagrees_with_its_use() {
         .functions
         .get_mut(&function)
         .unwrap()
-        .instructions
+        .body
+        .instructions_mut()
         .iter_mut()
         .find_map(|instruction| match instruction {
             Instruction::CallContractMethod {
@@ -511,4 +512,22 @@ fn decoder_rejects_a_forged_specialized_method_return_type() {
             .contains("return value type Bool, expected Integer"),
         "{error}"
     );
+}
+
+#[test]
+fn decoding_rejects_mismatched_parameter_tables_before_building_a_function() {
+    let mut writer = Writer { bytes: Vec::new() };
+    writer.string("bad").unwrap();
+    writer.u8(0);
+    writer.u16(1);
+    writer.u32(0).unwrap(); // types
+    writer.u32(0).unwrap(); // modes
+    writer.u32(0).unwrap(); // mutation flags
+    let error = Reader {
+        bytes: &writer.bytes,
+        offset: 0,
+    }
+    .function()
+    .unwrap_err();
+    assert!(error.to_string().contains("parameter counts"));
 }

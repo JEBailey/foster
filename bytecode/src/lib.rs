@@ -42,6 +42,52 @@ mod test_support {
     }
     pub fn run(program: &Program) -> Result<foster_vm::Value, Box<dyn std::error::Error>> {
         let program = foster_compiler::vm::decode_program(&encode_program(program)?)?;
-        Ok(foster_vm::Machine::new(&program).run_main()?)
+        Ok(foster_vm::Machine::new(&program.into_verified()?).run_main()?)
+    }
+}
+
+/// Immutable executable whose metadata, instructions, and types have been verified.
+/// ```compile_fail
+/// fn invalidate(mut program: foster_bytecode::VerifiedProgram) {
+///     program.functions.clear();
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct VerifiedProgram(std::sync::Arc<Program>);
+impl VerifiedProgram {
+    /// Decode and link once; decoding already performs complete verification.
+    pub fn decode(bytes: &[u8]) -> Result<Self, BinaryError> {
+        decode_program(bytes).map(|program| Self(std::sync::Arc::new(program)))
+    }
+
+    pub fn new(program: Program) -> Result<Self, error::FosterError> {
+        verify(&program)?;
+        Ok(Self(std::sync::Arc::new(program)))
+    }
+}
+impl std::ops::Deref for VerifiedProgram {
+    type Target = Program;
+    fn deref(&self) -> &Program {
+        &self.0
+    }
+}
+impl Program {
+    pub fn into_verified(self) -> Result<VerifiedProgram, error::FosterError> {
+        VerifiedProgram::new(self)
+    }
+}
+#[cfg(test)]
+mod verified_tests {
+    use super::*;
+    #[test]
+    fn verification_rejects_a_missing_entry_and_shares_valid_programs() {
+        let mut invalid = Program::default();
+        invalid.metadata.main = Some(hir::FunctionId::from_raw(la_arena::RawIdx::from_u32(0)));
+        assert!(invalid.into_verified().is_err());
+        let checked = Program::default().into_verified().unwrap();
+        let copy = checked.clone();
+        assert!(std::ptr::eq(&*checked, &*copy));
+        let bytes = encode_program(&checked).unwrap();
+        assert_eq!(*VerifiedProgram::decode(&bytes).unwrap(), *checked);
     }
 }

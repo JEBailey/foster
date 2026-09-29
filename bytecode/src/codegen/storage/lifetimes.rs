@@ -22,7 +22,7 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
         // Parameters can contain projected references. Assigning such a
         // parameter writes through its existing slot, so its slot identity is
         // needed even when its previous value is dead in ordinary SSA terms.
-        let prefix = function.captures.saturating_add(function.parameters);
+        let prefix = function.captures.saturating_add(function.parameter_count());
         for instruction in &function.instructions {
             for destination in definitions(instruction) {
                 if destination.0 < prefix {
@@ -107,8 +107,7 @@ fn insert_function(function: &mut Function, protected: HashSet<Slot>) {
         .collect();
     let live =
         super::analysis::liveness_with_write_bindings(function, &HashSet::new(), &pattern_bindings);
-    let original = std::mem::take(&mut function.instructions);
-    let original_spans = std::mem::take(&mut function.instruction_spans);
+    let (original, original_spans) = std::mem::take(&mut function.body).into_parts();
     let mut instructions = Vec::new();
     let mut spans = Vec::new();
     let mut old_to_new = vec![0; original.len()];
@@ -116,7 +115,7 @@ fn insert_function(function: &mut Function, protected: HashSet<Slot>) {
     let mut branch_cleanups = Vec::<(usize, usize, Vec<Slot>, std::ops::Range<usize>)>::new();
 
     let entry_span = original_spans.first().cloned().unwrap_or(0..0);
-    let prefix = function.captures.saturating_add(function.parameters);
+    let prefix = function.captures.saturating_add(function.parameter_count());
     let unused_prefix = (0..prefix)
         .map(Slot)
         .filter(|register| !protected.contains(register) && !live.live_in[0].contains(register))
@@ -204,8 +203,8 @@ fn insert_function(function: &mut Function, protected: HashSet<Slot>) {
         }
     }
 
-    function.instructions = instructions;
-    function.instruction_spans = spans;
+    function.body = crate::codegen::storage::InstructionBody::try_from_parts(instructions, spans)
+        .expect("paired instruction emission");
 }
 
 fn dying_registers(
@@ -259,32 +258,37 @@ mod tests {
         let mut function = Function {
             name: "branch".to_owned(),
             intrinsic_stub: false,
-            parameters: 1,
-            parameter_types: vec![ExecutableType::Bool],
-            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
-            mutable_parameters: vec![false],
+
+            parameters: vec![crate::codegen::storage::ExecutableParameter {
+                ty: ExecutableType::Bool,
+                mode: crate::ast::ParameterMode::Borrow,
+                mutable: false,
+            }],
             returns_reference: false,
             captures: 0,
             capture_types: Vec::new(),
             result_type: ExecutableType::Unknown,
             registers: 2,
-            instructions: vec![
-                Instruction::JumpIfFalse {
-                    condition: Slot(0),
-                    target: 3,
-                },
-                Instruction::LoadConstant {
-                    destination: Slot(1),
-                    constant: 0,
-                },
-                Instruction::Return { source: Slot(1) },
-                Instruction::LoadConstant {
-                    destination: Slot(1),
-                    constant: 0,
-                },
-                Instruction::Return { source: Slot(1) },
-            ],
-            instruction_spans: vec![0..1; 5],
+            body: crate::codegen::storage::InstructionBody::try_from_parts(
+                vec![
+                    Instruction::JumpIfFalse {
+                        condition: Slot(0),
+                        target: 3,
+                    },
+                    Instruction::LoadConstant {
+                        destination: Slot(1),
+                        constant: 0,
+                    },
+                    Instruction::Return { source: Slot(1) },
+                    Instruction::LoadConstant {
+                        destination: Slot(1),
+                        constant: 0,
+                    },
+                    Instruction::Return { source: Slot(1) },
+                ],
+                vec![0..1; 5],
+            )
+            .expect("paired instruction fixture"),
         };
 
         insert_function(&mut function, HashSet::new());
@@ -304,25 +308,30 @@ mod tests {
         let mut function = Function {
             name: "field receiver".to_owned(),
             intrinsic_stub: false,
-            parameters: 1,
-            parameter_types: vec![ExecutableType::Unknown],
-            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
-            mutable_parameters: vec![false],
+
+            parameters: vec![crate::codegen::storage::ExecutableParameter {
+                ty: ExecutableType::Unknown,
+                mode: crate::ast::ParameterMode::Borrow,
+                mutable: false,
+            }],
             returns_reference: false,
             captures: 0,
             capture_types: Vec::new(),
             result_type: ExecutableType::Unknown,
             registers: 2,
-            instructions: vec![
-                Instruction::LoadField {
-                    destination: Slot(1),
-                    object: Slot(0),
-                    field: "location".to_owned(),
-                    by_reference: true,
-                },
-                Instruction::Return { source: Slot(1) },
-            ],
-            instruction_spans: vec![0..1; 2],
+            body: crate::codegen::storage::InstructionBody::try_from_parts(
+                vec![
+                    Instruction::LoadField {
+                        destination: Slot(1),
+                        object: Slot(0),
+                        field: "location".to_owned(),
+                        by_reference: true,
+                    },
+                    Instruction::Return { source: Slot(1) },
+                ],
+                vec![0..1; 2],
+            )
+            .expect("paired instruction fixture"),
         };
 
         let mut protected = HashSet::new();
