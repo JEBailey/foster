@@ -32,6 +32,38 @@ A project may select that source root with `package.source` in a `foster.toml` m
 is relative to the project directory and defaults to `src`. Without a manifest, a directory passed
 directly to a Foster command remains the source root.
 
+Source libraries are packages with their own `foster.toml` and source directory:
+
+```toml
+[dependencies]
+graphics = { path = "../graphics" }
+```
+
+To fetch source from a Git repository and compile it locally, use `uri` and a
+full 40-character commit ID in `rev` instead of `path`:
+
+```toml
+[dependencies]
+graphics = { uri = "https://example.com/team/graphics.git", rev = "0123456789abcdef0123456789abcdef01234567" }
+```
+
+Alternatively, select a Git tag with `tag = "v1.0.0"` instead of `rev`.
+Exactly one of `rev` or `tag` is required for a URI dependency. Lightweight and
+annotated tags are supported; tag names are case-sensitive and select only
+the repository's tag namespace, even when a branch has the same name.
+
+Git must be installed. Supported URI schemes are `https://`, `ssh://`, and
+`file://`; the repository root must contain `foster.toml`. Branches are not
+accepted as revisions. Checkouts are cached under `.foster/sources`
+in the command's working directory and reused without network access.
+Tags use the first successfully cached checkout; moving a remote tag does not
+refresh that checkout. Remove its cache entry to fetch it again. Use `rev` when
+an immutable commit identity is required.
+Add `.foster/` to your application's ignore file. Transitive dependencies use
+the same rules. The dependency key supplies the import alias; the library's
+`package.name` supplies its package identity. These source dependencies also
+work when building a compiled `.flib` library.
+
 `[discovery] libraries = ["vendor"]` selects folders containing compiled `.flib` dependencies.
 These paths are relative to the manifest and are separate from the source root; see
 [compiled library discovery](compiled-libraries.md) for naming and conflict rules.

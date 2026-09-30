@@ -1,5 +1,7 @@
 //! Project manifests, discovery, and dependency resolution for the Foster driver.
 import core.code_point
+import core.future
+import std.crypto.sha256
 import core.int
 import core.list
 import core.option
@@ -191,6 +193,75 @@ func discover_libraries(value: TomlValue, root: String, manifest: String, depend
     Result.Ok(move discovered)
 }
 
+func git_command(arguments: List<String>) -> Result<(), String> {
+    let child = branch process::spawn("git", arguments) {
+        Result.Ok(child) -> move child
+        Result.Error(error) -> {
+            return Result.Error("cannot start Git: " + error.message)
+        }
+    }
+    let output = branch await child {
+        Result.Ok(output) -> move output
+        Result.Error(error) -> {
+            return Result.Error(error.message)
+        }
+    }
+    branch {
+        output.status.success -> Result.Ok(())
+        _ -> Result.Error("Git dependency command failed; check the URI, revision or tag, and repository access")
+    }
+}
+
+// Tags retain their exact spelling; completed checkouts are reused offline.
+func git_source(uri: String, rev: String, tag: Bool) -> Result<String, String> {
+    return Result.Error("dependency `uri` must use https://, ssh://, or file://") if !(uri.starts_with?("https://") || uri.starts_with?("ssh://") || uri.starts_with?("file://"))
+    let selection = branch {
+        tag -> {
+            return Result.Error("dependency `tag` must be non-empty") if rev.empty?
+            try git_command(["check-ref-format", "refs/tags/" + rev])
+            "tag:" + rev
+        }
+        _ -> {
+            let valid = rev.scalar_length() == 40
+            for character in rev.code_points() {
+                valid = valid && "0123456789abcdefABCDEF".contains?(character.as_string())
+            }
+            return Result.Error("dependency `rev` must be a full 40-character Git commit ID") if !valid
+            "rev:" + rev.lower()
+        }
+    }
+    let cache = paths::join(".", ".foster/sources")
+    let key = sha256::digest((uri + "\n" + selection).bytes)
+    let destination = paths::join(cache, key)
+    return Result.Ok(destination) if fs::file?(paths::join(destination, ".foster-ready"))
+    branch fs::create_directory_all(cache) {
+        Result.Ok(_) -> ()
+        Result.Error(error) -> {
+            return Result.Error(error.message)
+        }
+    }
+    let staging = destination + ".partial"
+    if !fs::directory?(paths::join(staging, ".git")) {
+        try git_command(["init", "--", staging.copy()])
+    }
+    let requested = branch {
+        tag -> "+refs/tags/" + rev + ":refs/tags/foster-source"
+        _ -> rev.lower()
+    }
+    try git_command(["-C", staging.copy(), "fetch", "--depth=1", "--", uri.copy(), requested.copy()])
+    try git_command(["-C", staging.copy(), "checkout", "--detach", "FETCH_HEAD^{commit}"])
+    branch fs::write_text(paths::join(staging, ".foster-ready"), rev) {
+        Result.Ok(_) -> ()
+        Result.Error(error) -> {
+            return Result.Error(error.message)
+        }
+    }
+    branch fs::rename(staging, destination) {
+        Result.Ok(_) -> Result.Ok(destination)
+        Result.Error(error) -> Result.Error(error.message)
+    }
+}
+
 func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
     let source = branch fs::read_text(manifest) {
         Result.Ok(text) -> text
@@ -239,8 +310,58 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
             for entry in entries {
                 try validate_name(entry.key, manifest)
                 let location = "dependency `" + entry.key + "` in `" + manifest + "`"
-                let fields = try table(entry.value.copy(), location + " must be a table containing `path`")
-                try reject_unknown(fields, ["path"], location)
+                let fields = try table(entry.value.copy(), location + " must be a table containing `path` or `uri`")
+                try reject_unknown(fields, ["path", "uri", "rev", "tag"], location)
+                branch lookup(fields, "uri") {
+                    Option.Some(value) -> {
+                        branch lookup(fields, "path") {
+                            Option.Some(_) -> {
+                                return Result.Error(location + " must choose either `path` or `uri`")
+                            }
+                            Option.None -> ()
+                        }
+                        let uri = try string_value(move value, location + " requires a string `uri`")
+                        let tag = false
+                        let revision = branch lookup(fields, "tag") {
+                            Option.Some(value) -> {
+                                branch lookup(fields, "rev") {
+                                    Option.Some(_) -> {
+                                        return Result.Error(location + " must choose either `rev` or `tag`")
+                                    }
+                                    Option.None -> ()
+                                }
+                                tag = true
+                                try string_value(move value, location + " requires a string `tag`")
+                            }
+                            Option.None -> {
+                                branch lookup(fields, "rev") {
+                                    Option.Some(value) -> try string_value(move value, location + " requires a string `rev`")
+                                    Option.None -> {
+                                        return Result.Error(location + " requires `rev` or `tag`")
+                                    }
+                                }
+                            }
+                        }
+                        let fetched = try git_source(uri, revision, tag)
+                        dependencies.push(Dependency {
+                            name: entry.key.copy(), root: fetched
+                        })
+                        continue
+                    }
+                    Option.None -> ()
+                }
+                branch lookup(fields, "rev") {
+                    Option.Some(_) -> {
+                        return Result.Error(location + " permits `rev` only with `uri`")
+                    }
+                    Option.None -> ()
+                }
+                branch lookup(fields, "tag") {
+                    Option.Some(_) -> {
+                        return Result.Error(location + " permits `tag` only with `uri`")
+                    }
+                    Option.None -> ()
+                }
                 let path = branch lookup(fields, "path") {
                     Option.Some(value) -> try string_value(move value, location + " requires a string `path`")
                     Option.None -> {
@@ -396,4 +517,16 @@ test "manifest path policy separates Windows and Unix spellings" {
     assert(!relative("/outside", false))
     assert(components("src\\..\\outside", true).contains?(".."))
     assert(!components("src\\..\\outside", false).contains?(".."))
+}
+
+test "Git source requires supported URIs and immutable commits" {
+    branch git_source("http://example.com/library.git", "0123456789abcdef0123456789abcdef01234567", false) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("accepted unsupported URI")
+    }
+    branch git_source("https://example.com/library.git", "main", false) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("accepted mutable revision")
+    }
+    branch git_source("https://example.com/library.git", "gggggggggggggggggggggggggggggggggggggggg", false) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("accepted invalid commit")
+    }
 }

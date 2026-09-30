@@ -233,6 +233,190 @@ fn projects_compile_and_run_transitive_path_dependencies() {
 }
 
 #[test]
+fn projects_fetch_pinned_git_source_and_reuse_it_offline() {
+    git_source_dependency(false);
+}
+
+#[test]
+fn projects_fetch_git_tags_and_reuse_them_offline() {
+    git_source_dependency(true);
+}
+
+fn git_source_dependency(tag: bool) {
+    let root = temporary_directory("git-source");
+    let library = root.join("library");
+    let app = root.join("app");
+    for project in [&library, &app] {
+        fs::create_dir_all(project.join("src")).unwrap();
+    }
+    fs::write(
+        library.join("foster.toml"),
+        "[package]\nname = 'graphics'\n",
+    )
+    .unwrap();
+    fs::write(
+        library.join("src/main.fos"),
+        "pub func answer() -> Int { 42 }\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["init"],
+        vec!["add", "."],
+        vec![
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "library",
+        ],
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&library)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&library)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let rev = String::from_utf8(output.stdout).unwrap();
+    // The selected commit must win even when the repository tip changes.
+    fs::write(
+        library.join("src/main.fos"),
+        "pub func answer() -> Int { 99 }\n",
+    )
+    .unwrap();
+    let output = Command::new("git")
+        .args([
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-am",
+            "change library",
+        ])
+        .current_dir(&library)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for args in [
+        vec![
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "tag",
+            "-a",
+            "Release",
+            rev.trim(),
+            "-m",
+            "release",
+        ],
+        // Packed refs preserve case-sensitive tag names on Windows filesystems.
+        vec!["pack-refs", "--all", "--prune"],
+        vec!["tag", "release"],
+        vec!["pack-refs", "--all", "--prune"],
+        vec!["branch", "Release"],
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&library)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let path = library
+        .to_str()
+        .unwrap()
+        .replace('\\', "/")
+        .replace('%', "%25")
+        .replace(' ', "%20");
+    let uri = format!(
+        "file://{}{path}",
+        if path.starts_with('/') { "" } else { "/" }
+    );
+    fs::write(
+        app.join("foster.toml"),
+        format!(
+            "[package]\nname = 'app'\n[dependencies]\ngraphics = {{ uri = '{uri}', {} = '{}' }}\n",
+            if tag { "tag" } else { "rev" },
+            if tag { "Release" } else { rev.trim() }
+        ),
+    )
+    .unwrap();
+    fs::write(
+        app.join("src/main.fos"),
+        "import graphics\nfunc main() -> () { println(answer()) }\n",
+    )
+    .unwrap();
+    let run = foster().arg("run").current_dir(&app).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "42");
+    if tag {
+        let manifest = fs::read_to_string(app.join("foster.toml")).unwrap();
+        fs::write(
+            app.join("foster.toml"),
+            manifest.replace("'Release'", "'release'"),
+        )
+        .unwrap();
+        let run = foster().arg("run").current_dir(&app).output().unwrap();
+        assert!(
+            run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "99");
+        fs::write(app.join("foster.toml"), manifest).unwrap();
+        // A moved remote tag must not replace an already cached checkout.
+        let output = Command::new("git")
+            .args(["tag", "-f", "Release"])
+            .current_dir(&library)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let run = foster().arg("run").current_dir(&app).output().unwrap();
+        assert!(
+            run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "42");
+    }
+    fs::rename(&library, root.join("unavailable-library")).unwrap();
+    let run = foster().arg("run").current_dir(&app).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "42");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn project_dependencies_do_not_silently_replace_application_modules() {
     let root = temporary_directory("dependency-collision");
     let app = root.join("app");

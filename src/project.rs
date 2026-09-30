@@ -360,7 +360,7 @@ mod tests {
             ),
             (
                 "[package]\nname = \"sample\"\n[dependencies]\nmath = \"../math\"\n",
-                "must be a table containing `path`",
+                "must be a table containing `path` or `uri`",
             ),
             (
                 "[package]\nname = \"sample\"\n[dependencies]\nmath = { path = 3 }\n",
@@ -373,6 +373,42 @@ mod tests {
             (
                 "[package]\nname = \"sample\"\n[dependencies]\ncore = { path = \"../core\" }\n",
                 "portable module name",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { path = '../math', uri = 'https://example.com/math.git' }\n",
+                "must choose either `path` or `uri`",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { uri = 'https://example.com/math.git' }\n",
+                "requires `rev` or `tag`",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { uri = 3, rev = 'main' }\n",
+                "requires a string `uri`",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { uri = 'https://example.com/math.git', rev = 'main' }\n",
+                "full 40-character Git commit ID",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { path = '../math', rev = 'main' }\n",
+                "permits `rev` only with `uri`",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { uri = 'https://example.com/math.git', tag = 'v1', rev = 'main' }\n",
+                "must choose either `rev` or `tag`",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { uri = 'https://example.com/math.git', tag = 3 }\n",
+                "requires a string `tag`",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { uri = 'https://example.com/math.git', tag = '' }\n",
+                "`tag` must be non-empty",
+            ),
+            (
+                "[package]\nname = 'sample'\n[dependencies]\nmath = { path = '../math', tag = 'v1' }\n",
+                "permits `tag` only with `uri`",
             ),
         ];
 
