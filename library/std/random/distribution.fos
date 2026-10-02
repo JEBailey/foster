@@ -4,10 +4,15 @@
 //! or source failure. A distribution's sample method advances a caller-supplied
 //! `RandomSource`, allowing repeatable sampling with a seeded generator.
 
-import core.int
-import core.result
+import core.int.Int
+
+import core.result.Result
+
 import std.random
-import std.random.generator
+import std.random.RandomError
+import std.random.RandomSource
+import static std.random.*
+import std.random.generator.LehmerRandom
 
 /// A typed distribution which transforms uniform source values into samples.
 pub type Distribution<T> = {

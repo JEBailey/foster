@@ -1,4 +1,4 @@
-import core.string as strings
+import core.string.String
 
 type Named = {
     pub name: String
@@ -9,9 +9,15 @@ type TextSlice = & Named & Sequence<String> & {
 }
 
 impl TextSlice {
-    func empty?(self) -> Bool { self.text.empty? }
-    func length(self) -> Int { self.text.length }
-    func head(self) -> String { self.text.head }
+    func empty?(self) -> Bool {
+        self.text.empty?
+    }
+    func length(self) -> Int {
+        self.text.length
+    }
+    func head(self) -> String {
+        self.text.head
+    }
     func rest(self) -> String {
         self.text.slice(1, self.text.length)
     }

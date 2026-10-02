@@ -1,6 +1,12 @@
 import core.float
+
 import core.int
+import core.int.Int
+import core.int.IntConversionError
+
 import core.result
+import core.result.Result
+
 import core.bytes
 
 func converted(value: Float, expected: Int) -> () {

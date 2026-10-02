@@ -1,10 +1,28 @@
 import std.json
+import std.json.JsonErrorKind
+import std.json.JsonError
+import std.json.JsonParseOptions
+import std.json.JsonWriteOptions
+import std.json.JsonNumber
+import std.json.JsonMember
+import std.json.JsonValue
+import static std.json.*
 import core.result
+import core.result.Result
+
 import core.option
+import core.option.Option
+
 import core.string
+import core.string.String
+
 import core.bytes
+import core.bytes.Bytes
+
 import core.byte
+
 import core.int
+import core.int.Int
 
 func must_parse(source: String) -> JsonValue {
     branch json::parse(source) {
@@ -29,12 +47,18 @@ func check_values() -> () {
     let tree = must_parse(source)
     assert(must_write(tree) == "{\"a\":[true,null,\"λ😀\"],\"a.b\":5}")
     assert(tree.get("a.b").unwrap_or(JsonValue.Null).as_number().unwrap_or(JsonNumber.from_int(0)).as_int().unwrap_or(0) == 5)
-    branch tree.get("missing") { Option.None -> () _ -> panic("missing key found") }
+    branch tree.get("missing") {
+        Option.None -> () _ -> panic("missing key found")
+    }
     let array = tree.get("a").unwrap_or(JsonValue.Null)
     assert(array.at(0).unwrap_or(JsonValue.Null).as_bool().unwrap_or(false))
     assert(array.at(1).unwrap_or(JsonValue.Bool(false)).null?())
-    branch array.at(-1) { Option.None -> () _ -> panic("negative index accepted") }
-    branch array.at(3) { Option.None -> () _ -> panic("out of bounds accepted") }
+    branch array.at(-1) {
+        Option.None -> () _ -> panic("negative index accepted")
+    }
+    branch array.at(3) {
+        Option.None -> () _ -> panic("out of bounds accepted")
+    }
     let escaped = must_parse("\"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u0000\\u0041\\uD834\\uDD1E\"")
     let decoded = escaped.as_string().unwrap_or("")
     assert(decoded.bytes.hex() == "225c2f080c0a0d090041f09d849e")
@@ -42,8 +66,10 @@ func check_values() -> () {
     assert(must_parse("\"\\uDBFF\\uDFFF\"").as_string().unwrap_or("").bytes.hex() == "f48fbfbf")
     let controls = []
     let index = 0
-    while index < 32 { controls.push(Byte.unchecked(index))
-        index = index + 1 }
+    while index < 32 {
+        controls.push(Byte.unchecked(index))
+        index = index + 1
+    }
     let text = String.from_utf8(Bytes.from(move controls)).unwrap_or("")
     let node = JsonValue.String(text.copy())
     assert(must_parse(must_write(node)).as_string().unwrap_or("bad") == text)
@@ -53,11 +79,15 @@ func check_values() -> () {
 
 func check_errors() -> () {
     for text in ["", " ", "01", "-01", "+1", ".5", "1.", "1e", "1e+", "--1", "NaN", "Infinity", "TRUE", "true false", "nullx", "[", "[1,]", "[,1]", "[1 2]", "{", "{a:1}", "{\"a\" 1}", "{\"a\":1,}", "{\"a\":}", "/*x*/0", "0//x", "\"unterminated", "\"\\x00\"", "\"\\u123\"", "\"\\uZZZZ\"", "\"\\uD800\"", "\"\\uDC00\"", "\"\\uD800\\u0041\"", "\"raw\nnewline\""] {
-        branch json::parse(text) { Result.Error(_) -> () _ -> panic("malformed JSON accepted: " + text) }
+        branch json::parse(text) {
+            Result.Error(_) -> () _ -> panic("malformed JSON accepted: " + text)
+        }
     }
     branch json::parse("{\"a\":1,\"\\u0061\":2}") {
         Result.Error(error) -> {
-            branch error.kind { JsonErrorKind.DuplicateKey -> () _ -> panic("wrong duplicate error") }
+            branch error.kind {
+                JsonErrorKind.DuplicateKey -> () _ -> panic("wrong duplicate error")
+            }
             assert(error.offset == 7)
         }
         _ -> panic("duplicate key accepted")
@@ -73,12 +103,16 @@ func check_errors() -> () {
     for hex in ["ff", "c080", "eda080", "f4908080"] {
         let data = Bytes.from_hex(hex).unwrap_or(Bytes.empty())
         branch json::parse_bytes(data) {
-            Result.Error(error) -> branch error.kind { JsonErrorKind.InvalidUtf8 -> () _ -> panic("wrong UTF-8 error") }
+            Result.Error(error) -> branch error.kind {
+                JsonErrorKind.InvalidUtf8 -> () _ -> panic("wrong UTF-8 error")
+            }
             _ -> panic("invalid UTF-8 accepted")
         }
     }
     let bom = Bytes.from_hex("efbbbf30").unwrap_or(Bytes.empty())
-    branch json::parse_bytes(bom) { Result.Error(_) -> () _ -> panic("BOM accepted") }
+    branch json::parse_bytes(bom) {
+        Result.Error(_) -> () _ -> panic("BOM accepted")
+    }
 }
 
 func check_numbers() -> () {
@@ -88,56 +122,138 @@ func check_numbers() -> () {
         assert(exact.text() == number.as_string())
     }
     for text in ["9223372036854775808", "-9223372036854775809", "1.0", "1e0"] {
-        let number = branch JsonNumber.parse(text) { Result.Ok(value) -> value _ -> panic("valid number rejected") }
-        branch number.as_int() { Result.Error(_) -> () _ -> panic("invalid Int conversion accepted") }
+        let number = branch JsonNumber.parse(text) {
+            Result.Ok(value) -> value _ -> panic("valid number rejected")
+        }
+        branch number.as_int() {
+            Result.Error(_) -> () _ -> panic("invalid Int conversion accepted")
+        }
     }
     for text in ["", " 1", "1 ", "1 2", "01", "true"] {
-        branch JsonNumber.parse(text) { Result.Error(_) -> () _ -> panic("invalid number constructed") }
+        branch JsonNumber.parse(text) {
+            Result.Error(_) -> () _ -> panic("invalid number constructed")
+        }
     }
-    let big = branch JsonNumber.parse("1e99999") { Result.Ok(value) -> value _ -> panic("large number rejected") }
-    branch big.as_float() { Result.Error(_) -> () _ -> panic("infinite conversion accepted") }
+    let big = branch JsonNumber.parse("1e99999") {
+        Result.Ok(value) -> value _ -> panic("large number rejected")
+    }
+    branch big.as_float() {
+        Result.Error(_) -> () _ -> panic("infinite conversion accepted")
+    }
     for number in [0.0, -0.0, 0.1, -123.125, 1.2345678901234567] {
-        let exact = branch JsonNumber.from_float(number) { Result.Ok(value) -> value _ -> panic("finite Float rejected") }
+        let exact = branch JsonNumber.from_float(number) {
+            Result.Ok(value) -> value _ -> panic("finite Float rejected")
+        }
         assert(exact.as_float().unwrap_or(999.0) == number)
     }
     for number in [parse_float("NaN"), parse_float("inf"), parse_float("-inf")] {
-        branch JsonNumber.from_float(number) { Result.Error(_) -> () _ -> panic("nonfinite Float accepted") }
+        branch JsonNumber.from_float(number) {
+            Result.Error(_) -> () _ -> panic("nonfinite Float accepted")
+        }
     }
 }
 
 func check_limits() -> () {
-    branch json::parse_with("null", JsonParseOptions { max_depth: 0 }) { Result.Ok(_) -> () _ -> panic("scalar requires depth") }
-    branch json::parse_with("[]", JsonParseOptions { max_depth: 0 }) { Result.Error(_) -> () _ -> panic("depth ignored") }
+    branch json::parse_with("null", JsonParseOptions {
+        max_depth: 0
+    }) {
+        Result.Ok(_) -> () _ -> panic("scalar requires depth")
+    }
+    branch json::parse_with("[]", JsonParseOptions {
+        max_depth: 0
+    }) {
+        Result.Error(_) -> () _ -> panic("depth ignored")
+    }
     let nested = "0"
     let depth = 0
-    while depth < 16 { nested = "[" + nested + "]"
-        depth = depth + 1 }
-    let tree = branch json::parse_with(nested, JsonParseOptions { max_depth: 16 }) { Result.Ok(value) -> value _ -> panic("depth boundary rejected") }
-    branch json::parse_with(nested, JsonParseOptions { max_depth: 15 }) { Result.Error(_) -> () _ -> panic("parse depth ignored") }
-    branch json::stringify_with(tree, JsonWriteOptions { indent: 0, max_depth: 15 }) { Result.Error(_) -> () _ -> panic("write depth ignored") }
+    while depth < 16 {
+        nested = "[" + nested + "]"
+        depth = depth + 1
+    }
+    let tree = branch json::parse_with(nested, JsonParseOptions {
+        max_depth: 16
+    }) {
+        Result.Ok(value) -> value _ -> panic("depth boundary rejected")
+    }
+    branch json::parse_with(nested, JsonParseOptions {
+        max_depth: 15
+    }) {
+        Result.Error(_) -> () _ -> panic("parse depth ignored")
+    }
+    branch json::stringify_with(tree, JsonWriteOptions {
+        indent: 0, max_depth: 15
+    }) {
+        Result.Error(_) -> () _ -> panic("write depth ignored")
+    }
     assert(must_write(tree) == nested)
-    while depth < 256 { nested = "[" + nested + "]"
-        depth = depth + 1 }
-    let deepest = branch json::parse_with(nested, JsonParseOptions { max_depth: 256 }) { Result.Ok(value) -> value _ -> panic("maximum depth rejected") }
-    branch json::parse(nested) { Result.Error(error) -> branch error.kind { JsonErrorKind.DepthLimit -> () _ -> panic("wrong depth error") } _ -> panic("default parse depth ignored") }
-    branch json::stringify_with(deepest, JsonWriteOptions { indent: 0, max_depth: 256 }) { Result.Ok(text) -> { assert(text == nested) } _ -> panic("maximum write depth rejected") }
-    branch json::parse_with("[" + nested + "]", JsonParseOptions { max_depth: 256 }) { Result.Error(_) -> () _ -> panic("maximum parse depth ignored") }
+    while depth < 256 {
+        nested = "[" + nested + "]"
+        depth = depth + 1
+    }
+    let deepest = branch json::parse_with(nested, JsonParseOptions {
+        max_depth: 256
+    }) {
+        Result.Ok(value) -> value _ -> panic("maximum depth rejected")
+    }
+    branch json::parse(nested) {
+        Result.Error(error) -> branch error.kind {
+            JsonErrorKind.DepthLimit -> () _ -> panic("wrong depth error")
+        }
+        _ -> panic("default parse depth ignored")
+    }
+    branch json::stringify_with(deepest, JsonWriteOptions {
+        indent: 0, max_depth: 256
+    }) {
+        Result.Ok(text) -> {
+            assert(text == nested)
+        }
+        _ -> panic("maximum write depth rejected")
+    }
+    branch json::parse_with("[" + nested + "]", JsonParseOptions {
+        max_depth: 256
+    }) {
+        Result.Error(_) -> () _ -> panic("maximum parse depth ignored")
+    }
     for limit in [-1, 257] {
-        branch json::parse_with("0", JsonParseOptions { max_depth: limit }) { Result.Error(_) -> () _ -> panic("invalid parse option accepted") }
-        branch json::stringify_with(JsonValue.Null, JsonWriteOptions { indent: 0, max_depth: limit }) { Result.Error(_) -> () _ -> panic("invalid write option accepted") }
+        branch json::parse_with("0", JsonParseOptions {
+            max_depth: limit
+        }) {
+            Result.Error(_) -> () _ -> panic("invalid parse option accepted")
+        }
+        branch json::stringify_with(JsonValue.Null, JsonWriteOptions {
+            indent: 0, max_depth: limit
+        }) {
+            Result.Error(_) -> () _ -> panic("invalid write option accepted")
+        }
     }
     for indent in [-1, 9] {
-        branch json::stringify_with(JsonValue.Null, JsonWriteOptions { indent, max_depth: 1 }) { Result.Error(_) -> () _ -> panic("invalid indent accepted") }
+        branch json::stringify_with(JsonValue.Null, JsonWriteOptions {
+            indent, max_depth: 1
+        }) {
+            Result.Error(_) -> () _ -> panic("invalid indent accepted")
+        }
     }
 }
 
 func check_construction() -> () {
-    let tree = JsonValue.Object([JsonMember { key: "first", value: JsonValue.Array([JsonValue.Bool(true), JsonValue.Null]) }, JsonMember { key: "second", value: JsonValue.Object([]) }])
-    let pretty = branch json::pretty(tree) { Result.Ok(text) -> text _ -> panic("pretty failed") }
+    let tree = JsonValue.Object([JsonMember {
+        key: "first", value: JsonValue.Array([JsonValue.Bool(true), JsonValue.Null])
+    }, JsonMember {
+        key: "second", value: JsonValue.Object([])
+    }])
+    let pretty = branch json::pretty(tree) {
+        Result.Ok(text) -> text _ -> panic("pretty failed")
+    }
     assert(pretty == "{\n  \"first\": [\n    true,\n    null\n  ],\n  \"second\": {}\n}")
     assert(must_write(must_parse(pretty)) == must_write(tree))
-    let duplicate = JsonValue.Object([JsonMember { key: "x", value: JsonValue.Null }, JsonMember { key: "x", value: JsonValue.Bool(true) }])
-    branch json::stringify(duplicate) { Result.Error(_) -> () _ -> panic("duplicate rendered") }
+    let duplicate = JsonValue.Object([JsonMember {
+        key: "x", value: JsonValue.Null
+    }, JsonMember {
+        key: "x", value: JsonValue.Bool(true)
+    }])
+    branch json::stringify(duplicate) {
+        Result.Error(_) -> () _ -> panic("duplicate rendered")
+    }
 }
 
 func main() -> Result<Int, JsonError> {
@@ -156,8 +272,18 @@ func main() -> Result<Int, JsonError> {
     Result.Ok(42)
 }
 
-test "JSON values Unicode and source-preserving reads" { check_values() }
-test "JSON syntax duplicate keys and UTF-8 errors" { check_errors() }
-test "JSON exact numbers and checked conversions" { check_numbers() }
-test "JSON nesting and writer options" { check_limits() }
-test "JSON construction and pretty output" { check_construction() }
+test "JSON values Unicode and source-preserving reads" {
+    check_values()
+}
+test "JSON syntax duplicate keys and UTF-8 errors" {
+    check_errors()
+}
+test "JSON exact numbers and checked conversions" {
+    check_numbers()
+}
+test "JSON nesting and writer options" {
+    check_limits()
+}
+test "JSON construction and pretty output" {
+    check_construction()
+}

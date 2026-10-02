@@ -10,7 +10,12 @@ the `std` namespace contains general-purpose collections and host-facing facilit
 
 ```foster
 import core.list
+import core.list.List
+import core.list.ListReadError
+
 import core.option
+import core.option.Option
+
 
 func first_name(names: List<String>) -> Option<String> {
     names.first()
@@ -243,8 +248,17 @@ an owned value.
 
 ```foster
 import core.option
+import core.option.Option
+
 import core.result
+import core.result.Result
+
 import std.toml
+import std.toml.TomlDocument
+import std.toml.TomlEntry
+import std.toml.TomlValue
+import std.toml.TomlError
+import static std.toml.*
 
 func package_name(source: String) -> Option<String> {
     branch toml::parse(move source) {

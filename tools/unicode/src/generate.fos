@@ -1,11 +1,19 @@
 //! Offline Unicode 17.0.0 table and conformance generator. Run from the repository root.
 
 import core.bytes
-import core.code_point
-import core.list
-import core.result
-import core.string
+
+import core.code_point.GeneralCategory
+
+import core.list.List
+
+import core.result.Result
+
+import core.string.String
+import core.string.StringBuilder
+
 import std.fs as fs
+
+import static std.fs.*
 import std.crypto.sha256
 
 const LIMIT = 1114112

@@ -392,8 +392,17 @@ impl<'a> Context<'a> {
                             })
                         })
                 };
-                let resolved = resolve(module)
-                    .or_else(|| lexical.imports.values().find_map(|id| resolve(*id)))
+                let resolved = hir
+                    .visible_types(self.lexical, name)
+                    .first()
+                    .map(|ty| {
+                        let (target, actual) = hir.type_location(*ty);
+                        Name {
+                            module: self.module(target),
+                            name: actual.into(),
+                        }
+                    })
+                    .or_else(|| resolve(module))
                     .unwrap_or(Name {
                         module: self.module(module),
                         name: short.into(),

@@ -1,6 +1,9 @@
 import core.byte
+
 import core.bytes
+
 import core.bytes.buffer
+import core.bytes.buffer.ByteBuffer
 
 func main() -> String {
     let output = ByteBuffer.empty()

@@ -5,80 +5,52 @@ impl FunctionLowerer<'_> {
         &mut self,
         path: &[&str],
     ) -> Result<Option<FunctionId>, FosterError> {
-        let (module, type_name, member, imported) = match path {
-            [type_name, member] => {
-                if matches!(
-                    *type_name,
-                    "Int" | "Float" | "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
-                ) {
-                    let qualified_name = format!("{type_name}.{member}");
-                    let mut candidates = std::iter::once(self.module)
-                        .chain(self.imports.values().copied())
-                        .filter_map(|module| {
-                            if module == self.module {
-                                self.hir.function_named(module, &qualified_name)
-                            } else {
-                                self.hir.public_function_named(module, &qualified_name)
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    candidates.sort();
-                    candidates.dedup();
-                    return match candidates.as_slice() {
-                        [function] => Ok(Some(*function)),
-                        [] => Ok(None),
-                        _ => Err(self.error(format!(
-                            "associated function `{qualified_name}` is ambiguous"
-                        ))),
-                    };
-                }
-                let resolved = self.resolve_name(type_name)?;
-                let type_module = match resolved {
-                    ResolvedName::Record(record) => self.hir.records[record].module,
-                    ResolvedName::Variant(variant) => {
-                        self.hir.variant_types[self.hir.variants[variant].parent].module
+        if path.len() < 2 || self.locals.contains_key(path[0]) {
+            return Ok(None);
+        }
+        let member = path[path.len() - 1];
+        let owner = path[..path.len() - 1].join(".");
+        if path.len() == 2
+            && matches!(
+                path[0],
+                "Int" | "Float" | "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+            )
+        {
+            let name = format!("{owner}.{member}");
+            let mut candidates = std::iter::once(self.module)
+                .chain(self.hir.scope_modules(self.module))
+                .filter_map(|module| {
+                    if module == self.module {
+                        self.hir.function_named(module, &name)
+                    } else {
+                        self.hir.public_function_named(module, &name)
                     }
-                    _ => return Ok(None),
-                };
-                (type_module, *type_name, *member, type_module != self.module)
-            }
-            [module_alias, type_name, member] => {
-                let Some(module) = self.imports.get(*module_alias).copied() else {
-                    return Ok(None);
-                };
-                let names_type = self.hir.record_named(module, type_name).is_some()
-                    || self.hir.variant_type_named(module, type_name).is_some()
-                    || (matches!(
-                        *type_name,
-                        "Int" | "Float" | "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
-                    ) && self
-                        .hir
-                        .functions_named(module, &format!("{type_name}.{member}"))
-                        .iter()
-                        .any(|function| self.hir.functions[*function].public));
-                if !names_type {
-                    return Ok(None);
-                }
-                (module, *type_name, *member, true)
-            }
-            _ => return Ok(None),
-        };
-
-        let qualified_name = format!("{type_name}.{member}");
-        let function = if imported {
-            self.hir.public_function_named(module, &qualified_name)
-        } else {
-            self.hir.function_named(module, &qualified_name)
-        };
-        let Some(function) = function else {
-            if imported && !self.hir.functions_named(module, &qualified_name).is_empty() {
-                return Err(
-                    self.error(format!("associated function `{qualified_name}` is private"))
-                );
-            }
+                })
+                .collect::<Vec<_>>();
+            candidates.sort();
+            candidates.dedup();
+            return match candidates.as_slice() {
+                [id] => Ok(Some(*id)),
+                [] => Ok(None),
+                _ => Err(self.error(format!("associated function `{name}` is ambiguous"))),
+            };
+        }
+        let types = self.hir.visible_types(self.module, &owner);
+        let [ty] = types.as_slice() else {
             return Ok(None);
         };
-        Ok(Some(function))
+        let (module, actual_name) = self.hir.type_location(*ty);
+        let name = format!("{actual_name}.{member}");
+        if module == self.module {
+            return Ok(self.hir.function_named(module, &name));
+        }
+        if let Some(function) = self.hir.public_function_named(module, &name) {
+            return Ok(Some(function));
+        }
+        if !self.hir.functions_named(module, &name).is_empty() {
+            return Err(self.error(format!("associated function `{name}` is private")));
+        }
+        Ok(None)
     }
 
     pub(super) fn resolve_variant_constructor(
@@ -86,27 +58,19 @@ impl FunctionLowerer<'_> {
         type_name: &str,
         case: &str,
     ) -> Result<Option<VariantId>, FosterError> {
-        let parent = if let Some(parent) = self.hir.variant_type_named(self.module, type_name) {
-            Some(parent)
-        } else {
-            let mut imported = Vec::new();
-            for module in self.imports.values() {
-                if let Some(parent) = self.hir.variant_type_named(*module, type_name)
-                    && self.hir.variant_types[parent].public
-                    && !imported.contains(&parent)
-                {
-                    imported.push(parent);
-                }
-            }
-            match imported.as_slice() {
-                [parent] => Some(*parent),
-                [_, _, ..] => {
-                    return Err(self.error(format!(
-                        "imported type `{type_name}` is ambiguous; qualify it with its module"
-                    )));
-                }
-                [] => None,
-            }
+        let imported = self
+            .hir
+            .visible_types(self.module, type_name)
+            .into_iter()
+            .filter_map(|ty| match ty {
+                crate::types::NominalTypeId::Variant(id) => Some(id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let parent = match imported.as_slice() {
+            [id] => Some(*id),
+            [] => None,
+            _ => return Err(self.error(format!("imported type `{type_name}` is ambiguous"))),
         };
         let Some(parent) = parent else {
             return Ok(None);
@@ -128,6 +92,14 @@ impl FunctionLowerer<'_> {
         path: &[String],
         enum_accessor: bool,
     ) -> Result<VariantId, FosterError> {
+        if enum_accessor && path.len() >= 2 {
+            if let Some(variant) = self.resolve_variant_constructor(
+                &path[..path.len() - 1].join("."),
+                &path[path.len() - 1],
+            )? {
+                return Ok(variant);
+            }
+        }
         if path.len() == 1 {
             let local = self.hir.modules[self.module]
                 .variant_types
@@ -142,30 +114,10 @@ impl FunctionLowerer<'_> {
                     "enum case `{}` is ambiguous; qualify it with its enum type",
                     path[0]
                 ))),
-                [] => {
-                    let mut imported = Vec::new();
-                    for module in self.imports.values() {
-                        for parent in self.hir.modules[*module].variant_types.values() {
-                            if !self.hir.variant_types[*parent].public
-                                || self.hir.variant_types[*parent].kind != ast::VariantKind::Enum
-                            {
-                                continue;
-                            }
-                            for variant in &self.hir.variant_types[*parent].alternatives {
-                                if self.hir.variants[*variant].name == path[0]
-                                    && !imported.contains(variant)
-                                {
-                                    imported.push(*variant);
-                                }
-                            }
-                        }
-                    }
-                    match imported.as_slice() {
-                        [variant] => Ok(*variant),
-                        [] => Err(self.error(format!("unknown enum case `{}`", path[0]))),
-                        _ => Err(self.error(format!("imported enum case `{}` is ambiguous; qualify it with its module or enum type", path[0]))),
-                    }
-                }
+                [] => Err(self.error(format!(
+                    "unknown enum case `{}`; qualify it with its enum type",
+                    path[0]
+                ))),
             };
         }
         if path.len() != 2 {
@@ -289,50 +241,21 @@ impl FunctionLowerer<'_> {
         if let Some(module) = self.imports.get(name) {
             return Ok(ResolvedName::Module(*module));
         }
-        let mut imported = Vec::new();
-        for module in self.imports.values() {
-            if let Some(constant) = self.hir.constant_named(*module, name)
-                && self.hir.constants[constant].public
-                && !imported.contains(&ResolvedName::Constant(constant))
-            {
-                imported.push(ResolvedName::Constant(constant));
-            }
-            if let Some(function) = self.hir.public_function_named(*module, name)
-                && !imported.contains(&ResolvedName::Function(function))
-            {
-                imported.push(ResolvedName::Function(function));
-            }
-            let matching_variants = self.hir.modules[*module]
-                .variant_types
-                .values()
-                .filter(|parent| {
-                    self.hir.variant_types[**parent].public
-                        && self.hir.variant_types[**parent].kind == ast::VariantKind::Enum
-                })
-                .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
-                .filter(|variant| self.hir.variants[*variant].name == name)
-                .collect::<Vec<_>>();
-            for variant in matching_variants {
-                let resolved = ResolvedName::Variant(variant);
+        let mut imported = self.hir.modules[self.module]
+            .imported_values
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
+        for ty in self.hir.visible_types(self.module, name) {
+            if let crate::types::NominalTypeId::Record(record) = ty {
+                let resolved = ResolvedName::Record(record);
                 if !imported.contains(&resolved) {
                     imported.push(resolved);
                 }
             }
-            if let Some(record) = self.hir.record_named(*module, name)
-                && self.hir.records[record].public
-                && !self.hir.modules[*module]
-                    .variant_types
-                    .values()
-                    .filter(|parent| {
-                        self.hir.variant_types[**parent].kind == ast::VariantKind::Enum
-                    })
-                    .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter())
-                    .any(|variant| self.hir.variants[*variant].name == name)
-                && !imported.contains(&ResolvedName::Record(record))
-            {
-                imported.push(ResolvedName::Record(record));
-            }
         }
+        imported.sort_by_key(|value| format!("{value:?}"));
+        imported.dedup();
         match imported.as_slice() {
             [resolved] => Ok(*resolved),
             [_, _, ..] => Err(self.error(format!(
@@ -446,7 +369,7 @@ pub(super) fn accessor_path(expression: &ast::Expr) -> Option<Vec<&str>> {
     let ast::Expr::Member { object, name } = expression.unspanned() else {
         return None;
     };
-    let mut path = qualified_path(object)?;
+    let mut path = qualified_path(object).or_else(|| accessor_path(object))?;
     path.push(name);
     Some(path)
 }

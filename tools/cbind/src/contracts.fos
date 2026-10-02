@@ -1,9 +1,17 @@
 //! Explicit ownership and pointer contracts layered over discovered declarations.
-import core.list
-import core.string
+import core.list.List
+
+import core.string.String
+import core.string.StringBuilder
+
 import std.iter.map
+
 import bridge
+import bridge.*
+import static bridge.*
 import bindings
+import bindings.*
+import static bindings.*
 
 func mentions(tree: Contract, node: Int, names: List<String>) -> Bool {
     return false if node < 0

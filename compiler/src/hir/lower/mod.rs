@@ -25,6 +25,8 @@ impl PackageHir {
                 records: BTreeMap::new(),
                 variant_types: BTreeMap::new(),
                 imports: BTreeMap::new(),
+                imported_types: BTreeMap::new(),
+                imported_values: BTreeMap::new(),
             });
             hir.modules_by_name.insert(name.clone(), id);
         }
@@ -316,7 +318,12 @@ impl PackageHir {
             hir.modules[module].imports_with_spans = program
                 .imports
                 .iter()
-                .filter(|import| import.alias.as_deref() != Some(ast::ITERATION_OPTION_MODULE))
+                .filter(|import| {
+                    import.alias.as_deref() != Some(ast::ITERATION_OPTION_MODULE)
+                        && !import.wildcard
+                        && !import.static_
+                        && hir.module_named(&import.path.join(".")).is_some()
+                })
                 .map(|import| {
                     let name = import.alias.clone().unwrap_or_else(|| {
                         import.path.last().expect("imports have a path").clone()
@@ -325,8 +332,21 @@ impl PackageHir {
                         target: imports[&name],
                         name,
                         span: import.span.clone(),
+                        item_name: None,
                     }
                 })
+                .collect();
+        }
+        hir.install_item_imports(package)?;
+        for (module_name, source_module) in &package.modules {
+            let Some(program) = &source_module.program else {
+                continue;
+            };
+            let module = hir.modules_by_name[module_name];
+            let imports = hir.modules[module]
+                .imports
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
                 .collect();
             for source in &program.constants {
                 let constant = hir.modules[module].constants[&source.name];
@@ -443,7 +463,7 @@ fn variant_member_name(member: &ast::TypeExpr) -> String {
 
 fn resolve_imports(
     hir: &PackageHir,
-    current_module: ModuleId,
+    _current_module: ModuleId,
     program: &ast::Program,
 ) -> Result<HashMap<String, ModuleId>, FosterError> {
     let mut imports = HashMap::new();
@@ -452,12 +472,12 @@ fn resolve_imports(
             continue;
         }
         let path = import.path.join(".");
-        let module = hir.module_named(&path).ok_or_else(|| {
-            FosterError::runtime(format!(
-                "module `{}` imports unknown module `{path}`",
-                hir.modules[current_module].name
-            ))
-        })?;
+        if import.wildcard || import.static_ {
+            continue;
+        }
+        let Some(module) = hir.module_named(&path) else {
+            continue;
+        };
         let local_name = import
             .alias
             .clone()
@@ -552,16 +572,24 @@ fn lower_constant_value(
 fn resolve_constant_name(
     hir: &PackageHir,
     module: ModuleId,
-    imports: &HashMap<String, ModuleId>,
+    _imports: &HashMap<String, ModuleId>,
     name: &str,
 ) -> Result<ConstantId, FosterError> {
     if let Some(constant) = hir.constant_named(module, name) {
         return Ok(constant);
     }
-    let imported = imports
-        .values()
-        .filter_map(|module| hir.constant_named(*module, name))
-        .filter(|constant| hir.constants[*constant].public)
+    let imported = hir.modules[module]
+        .imported_values
+        .get(name)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            if let ResolvedName::Constant(id) = value {
+                Some(*id)
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
     match imported.as_slice() {
         [constant] => Ok(*constant),

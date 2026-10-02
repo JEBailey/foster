@@ -57,6 +57,8 @@ func main() -> Int {
             "rule-5-frame-loan-across-await",
             r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Worker = {}
 impl Worker {
@@ -643,6 +645,8 @@ fn language_version_five_reserves_try_for_result_propagation() {
     assert!(foster::compile("func try() -> Int { 1 }").is_err());
     let propagation = r#"
 import core.result
+import core.result.*
+import static core.result.*
 
 func operation() -> Result<Int, String> { Result.Ok(1) }
 

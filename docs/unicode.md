@@ -22,6 +22,9 @@ accent. Save it as `unicode-example.fos` and run `foster run unicode-example.fos
 
 ```foster
 import core.string
+import core.string.String
+import core.string.StringCursor
+
 
 func main() -> Int {
     let text = "é"

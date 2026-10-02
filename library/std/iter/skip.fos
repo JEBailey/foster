@@ -3,8 +3,9 @@
 //! skip owns its source and discards the requested prefix when iteration begins.
 //! Nonpositive counts discard nothing. Skipping beyond the source exhausts it.
 
-import core.option
-import std.iter
+import core.option.Option
+
+import std.iter.Iterator
 
 type SkipIterator<T> = & Iterator<T> & {
     source: Iterator<T>
@@ -20,7 +21,9 @@ impl SkipIterator<T> {
                     self.remaining = self.remaining - 1
                     ()
                 }
-                Option.None -> { return Option.None }
+                Option.None -> {
+                    return Option.None
+                }
             }
         }
         self.source.next()
@@ -31,7 +34,9 @@ impl Iterator<T> {
     /// Consumes this iterator and discards up to `amount` elements on the first pull.
     /// Nonpositive amounts discard nothing; construction does not advance the source.
     pub func skip(self, amount: Int) -> Iterator<T> [consume self] {
-        SkipIterator { source: move self, remaining: amount }
+        SkipIterator {
+            source: move self, remaining: amount
+        }
     }
 }
 

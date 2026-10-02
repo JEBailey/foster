@@ -2,7 +2,10 @@ use foster::foreign::Manifest;
 
 #[test]
 fn ffi_packet_validation_tests_run_in_library_context() {
-    let compilation = foster::compile("import std.ffi\nfunc main() {}\n").unwrap();
+    let compilation = foster::compile(
+        "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nfunc main() {}\n",
+    )
+    .unwrap();
     let program = foster::vm::compile(&compilation).unwrap();
     let machine = foster::vm::Machine::new(&program.clone().into_verified().unwrap());
     let mut count = 0;
@@ -32,6 +35,22 @@ fn pointer_contracts_require_bounds_directions_and_cleanup() {
     }
 }
 
+#[test]
+fn callback_owners_cannot_outlive_their_foster_callback_registration() {
+    for mode in ["retained", "consume"] {
+        let source = format!(
+            r#"{{"abi":1,"headers":[],
+                "callbacks":[{{"name":"Event","method":"event","parameters":[],"result":"void","delivery":"queued"}}],
+                "resources":[{{"name":"Subscription","c_type":"Subscription","destroy":"unsubscribe"}},{{"name":"Held","c_type":"Held","destroy":"destroy_held"}}],
+                "operations":[
+                    {{"name":"subscribe","symbol":"subscribe","parameters":[{{"callback":"Event","retained":true}}],"result":"void","creates":"Subscription"}},
+                    {{"name":"hold","symbol":"hold","parameters":[{{"resource":"Subscription","{mode}":true}}],"result":"void","creates":"Held"}}
+                ]}}"#
+        );
+        assert!(Manifest::parse(&source).is_err(), "{mode}");
+    }
+}
+
 #[cfg(all(windows, target_arch = "x86_64"))]
 #[test]
 fn copied_pointers_outputs_and_value_resources_work_on_vm_and_native() {
@@ -56,6 +75,8 @@ fn copied_pointers_outputs_and_value_resources_work_on_vm_and_native() {
     let source = fs::read_to_string(output.with_extension("fos")).unwrap()
         + "\n"
         + &fs::read_to_string(fixture.join("pointers.fos")).unwrap();
+    assert!(source.contains("pub type Result_parse_outputs ="));
+    assert!(!source.contains("pub type CResult_"));
     let compiled = foster::compile(&source).unwrap();
     assert_eq!(
         foster::vm::run(&compiled).unwrap().to_string(),

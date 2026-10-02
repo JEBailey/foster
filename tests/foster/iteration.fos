@@ -1,12 +1,21 @@
 //! Collection adaptation, stateful iterators, consumers, and lazy pipelines.
 
 import core.option
+import core.option.Option
+
 import std.collections
+import std.collections.Collection
+
 import std.iter
+
 import std.iter.filter as filtering
+
 import std.iter.map as mapping
+
 import std.iter.skip as skipping
+
 import std.iter.take as taking
+
 import std.sequence
 
 func option_or(value: Option<Int>, fallback: Int) -> Int {

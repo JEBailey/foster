@@ -1,13 +1,25 @@
 //! Discovers selected-header macros and evaluates constant expressions with Clang.
 //! Static initializers exclude runtime calls. No C expression is translated into Foster.
-import core.list
-import core.string
-import core.int
-import core.result
+import core.list.List
+
+import core.string.String
+
+import core.int.Int
+
+import core.result.Result
+
 import core.future
+
 import std.process
+import std.process.ProcessOutput
+import std.process.SpawnOptions
+
 import bridge
+import bridge.*
+import static bridge.*
 import bindings
+import bindings.*
+import static bindings.*
 
 pub type Extracted = {
     pub values: String, pub report: String

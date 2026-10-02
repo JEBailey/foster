@@ -1,17 +1,31 @@
 //! Static documentation presentation and file output. The compiler adapter supplies
 //! linked signature HTML and Markdown HTML; all other text is escaped here.
 import core.byte
+
 import core.bytes
+
 import core.code_point
-import core.int
-import core.list
-import core.option
-import core.result
-import core.string
+
+import core.int.Int
+
+import core.list.List
+
+import core.option.Option
+
+import core.result.Result
+
+import core.string.String
+import core.string.StringBuilder
+
 import std.fs as fs
-import std.io
+
+import static std.fs.*
+import std.io.IoError
+import static std.io.*
 import std.path as paths
-import std.process
+
+import static std.path.*
+import std.process.Arguments
 
 type Reader = {
     values: List<String>, offset: Int

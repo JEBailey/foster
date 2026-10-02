@@ -1,17 +1,26 @@
 import std.iter
+import std.iter.Iterator
 
-type Counter = { calls: Int }
+type Counter = {
+    calls: Int
+}
 func values(counter: ref[counter] Counter) -> List<Int> {
     counter.calls = counter.calls + 1
     [1, 2, 3]
 }
 
-type Bag = { values: List<Int> }
+type Bag = {
+    values: List<Int>
+}
 impl Bag {
-    func iterator(self: Bag) -> Iterator<Int> { self.values.iterator() }
+    func iterator(self: Bag) -> Iterator<Int> {
+        self.values.iterator()
+    }
 }
 
-func empty() -> List<Int> { [] }
+func empty() -> List<Int> {
+    []
+}
 func find() -> Int {
     for value in [10, 42, 99] {
         return value if value == 42
@@ -20,8 +29,12 @@ func find() -> Int {
 }
 
 func main() -> Int {
-    for item in empty() { assert(false, "empty collection entered the body") }
-    let counter = Counter { calls: 0 }
+    for item in empty() {
+        assert(false, "empty collection entered the body")
+    }
+    let counter = Counter {
+        calls: 0
+    }
     let sum = 0
     for value in values(ref counter) {
         sum = sum + value
@@ -52,12 +65,18 @@ func main() -> Int {
     assert(count == 3)
     assert(source.length == 6)
 
-    let bag = Bag { values: [4, 5] }
-    for item in bag { sum = sum + item }
+    let bag = Bag {
+        values: [4, 5]
+    }
+    for item in bag {
+        sum = sum + item
+    }
     assert(sum == 15)
 
     let characters = 0
-    for _ in "a😀" { characters = characters + 1 }
+    for _ in "a😀" {
+        characters = characters + 1
+    }
     assert(characters == 2)
     find()
 }

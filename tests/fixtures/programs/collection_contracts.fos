@@ -1,19 +1,44 @@
 import core.option
-import std.collections.map
-import std.collections.set
-import std.collections.hash_map
-import std.collections.hash_set
-import std.collections.hashing
-import std.collections
-import std.iter
+import core.option.Option
 
-type Bag = & Collection<Int> & { values: List<Int> }
-impl Bag {
-    func empty?(self) -> Bool { self.values.empty? }
-    func length(self) -> Int { self.values.length }
-    func iterator(self) -> Iterator<Int> { self.values.iterator() }
+import std.collections.map
+import std.collections.map.Map
+
+import std.collections.set
+import std.collections.set.Set
+import std.collections.set.ListSet
+
+import std.collections.hash_map
+import std.collections.hash_map.HashMap
+
+import std.collections.hash_set
+import std.collections.hash_set.HashSet
+
+import std.collections.hashing
+
+import std.collections
+import std.collections.Collection
+
+import std.iter
+import std.iter.Iterator
+
+type Bag = & Collection<Int> & {
+    values: List<Int>
 }
-func collection_empty(values: Collection<Int>) -> Bool { values.empty?() }
+impl Bag {
+    func empty?(self) -> Bool {
+        self.values.empty?
+    }
+    func length(self) -> Int {
+        self.values.length
+    }
+    func iterator(self) -> Iterator<Int> {
+        self.values.iterator()
+    }
+}
+func collection_empty(values: Collection<Int>) -> Bool {
+    values.empty?()
+}
 
 func update_map(values: Map<String, Int>) -> Map<String, Int> [mut values, consume values] {
     (move values).put("answer", 42)
@@ -21,8 +46,10 @@ func update_map(values: Map<String, Int>) -> Map<String, Int> [mut values, consu
 func map_answer(values: Map<String, Int>) -> Int [consume values] {
     assert(values.length() == 1)
     assert(values.contains_key?("answer"))
-    branch values.borrow("answer") { Option.Some(value) -> value + 0
-        Option.None -> 0 }
+    branch values.borrow("answer") {
+        Option.Some(value) -> value + 0
+        Option.None -> 0
+    }
 }
 func update_set(values: Set<Int>) -> Set<Int> [mut values, consume values] {
     (move values).insert(42).insert(42).remove(7)
@@ -37,8 +64,12 @@ func map_values(values: Map<String, Int>) -> List<Int> [consume values] {
     (move values).values()
 }
 func main() -> Int {
-    assert(collection_empty(Bag { values: [] }))
-    assert(not collection_empty(Bag { values: [1] }))
+    assert(collection_empty(Bag {
+        values: []
+    }))
+    assert(not collection_empty(Bag {
+        values: [1]
+    }))
     assert(map_answer(update_map(Map.empty())) == 42)
     assert(map_answer(update_map(HashMap.empty(hashing::text))) == 42)
     assert(map_keys(update_map(Map.empty())) == ["answer"])

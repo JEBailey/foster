@@ -5,11 +5,21 @@
 //! the text identifies an instant or only calendar fields.
 
 import core.code_point
-import core.int
-import core.result
-import std.time as exact
-import std.time.civil as civil
-import std.time.zone as zones
+
+import core.int.Int
+
+import core.result.Result
+
+import std.time.Instant
+
+import std.time.civil.Date
+import std.time.civil.TimeOfDay
+import std.time.civil.DateTime
+
+import std.time.zone.Offset
+import std.time.zone.FixedOffsetZone
+import std.time.zone.OffsetDateTime
+import std.time.zone.ZonedDateTime
 
 /// Describes invalid portable date-time text.
 pub type FormatError = {

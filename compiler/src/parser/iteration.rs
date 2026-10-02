@@ -10,6 +10,8 @@ impl Parser {
                 span: span.clone(),
                 path: vec!["core".into(), "option".into()],
                 alias: Some(ITERATION_OPTION_MODULE.into()),
+                wildcard: false,
+                static_: false,
             });
         }
     }

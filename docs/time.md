@@ -17,10 +17,46 @@ Most programs that use the complete time model start with these imports:
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.time
+import std.time.TimeError
+import std.time.Duration
+import std.time.Instant
+import std.time.Interval
+import std.time.Clock
+import std.time.SystemClock
+import std.time.MonotonicInstant
+import std.time.ContinuousClock
+import static std.time.*
 import std.time.civil
+import std.time.civil.CivilError
+import std.time.civil.Overflow
+import std.time.civil.Calendar
+import std.time.civil.IsoCalendar
+import std.time.civil.Span
+import std.time.civil.Period
+import std.time.civil.Date
+import std.time.civil.TimeOfDay
+import std.time.civil.DateTime
+import std.time.civil.YearMonth
+import std.time.civil.MonthDay
+import std.time.civil.DateInterval
+
 import std.time.zone
+import std.time.zone.ZoneError
+import std.time.zone.Disambiguation
+import std.time.zone.Offset
+import std.time.zone.LocalResolution
+import std.time.zone.TimeZone
+import std.time.zone.TimeZoneDatabase
+import std.time.zone.FixedOffsetZone
+import std.time.zone.OffsetDateTime
+import std.time.zone.ZonedDateTime
+
 import std.time.format
+import std.time.format.FormatError
+import static std.time.format.*
 ```
 
 Imports expose public declarations directly. They also bind the final module component, so

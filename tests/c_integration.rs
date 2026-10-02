@@ -45,10 +45,10 @@ fn bridge_dependencies_resolve_beside_forward_slash_paths() {
 #[test]
 fn c_resources_are_private_and_cannot_cross_remote_boundaries() {
     for source in [
-        "import std.ffi\nfunc main() -> CResource { CResource { token: 1 } }",
-        "import std.ffi\nfunc transfer(value: CResource) { remote value }\nfunc main() {}",
-        "import std.ffi\ntype Box<T> = { value: T }\nfunc transfer(value: Box<CResource>) { remote value }\nfunc main() {}",
-        "import std.ffi\nimport core.result\ntype Box = { value: Result<CResource, Int> }\nfunc transfer(value: Box) { remote value }\nfunc main() {}",
+        "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nfunc main() -> CResource { CResource { token: 1 } }",
+        "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nfunc transfer(value: CResource) { remote value }\nfunc main() {}",
+        "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\ntype Box<T> = { value: T }\nfunc transfer(value: Box<CResource>) { remote value }\nfunc main() {}",
+        "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nimport core.result.*\ntype Box = { value: Result<CResource, Int> }\nfunc transfer(value: Box) { remote value }\nfunc main() {}",
     ] {
         let error = foster::compile(source)
             .err()
@@ -168,7 +168,7 @@ fn generated_c_bridge_runs_on_vm_and_native_with_exact_cleanup() {
     }
     // Generated wrappers are checked as real Foster, including resource ownership.
     let generated = std::fs::read_to_string(library.with_extension("fos")).unwrap();
-    let wrapped = foster::compile(&(generated + "\nfunc main() -> Result<Int, CError> {\nlet owner = try c_create(41)\ntry c_set(owner, 42)\nc_get(owner)\n}\n")).unwrap();
+    let wrapped = foster::compile(&(generated + "\nfunc main() -> Result<Int, CError> {\nlet owner = try create(41)\ntry set(owner, 42)\nget(owner)\n}\n")).unwrap();
     assert_eq!(
         foster::vm::run(&wrapped).unwrap().to_string(),
         "Result.Ok(42)"

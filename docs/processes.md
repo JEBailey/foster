@@ -13,9 +13,23 @@ This complete program runs the executable and arguments supplied to it:
 
 ```foster
 import std.process
+import std.process.Arguments
+import std.process.ProcessError
+import std.process.ExitStatus
+import std.process.ProcessStatus
+import std.process.ProcessOutput
+import std.process.SpawnOptions
+import std.process.Process
+import static std.process.*
 import core.result
+import core.result.Result
+
 import core.option
+
+
 import core.string
+import core.string.String
+
 
 func main(arguments: Arguments) -> Result<Int, ProcessError> {
     return Result.Error(ProcessError { message: "pass an executable and its arguments" }) if arguments.values.empty?

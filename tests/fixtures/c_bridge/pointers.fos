@@ -1,46 +1,109 @@
 func main() -> Result<Int, CError> {
-    assert((try c_borrowed_text()) == "café")
-    assert((try c_owned_text()) == "ok")
-    assert((try c_owned_bytes()).hex() == "002aff")
-    branch c_null_text() { Result.Error(_) -> () Result.Ok(_) -> panic("null string accepted") }
-    branch c_unterminated_text() { Result.Error(_) -> () Result.Ok(_) -> panic("unbounded string scan") }
-    branch c_bad_bytes() { Result.Error(_) -> () Result.Ok(_) -> panic("negative output length accepted") }
-    assert((try c_released_buffers()) == 3)
+    assert((try borrowed_text()) == "café")
+    assert((try owned_text()) == "ok")
+    assert((try owned_bytes()).hex() == "002aff")
+    branch null_text() {
+        Result.Error(_) -> () Result.Ok(_) -> panic("null string accepted")
+    }
+    branch unterminated_text() {
+        Result.Error(_) -> () Result.Ok(_) -> panic("unbounded string scan")
+    }
+    branch bad_bytes() {
+        Result.Error(_) -> () Result.Ok(_) -> panic("negative output length accepted")
+    }
+    assert((try released_buffers()) == 3)
     let data = Bytes.from_hex("002aff").unwrap_or(Bytes.empty())
-    assert((try c_sum_bytes(data)) == 297)
-    assert((try c_sum_bytes(Bytes.empty())) == 0)
-    let changed = try c_mutate_bytes(data)
+    assert((try sum_bytes(data)) == 297)
+    assert((try sum_bytes(Bytes.empty())) == 0)
+    let changed = try mutate_bytes(data)
     assert(changed.result == 3 && changed.out0.hex() == "ffd500")
     assert(data.hex() == "002aff")
-    let outputs = try c_parse_outputs("abc")
+    let outputs = try parse_outputs("abc")
     assert(outputs.result == 7 && outputs.out1 == 3 && outputs.out2.x + outputs.out2.y == 42)
-    let pair = CPair { x: 20, y: 11 }
-    let updated = try c_update_pair(pair)
+    let pair = Pair {
+        x: 20, y: 11
+    }
+    let updated = try update_pair(pair)
     assert(updated.x == 22 && updated.y == 22 && pair.x == 20)
-    assert((try c_single_output()) == 42)
-    assert((try c_fill_bytes(3)).hex() == "2a0000")
-    branch c_fill_bytes(-1) { Result.Error(_) -> () Result.Ok(_) -> panic("negative capacity accepted") }
-    let pairs = [CPair { x: 20, y: 22 }, CPair { x: 1, y: 2 }]
-    assert((try c_sum_pairs(pairs)) == 45)
-    let changed_pairs = try c_mutate_pairs(pairs)
+    assert((try single_output()) == 42)
+    assert((try fill_bytes(3)).hex() == "2a0000")
+    branch fill_bytes(-1) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("negative capacity accepted")
+    }
+    let pairs = [Pair {
+        x: 20, y: 22
+    }, Pair {
+        x: 1, y: 2
+    }]
+    assert((try sum_pairs(pairs)) == 45)
+    let changed_pairs = try mutate_pairs(pairs)
     assert(changed_pairs[0].x == 21 && changed_pairs[1].x == 2 && pairs[0].x == 20)
-    let filled = try c_fill_pairs(2)
+    let filled = try fill_pairs(2)
     assert(filled[0].x + filled[0].y == 42 && filled[1].x == 0)
-    assert((try c_live_values()) == 0)
+    assert((try live_values()) == 0)
+    :resource_arguments {
+        let first = try create_value(20)
+        let second = try create_value(22)
+        assert((try add_values(first, second)) == 42)
+        assert((try add_values(first, first)) == 40)
+        let retained = try retain_value(first)
+        branch first.close() {
+            Result.Error(_) -> () Result.Ok(_) -> panic("retained parent closed")
+        }
+        assert((try read_held(retained)) == 20)
+        try retained.close()
+        try first.close()
+        branch add_values(first, second) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("closed argument accepted")
+        }
+        let transferred = try take_value(move second)
+        assert((try read_held(transferred)) == 22)
+        try transferred.close()
+    }
+    assert((try live_values()) == 0)
+    :transitive_transfer {
+        let transferred = :parent_scope {
+            let source = try create_value(42)
+            let borrowed = try retain_value(source)
+            try take_held(move borrowed)
+        }
+        assert((try live_values()) == 1 && (try read_held(transferred)) == 42)
+        try transferred.close()
+    }
+    assert((try live_values()) == 0)
+    :retained_scope {
+        let held = :parent_scope {
+            let parent = try create_value(42)
+            try retain_value(parent)
+        }
+        assert((try live_values()) == 1 && (try read_held(held)) == 42)
+        let wrong_kind = NativeValue {
+            value: move held.value
+        }
+        branch add_values(wrong_kind, wrong_kind) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("wrong argument kind accepted")
+        }
+        try wrong_kind.close()
+    }
+    assert((try live_values()) == 0)
     :owned {
-        let value = try c_create_value(42)
-        assert((try c_live_values()) == 1 && (try c_read_value(value)) == 42)
-        try c_set_value(value, 43)
-        assert((try c_read_value(value)) == 43)
+        let value = try create_value(42)
+        assert((try live_values()) == 1 && (try read_value(value)) == 42)
+        try set_value(value, 43)
+        assert((try read_value(value)) == 43)
         try value.close()
         try value.close()
-        branch c_read_value(value) { Result.Error(_) -> () Result.Ok(_) -> panic("closed owner accepted") }
+        branch read_value(value) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("closed owner accepted")
+        }
     }
     :borrowed_buffer {
-        let value = try c_value_from_bytes(data)
-        assert((try c_read_value(value)) == 297)
+        let value = try value_from_bytes(data)
+        assert((try read_value(value)) == 297)
     }
-    branch c_create_value(-1) { Result.Error(_) -> () Result.Ok(_) -> panic("invalid value resource accepted") }
-    assert((try c_live_values()) == 0)
+    branch create_value(-1) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("invalid value resource accepted")
+    }
+    assert((try live_values()) == 0)
     Result.Ok(42)
 }

@@ -30,7 +30,14 @@ Integer range APIs use half-open bounds. `[start, end)` contains `start` but doe
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.random
+import std.random.RandomError
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 
 func number_below_twenty() -> Result<Int, RandomError> {
     random::below(20)
@@ -66,7 +73,14 @@ Algorithms accept the contract rather than a particular generator:
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.random
+import std.random.RandomError
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 
 func roll_die(source: RandomSource) -> Result<Int, RandomError> [mut source] {
     Result.Ok(1 + try random::below_with(source, 6))
@@ -99,8 +113,18 @@ other secrets.
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.random
+import std.random.RandomError
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 import std.random.generator
+import std.random.generator.LehmerRandom
+import std.random.generator.FastRandom
+
 
 func repeatable_index() -> Result<Int, RandomError> {
     let source = LehmerRandom.from_seed(42)
@@ -128,9 +152,25 @@ generator's capacity.
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.random
+import std.random.RandomError
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 import std.random.distribution
+import std.random.distribution.Distribution
+import std.random.distribution.UniformInt
+import std.random.distribution.UniformFloat
+import std.random.distribution.Bernoulli
+import std.random.distribution.WeightedIndex
+
 import std.random.generator
+import std.random.generator.LehmerRandom
+import std.random.generator.FastRandom
+
 
 func weighted_choice() -> Result<Int, RandomError> {
     let source = LehmerRandom.from_seed(9)
@@ -149,8 +189,18 @@ Import `std.random.secure` when unpredictability is a correctness requirement:
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.random
+import std.random.RandomError
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 import std.random.secure
+import std.random.secure.EntropySource
+import std.random.secure.SecureRandom
+import static std.random.secure.*
 
 func session_token() -> Result<String, RandomError> {
     token(32)
@@ -180,9 +230,21 @@ variants:
 
 ```foster
 import core.result
+import core.result.Result
+
 import std.random
+import std.random.RandomError
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 import std.random.generator
+import std.random.generator.LehmerRandom
+import std.random.generator.FastRandom
+
 import std.random.sequence
+
+import static std.random.sequence.*
 
 func test_order() -> Result<List<Int>, RandomError> {
     shuffle_with(LehmerRandom.from_seed(7), [1, 2, 3, 4])

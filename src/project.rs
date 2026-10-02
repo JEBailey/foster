@@ -15,6 +15,7 @@ pub struct Project {
     pub root: PathBuf,
     pub manifest_path: PathBuf,
     pub source_root: PathBuf,
+    pub entry: String,
     pub dependencies: BTreeMap<String, ProjectDependency>,
 }
 
@@ -82,6 +83,7 @@ impl Project {
             path_text(&self.root)?,
             path_text(&self.manifest_path)?,
             path_text(&self.source_root)?,
+            self.entry.clone(),
         ];
         for dependency in self.dependencies.values() {
             arguments.push(dependency.name.clone());
@@ -134,6 +136,7 @@ fn decode_project(value: &Value) -> Result<Project, FosterError> {
         root: text_field(value, "root")?.into(),
         manifest_path: text_field(value, "manifest")?.into(),
         source_root: text_field(value, "source")?.into(),
+        entry: text_field(value, "entry")?,
         dependencies,
     })
 }
@@ -225,8 +228,47 @@ mod tests {
         let project = Project::discover(&nested, None).unwrap().unwrap();
         assert_eq!(project.name, "sample");
         assert_eq!(project.source_root, root.join("source"));
+        assert_eq!(project.entry, "main.fos");
         assert!(project.dependencies.is_empty());
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_package_entries_are_validated() {
+        let root = temporary_project("entry");
+        fs::write(
+            root.join("source/lib.fos"),
+            "pub func answer() -> Int { 42 }",
+        )
+        .unwrap();
+        let manifest = root.join(MANIFEST_NAME);
+        for entry in ["lib.fos", "main.fos"] {
+            fs::write(root.join("source").join(entry), "").unwrap();
+            fs::write(
+                &manifest,
+                format!("[package]\nname = 'sample'\nsource = 'source'\nentry = '{entry}'\n"),
+            )
+            .unwrap();
+            assert_eq!(Project::load(&root).unwrap().entry, entry);
+        }
+        for entry in [
+            "''",
+            "'../lib.fos'",
+            "'/lib.fos'",
+            "'nested/lib.fos'",
+            "'lib.txt'",
+            "'missing.fos'",
+            "42",
+        ] {
+            fs::write(
+                &manifest,
+                format!("[package]\nname = 'sample'\nsource = 'source'\nentry = {entry}\n"),
+            )
+            .unwrap();
+            let error = Project::load(&root).unwrap_err().to_string();
+            assert!(error.contains("entry"), "{entry}: {error}");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -578,6 +620,7 @@ impl crate::package::ProjectInputs for Project {
             name: self.name.clone(),
             root: self.root.clone(),
             source_root: self.source_root.clone(),
+            entry: self.entry.clone(),
         }
     }
     fn dependency_sources(&self) -> Result<Vec<crate::package::DependencySource>, FosterError> {

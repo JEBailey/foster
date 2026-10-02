@@ -16,7 +16,7 @@ fn if_statements_are_available_to_semantic_analysis() {
 #[test]
 fn multiline_method_error_keeps_the_enclosing_function_available() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = "import core.list\nfunc apply() -> () {\n    [1]\n        .missing_method()\n}\nfunc main() -> () { apply() }\n";
+    let source = "import core.list.*\nfunc apply() -> () {\n    [1]\n        .missing_method()\n}\nfunc main() -> () { apply() }\n";
     workspace.open(uri.clone(), source.into(), 1);
     let compilation = workspace.compile_for(&uri).unwrap();
     let diagnostics = compilation
@@ -41,7 +41,7 @@ fn multiline_method_error_keeps_the_enclosing_function_available() {
 
 #[test]
 fn constrained_method_signature_displays_requirements() {
-    let compilation = crate::compile("import core.copy\ntype Box<T> = { value: T }\nimpl Box<T & Copy> { func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { Box { value: 42 }.copied() }").unwrap();
+    let compilation = crate::compile("import core.copy.*\ntype Box<T> = { value: T }\nimpl Box<T & Copy> { func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { Box { value: 42 }.copied() }").unwrap();
     let module = compilation.hir.module_named("main").unwrap();
     let method = compilation
         .hir
@@ -54,7 +54,7 @@ fn constrained_method_signature_displays_requirements() {
 #[test]
 fn type_branch_hover_and_copy_navigation() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = "import core.copy\nfunc classify<T>(value: T) -> Int {\n    branch value {\n        is Int -> value + 1\n        is Copy -> { value.copy()\n0 }\n        _ -> 0\n    }\n}\nfunc main() -> Int { classify(41) }\n";
+    let source = "import core.copy.*\nfunc classify<T>(value: T) -> Int {\n    branch value {\n        is Int -> value + 1\n        is Copy -> { value.copy()\n0 }\n        _ -> 0\n    }\n}\nfunc main() -> Int { classify(41) }\n";
     workspace.open(uri.clone(), source.into(), 1);
     let params = |position| {
         TextDocumentPositionParams::new(
@@ -81,7 +81,7 @@ fn type_branch_hover_and_copy_navigation() {
 #[test]
 fn failed_comparison_keeps_parameter_method_navigation_and_operand_locations() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = "import core.string\nimport core.option\n\nfunc compare(prefix: String) -> Bool {\n    let pattern = prefix.iterator()\n    Option.Some('a') != pattern.next()\n}\n";
+    let source = "import core.string.*\nimport core.option.*\n\nfunc compare(prefix: String) -> Bool {\n    let pattern = prefix.iterator()\n    Option.Some('a') != pattern.next()\n}\n";
     workspace.open(uri.clone(), source.into(), 1);
     let compilation = workspace.compile_for(&uri).unwrap();
     let diagnostic = compilation
@@ -409,7 +409,7 @@ fn associated_function_navigation_uses_the_type_namespace() {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri.clone()),
-            Position::new(3, 18),
+            Position::new(4, 18),
         ))
         .unwrap();
     assert_eq!(
@@ -423,7 +423,7 @@ fn associated_function_navigation_uses_the_type_namespace() {
         .references(&ReferenceParams {
             text_document_position: TextDocumentPositionParams::new(
                 lsp_types::TextDocumentIdentifier::new(uri),
-                Position::new(3, 18),
+                Position::new(4, 18),
             ),
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
@@ -440,7 +440,7 @@ fn associated_function_navigation_uses_the_type_namespace() {
                 lsp_types::TextDocumentIdentifier::new(
                     path_to_uri(&root.join("main.fos")).unwrap(),
                 ),
-                Position::new(3, 22),
+                Position::new(4, 22),
             ),
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
@@ -532,7 +532,7 @@ fn constants_have_symbols_hover_and_cross_module_definitions() {
     let hover = workspace
         .hover(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(main_uri.clone()),
-            Position::new(3, 6),
+            Position::new(4, 6),
         ))
         .unwrap();
     let HoverContents::Markup(hover) = hover.contents else {
@@ -548,7 +548,7 @@ fn constants_have_symbols_hover_and_cross_module_definitions() {
     let definition = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(main_uri),
-            Position::new(3, 6),
+            Position::new(4, 6),
         ))
         .unwrap();
     assert_eq!(
@@ -610,7 +610,7 @@ func main() -> Int {
 #[test]
 fn string_method_hover_publishes_library_documentation() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = "import core.string\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
+    let source = "import core.string.*\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
     workspace.open(uri.clone(), source.into(), 1);
     workspace
         .compile_for(&uri)
@@ -644,11 +644,11 @@ fn string_method_hover_publishes_library_documentation() {
 #[test]
 fn method_hover_survives_an_error_in_another_function() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let valid = "import core.string\n\nfunc broken() -> Int { 0 }\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
+    let valid = "import core.string.*\n\nfunc broken() -> Int { 0 }\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
     workspace.open(uri.clone(), valid.into(), 1);
     workspace.compile_for(&uri).unwrap();
 
-    let invalid = "import core.string\n\nfunc broken() -> Int {\n    \"wrong\"\n}\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
+    let invalid = "import core.string.*\n\nfunc broken() -> Int {\n    \"wrong\"\n}\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
     workspace.change(uri.clone(), invalid.into(), 2);
     let compilation = workspace.compile_for(&uri).unwrap();
     assert_eq!(
@@ -685,7 +685,7 @@ fn completion_uses_scope_and_import_visibility() {
         .completion(&CompletionParams {
             text_document_position: TextDocumentPositionParams::new(
                 lsp_types::TextDocumentIdentifier::new(uri.clone()),
-                Position::new(5, 11),
+                Position::new(5, 12),
             ),
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
@@ -750,7 +750,7 @@ fn arguments_completion_adds_the_required_import_when_compilation_fails() {
         .expect("expected an import edit");
     assert_eq!(edits.len(), 1);
     assert_eq!(edits[0].range.start, Position::new(0, 0));
-    assert_eq!(edits[0].new_text, "import std.process\n");
+    assert_eq!(edits[0].new_text, "import std.process.Arguments\n");
 }
 
 #[test]
@@ -1284,7 +1284,7 @@ fn definition_resolves_instance_methods_from_receiver_types() {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri),
-            Position::new(5, 13),
+            Position::new(6, 13),
         ))
         .unwrap();
     assert_eq!(
@@ -1370,7 +1370,7 @@ func main() -> Bool {
 #[test]
 fn definition_resolves_primitive_instance_methods() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = r#"import core.int
+    let source = r#"import core.int.*
 
 func main() -> Int {
     2.power(3)
@@ -1414,7 +1414,7 @@ fn definition_opens_embedded_core_source_when_available() {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri),
-            Position::new(11, 28),
+            Position::new(13, 28),
         ))
         .unwrap();
     assert_eq!(
@@ -1865,12 +1865,17 @@ fn compilation_includes_manifest_path_dependencies() {
     .unwrap();
     std::fs::write(
         dependency.join("foster.toml"),
-        "[package]\nname = \"math-package\"\nsource = \"src\"\n",
+        "[package]\nname = \"math-package\"\nsource = \"src\"\nentry = \"lib.fos\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dependency.join("src/lib.fos"),
+        "pub func base() -> Int { 40 }\n",
     )
     .unwrap();
     std::fs::write(
         dependency.join("src/helper.fos"),
-        "pub func answer() -> Int { 42 }\n",
+        "import lib\npub func answer() -> Int { lib::base() + 2 }\n",
     )
     .unwrap();
     let uri = path_to_uri(&main).unwrap();
@@ -1882,7 +1887,18 @@ fn compilation_includes_manifest_path_dependencies() {
     };
 
     let compilation = workspace.compile_for(&uri).unwrap();
-    assert!(compilation.package.module("math").unwrap().is_implicit());
+    assert!(!compilation.package.module("math").unwrap().is_implicit());
+    assert_eq!(
+        compilation
+            .package
+            .module("math")
+            .unwrap()
+            .source_path
+            .as_ref()
+            .unwrap()
+            .file_name(),
+        Some("lib.fos")
+    );
     assert!(compilation.package.module("math.helper").is_some());
     assert!(
         !compilation
@@ -1898,7 +1914,7 @@ fn compilation_includes_manifest_path_dependencies() {
 #[test]
 fn nested_binding_hints_use_names_and_hide_try_temporaries() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = "import core.result\nfunc example(input: Result<Int, String>) -> Result<Int, String> {\n    let value = try input\n    branch {\n        true -> { let nested = value\n            Result.Ok(nested) }\n        _ -> Result.Ok(0)\n    }\n}\n";
+    let source = "import core.result.*\nfunc example(input: Result<Int, String>) -> Result<Int, String> {\n    let value = try input\n    branch {\n        true -> { let nested = value\n            Result.Ok(nested) }\n        _ -> Result.Ok(0)\n    }\n}\n";
     workspace.open(uri.clone(), source.into(), 1);
     assert!(workspace.compile_for(&uri).unwrap().diagnostics.is_empty());
     let hints = workspace

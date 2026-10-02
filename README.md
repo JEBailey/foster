@@ -72,6 +72,7 @@ The manifest identifies the directory where filesystem module discovery starts:
 [package]
 name = "hello-foster"
 source = "src"
+entry = "main.fos"
 ```
 
 `package.name` is required. `package.source` defaults to `src` when omitted and must be a relative
@@ -81,6 +82,13 @@ current directory and its parents for the nearest manifest; `fmt` and `docs` fal
 existing current-directory behavior when no manifest exists. Explicit `.fos` files and legacy
 directories whose `main.fos` sits directly at the source root remain supported.
 
+`package.entry` selects the package root's `.fos` filename within the source directory.
+It defaults to `main.fos`; source libraries explicitly select `entry = "lib.fos"`.
+An explicitly selected file must exist. Entries cannot be absolute paths or include directories.
+The selected file supplies the package root declarations; its filename does not add a module
+component. Other source files remain submodules. A different selected entry cannot coexist
+with another `main.fos` in the source root, which would conflict with the package root.
+
 Projects can depend on other Foster projects by relative path:
 
 ```toml
@@ -88,7 +96,7 @@ Projects can depend on other Foster projects by relative path:
 collections = { path = "../foster-collections" }
 ```
 
-The dependency key is its module namespace. The dependency's `src/main.fos` is mounted as
+The dependency key is its module namespace. The dependency's selected entry file is mounted as
 `collections`, `src/map.fos` as `collections.map`, and `src/tree/set.fos` as
 `collections.tree.set`. Imports between modules in that dependency are rebased automatically, so
 its own `import map` resolves to `collections.map`. Imports of `core`, `std`, and dependencies
@@ -191,6 +199,8 @@ canonical dotted module names:
 
 ```foster
 import core.result
+import core.result.Result
+
 
 let outcome = Result.Ok(42)
 let mapped = outcome.map((value: Int) -> value + 1)
@@ -255,6 +265,8 @@ Subject branches destructure enum case payloads:
 
 ```foster
 import core.result
+import core.result.Result
+
 
 func unwrap_or(result: Result<Int, String>, fallback: Int) -> Int {
     branch result {
@@ -293,12 +305,19 @@ differ only by case. Imports use canonical dotted names:
 
 ```foster
 import json
+import json.*
+import static json.*
 import json.parser as parser
+import json.parser.*
+import static json.parser.*
 import tools.text.trim
+import tools.text.trim.*
+import static tools.text.trim.*
 ```
 
-Importing a module exposes its public declarations directly and binds its final component as a
-qualifier. Modules are public; declarations and record fields are private unless marked `pub`.
+Importing a module binds its final component as a qualifier. Import individual types with
+`import core.result.Result`, public types with `import core.result.*`, and public functions
+and constants with `import static std.fs.*`. Modules are public; declarations and record fields are private unless marked `pub`.
 
 ## Standard library
 

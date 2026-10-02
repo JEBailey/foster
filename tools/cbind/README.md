@@ -52,9 +52,9 @@ It remains an error to silently deliver an incomplete library: use
 `--skip-unsupported` explicitly while working through the report.
 
 Enum members, including aliases and flags, become integer constants such as
-`C_KEY_SPACE`. Primitive macro values become `pub const` declarations, for example
-`C_RAYLIB_VERSION` and `C_PI`. Value-record macros become factories such as
-`C_RED() -> CColor`, since Foster constant initializers do not support records.
+`KEY_SPACE`. Primitive macro values become `pub const` declarations, for example
+`RAYLIB_VERSION` and `PI`. Value-record macros become factories such as
+`rED() -> Color`, since Foster constant initializers do not support records.
 The factories construct Foster values and do not call the DLL. Unsigned 64-bit
 values use Foster's signed Int bit representation, as do bridge scalar slots.
 The minimum Int value also uses a factory: Foster cannot spell its magnitude
@@ -69,6 +69,8 @@ and `.constants.exe` files expose this stage (the last successful batch when
 unsupported macros require splitting). Function-like macros, nonconstant
 expressions, non-finite numbers, and unsupported constant types are reported.
 Empty preprocessing markers, including header guards, do not declare values.
+
+Generated types uppercase their first letter; generated functions lowercase their first letter. The rest of each name is preserved, with no added `c_`, `C`, or `C_` prefixes. Constants and fields retain their C spelling. Native symbols and C types remain unchanged.
 
 Parameter names and Clang-associated documentation comments are retained in the
 manifest and generated Foster source. Names that collide with Foster keywords,
@@ -107,6 +109,22 @@ Build a reviewed manifest without rediscovering headers:
 ```
 
 Paths inside reviewed manifests resolve relative to the manifest's directory.
+Operations can borrow several owners using parameters such as
+`{"resource":"Mesh"}` and `{"resource":"Material"}`. The host checks each
+token's bridge, native kind, thread, and call lease before passing a pointer to C.
+For boxed value resources, `"pointer":true` passes the address of the stored value.
+Constructor parameters may use `"retained":true` to keep a parent alive until
+the result is destroyed, or `"consume":true` to transfer its native allocation.
+Retained parents cannot be explicitly closed or transferred while children exist.
+Consuming calls require `move` at the Foster call site.
+Owners of Foster callback registrations currently support ordinary borrowing,
+but cannot be retained or transferred into another owner.
+
+A copied record can specify `"foster_module":"lib"` to reuse that module's public
+type instead of declaring another nominal record. Its C fields are still checked
+and serialized against the manifest. This lets optional modules share the root
+library's vectors and matrices.
+
 `foster bridge` remains a compiler command that dispatches to the same Foster
 implementation; its Rust adapter only embeds and invokes the Foster program.
 No C binding policy, JSON decoder, artifact writing, or Clang orchestration is
@@ -125,9 +143,9 @@ double, and void results (including unsigned integer variants).
 Complete structs containing supported scalars or other supported structs are
 imported automatically, including typedef aliases, anonymous typedef structs,
 and packed structs. Both arguments and results are supported. A C `Color`
-becomes a public `CColor` Foster record with a `copy()` method and public fields.
+becomes a public `Color` Foster record with a `copy()` method and public fields.
 Ordinary field names are preserved. Foster keywords, `self`, `copy`, and names
-starting with `c_` gain a `c_` prefix to avoid name collisions.
+ending with `_` gain an underscore suffix to avoid name collisions.
 
 The C compiler handles native layout, padding, and calling conventions. Generated
 bridges copy each field through checked scalar slots, never reinterpret Foster
@@ -142,7 +160,7 @@ array elements use byte values 0–255, preserving embedded NULs without assumin
 text encoding. C compile-time checks verify element types and every dimension.
 
 Named enums and enum typedefs generate transparent aliases such as
-`pub type CKeyboardKey = Int`. Enum values remain `C_KEY_*` constants. Enum
+`pub type KeyboardKey = Int`. Enum values remain `KEY_*` constants. Enum
 parameters and fields preserve the actual C enum type in the bridge and reject
 values outside its integer representation. Unnamed numeric values and combined
 flags are allowed; the binding does not invent a closed Foster enum.

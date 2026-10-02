@@ -88,10 +88,10 @@ fn processes_capture_poll_terminate_and_cleanup_on_both_backends() {
 #[test]
 fn await_requires_consumption_and_process_handles_are_private() {
     for source in [
-        "import core.future\nimport core.result\nimport core.remote_error\ntype Worker = {}\nimpl Worker { func work(self) -> Int { 1 }\nfunc accept(self, value: Future<Result<Int, RemoteError>>) -> Int [consume value] { 1 } }\nfunc main() -> Int { let first = remote Worker {}\nlet second = remote Worker {}\nlet pending = first.work()\nawait second.accept(move pending)\n0 }",
+        "import core.future.*\nimport core.result.*\nimport core.remote_error.*\ntype Worker = {}\nimpl Worker { func work(self) -> Int { 1 }\nfunc accept(self, value: Future<Result<Int, RemoteError>>) -> Int [consume value] { 1 } }\nfunc main() -> Int { let first = remote Worker {}\nlet second = remote Worker {}\nlet pending = first.work()\nawait second.accept(move pending)\n0 }",
         "type Bad = { func resolve(self) -> Int [read self] }\nimpl Bad { func resolve(self) -> Int [read self] { 1 } }\nfunc main() -> Int { await Bad {} }",
-        "import std.process\nfunc main() -> Process { Process { token: 1, identifier: 1 } }",
-        "import core.future\ntype Ready = & Future<Int> & {}\nimpl Ready { func resolve(self) -> Int [consume self] { 1 } }\nfunc main() -> Int { let ready = Ready {}\nawait ready\nawait ready }",
+        "import std.process\nimport std.process.*\nimport static std.process.*\nfunc main() -> Process { Process { token: 1, identifier: 1 } }",
+        "import core.future.*\ntype Ready = & Future<Int> & {}\nimpl Ready { func resolve(self) -> Int [consume self] { 1 } }\nfunc main() -> Int { let ready = Ready {}\nawait ready\nawait ready }",
     ] {
         assert!(
             foster::compile(source).is_err(),
@@ -120,8 +120,14 @@ fn process_cleanup_runs_during_unwinding_on_both_backends() {
     );
     let source = r#"
 import std.process
+import std.process.*
+import static std.process.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import core.result
+import core.result.*
+import static core.result.*
 func main(arguments: Arguments) -> Result<Int, ProcessError> {
     let child = try process::spawn(arguments.values[0], ["sleep", arguments.values[1].copy(), arguments.values[2].copy()])
     loop { break if fs::exists?(arguments.values[1]) }

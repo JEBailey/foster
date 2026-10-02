@@ -5,8 +5,9 @@
 //! Constructing or inspecting a `Uri` does not fetch its resource; protocol-specific
 //! I/O belongs to the provider that accepts the identifier.
 
-import core.result
-import std.resource
+import core.result.Result
+
+import std.resource.ResourceIdentifier
 
 /// Describes an invalid URI passed to `Uri.parse`.
 pub type UriError = {

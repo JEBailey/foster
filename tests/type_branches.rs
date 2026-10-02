@@ -1,12 +1,12 @@
 #[test]
 fn type_branch_scope_and_exhaustiveness() {
     for source in [
-        "import core.copy\nfunc bad<T>(value: T) -> T { branch value { is Copy -> value.copy() } }",
-        "import core.copy\nfunc bad<T>(value: T) -> T { branch value { is Copy -> value.copy()\n_ -> value.copy() } }",
-        "import core.copy\nfunc bad<T>(value: T) -> T { branch value { is Copy -> ()\n_ -> () }\nvalue.copy() }",
+        "import core.copy\nimport core.copy.*\nimport static core.copy.*\nfunc bad<T>(value: T) -> T { branch value { is Copy -> value.copy() } }",
+        "import core.copy\nimport core.copy.*\nimport static core.copy.*\nfunc bad<T>(value: T) -> T { branch value { is Copy -> value.copy()\n_ -> value.copy() } }",
+        "import core.copy\nimport core.copy.*\nimport static core.copy.*\nfunc bad<T>(value: T) -> T { branch value { is Copy -> ()\n_ -> () }\nvalue.copy() }",
         "func bad<T>(value: T) -> Int { branch value { is Missing -> 1\n_ -> 0 } }",
         "func bad<T>(value: T) -> Int { branch value { is List<Int> -> 1\n_ -> 0 } }",
-        "import core.copy\nimport core.option\nfunc bad<T>(value: Option<T>) -> Int { branch value { Option.Some(is Copy) -> 1\n_ -> 0 } }",
+        "import core.copy\nimport core.copy.*\nimport static core.copy.*\nimport core.option.*\nfunc bad<T>(value: Option<T>) -> Int { branch value { Option.Some(is Copy) -> 1\n_ -> 0 } }",
     ] {
         assert!(
             foster::compile(source).is_err(),
@@ -23,7 +23,7 @@ fn type_branch_does_not_grant_ownership_of_a_borrowed_parameter() {
 
 #[test]
 fn type_branch_replacement_invalidates_copy_evidence() {
-    let source = "import core.copy\nfunc bad<T>(value: T, other: T) -> T { branch value { is Copy -> { value = other\nvalue.copy() }\n_ -> other } }";
+    let source = "import core.copy\nimport core.copy.*\nimport static core.copy.*\nfunc bad<T>(value: T, other: T) -> T { branch value { is Copy -> { value = other\nvalue.copy() }\n_ -> other } }";
     assert!(foster::compile(source).is_err());
 }
 
@@ -45,7 +45,7 @@ fn type_branch_preserves_the_original_place() {
 }
 #[test]
 fn type_branch_qualified_copy_resolves_in_the_type_namespace() {
-    let source = "import core.copy as copying\nfunc can<T>(value: T) -> Bool { branch value { is copying::Copy -> true\n_ -> false } }\nfunc main() -> Bool { can(42) }";
+    let source = "import core.copy as copying\nimport core.copy.*\nimport static core.copy.*\nfunc can<T>(value: T) -> Bool { branch value { is copying::Copy -> true\n_ -> false } }\nfunc main() -> Bool { can(42) }";
     assert_eq!(foster::run(source).unwrap(), foster::vm::Value::Bool(true));
 }
 

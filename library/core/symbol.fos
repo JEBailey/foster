@@ -3,7 +3,8 @@
 //! Symbols represent named values such as :ready. Use their text conversion for
 //! display; use symbol equality when comparing symbolic identities.
 
-import core.copy
+import core.copy.Copy
+import static core.copy.*
 
 /// An immutable symbolic identifier.
 ///
@@ -19,7 +20,9 @@ pub type Symbol = & Copy & {
 
 impl Symbol {
     /// Explicitly copies this immutable identifier.
-    pub func copy(self) -> self [read self] { self }
+    pub func copy(self) -> self [read self] {
+        self
+    }
 }
 
 test "symbols support explicit copying" {

@@ -1,28 +1,43 @@
 import core.drop
+import core.drop.Drop
 
-type Resource = & Drop & { id: Int }
+type Resource = & Drop & {
+    id: Int
+}
 
 impl Resource {
-    func deinit(self) -> () { println(self.id) }
+    func deinit(self) -> () {
+        println(self.id)
+    }
 }
 
 func early() -> Int {
     :returning {
-        let resource = Resource { id: 7 }
+        let resource = Resource {
+            id: 7
+        }
         return 42
     }
 }
 
 func main() -> Int {
     let result = :request {
-        let first = Resource { id: 1 }
+        let first = Resource {
+            id: 1
+        }
         :nested {
-            let second = Resource { id: 2 }
-            let third = Resource { id: 3 }
+            let second = Resource {
+                id: 2
+            }
+            let third = Resource {
+                id: 3
+            }
             ()
         }
         println(4)
-        let transferred = Resource { id: 5 }
+        let transferred = Resource {
+            id: 5
+        }
         move transferred
     }
     println(6)
@@ -31,7 +46,9 @@ func main() -> Int {
     let iteration = 0
     loop {
         :iteration {
-            let resource = Resource { id: 8 + iteration }
+            let resource = Resource {
+                id: 8 + iteration
+            }
             iteration = iteration + 1
             continue if iteration == 1
             break

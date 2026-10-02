@@ -75,13 +75,13 @@ duplicate names, invalid identifiers, and unsupported contracts are errors.
 Operations optionally carry `parameter_names`, an array matching `parameters`
 (empty strings retain generated names). Operations, records, fields, and constants
 may carry a `documentation` string. The generated source preserves documentation
-and disambiguates parameter names without changing the C call signature.
+and disambiguates parameter names without changing the C call signature. Generated types uppercase their first letter; functions lowercase their first letter, preserving the remaining spelling. Fields and constants retain their names. C symbols and type names are unchanged.
 
 The optional `constants` array contains `{ "name", "type", "value" }` entries.
 Types use the scalar/record/array/enum notation below, plus `"string"` for literal strings.
 Values are JSON numbers, booleans, strings, or objects matching the record's
-fields. Primitive entries generate `pub const C_NAME`; record entries generate
-`pub func C_NAME() -> CRecord` factories. Enum members use integer values so aliases
+fields. Primitive entries generate `pub const NAME`; record entries generate
+`pub func nAME() -> Record` factories. Enum members use integer values so aliases
 and flags remain usable. Constants are captured during header conversion and
 embedded in the Foster module, with no DLL call on access. Full header discovery
 also builds and executes a Clang constant exporter, including in manifest-only mode.
@@ -143,9 +143,9 @@ depends on live children need a more specific ownership adapter.
 | `i8`, `i16`, `i32`, `i64` | `Int` | Exact-width signed C integers; narrow inputs are range checked. |
 | `u8`, `u16`, `u32`, `u64` | `Int` | Exact-width unsigned C integers; narrow inputs are range checked. U64 preserves all bits, so values above INT64_MAX appear negative in Foster. |
 | `f32`, `f64` | `Float` | C float/double. Float32 narrows with a finite-overflow check and widens on return. |
-| `{"record":"Color"}` | `CColor` | Struct by value, copied field by field. Nested value records are supported. |
+| `{"record":"Color"}` | `Color` | Struct by value, copied field by field. Nested value records are supported. |
 | `{"array":"f32","length":4}` | `List<Float>` | Fixed-size record field; exact length checked before C runs. May nest arrays or contain value records. |
-| `{"enum":"Mode"}` | `CMode` (alias of `Int`) | Named C enum, preserving its C type and checking its integer range. |
+| `{"enum":"Mode"}` | `Mode` (alias of `Int`) | Named C enum, preserving its C type and checking its integer range. |
 | `char` | `Int` | Plain C char storage as a byte value 0–255, including standalone parameters/results and array fields. |
 | `long`, `ulong` | `Int` | Exact C `long` / `unsigned long`, range checked using C target limits; 32-bit on Windows x64. |
 | `bytes` parameter | `Bytes` | Two C parameters: `const uint8_t *`, `size_t`. Input is copied and valid only during the call. |
@@ -179,7 +179,7 @@ Operation parameters/results refer to these with `{"record":"Color"}`. Record
 or another value record, a named enum, or a fixed-size array. Pointer fields,
 unions, and bitfields are not imported. Generated C checks field types and uses the C compiler's native ABI,
 including packed structs. Generated Foster records expose copied fields and
-`copy()`. Keyword fields and fields starting `c_` gain a `c_` prefix. Nesting is
+`copy()`. Keyword fields, `self`, `copy`, and fields ending with `_` gain an underscore suffix. Nesting is
 limited to 32 record/array levels and a flattened record to 8191 scalar slots (65528 bytes).
 Metadata bits 16..31 carry the fixed result byte count, so small returned structs
 do not allocate the 16 MiB buffer used for variable-length byte results.
@@ -226,7 +226,7 @@ must not be retained by C.
 | Contract | Foster interface | C interface |
 | --- | --- | --- |
 | `{"out":"i32"}` | No input; returned output value | Zero-initialized `int32_t *` |
-| `{"inout":{"record":"Point"}}` | Copied `CPoint` input and updated output | `Point *` to a temporary copy |
+| `{"inout":{"record":"Point"}}` | Copied `Point` input and updated output | `Point *` to a temporary copy |
 | `{"buffer":"u8","length":"i32"}` | `Bytes` input | `const uint8_t *`, `int32_t` element count |
 | `{"buffer":"f32","length":"size"}` | `List<Float>` input | `const float *`, `size_t` element count |
 | Buffer with `"mutable":true` | Input copy plus updated output | Writable temporary buffer |
@@ -240,7 +240,7 @@ oversized, or unrepresentable inputs fail before calling C. All temporary native
 allocations are freed on success and failure. Mutating a copy leaves the caller's
 original Foster value unchanged. Array elements must be wrapped in a value record.
 
-One output is returned directly. Multiple outputs produce `CResult_<name>` with
+One output is returned directly. Multiple outputs produce `Result_<name>` with
 `result` for a non-void C return and `outN` for each output parameter, where N is
 its zero-based logical manifest parameter index. Components are copied and framed
 with checked lengths; no native pointer is exposed.

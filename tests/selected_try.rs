@@ -57,6 +57,8 @@ fn selected_try_syntax_round_trips_and_rejects_malformed_selectors() {
 fn selected_try_consumes_owned_operands() {
     let source = r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & {}
 impl Item { func deinit(self) -> () {} }
 enum Outcome = Match(Item) | Failed

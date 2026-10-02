@@ -1,6 +1,6 @@
 //! Recursive-descent JSON parsing and deterministic rendering in Foster.
 
-import core.string
+import core.string.String
 
 pub enum Json = Null
     | Boolean(Bool)

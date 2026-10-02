@@ -1,6 +1,9 @@
 //! Functions, recursion, generics, closures, and callable ownership.
 
 import core.functions
+import core.functions.Predicate
+import core.functions.Consumer
+import core.functions.Supplier
 
 func fibonacci(value: Int) -> Int {
     return value if value < 2
@@ -27,7 +30,9 @@ func invoke(action: func(consume String) -> Int, value: String) -> Int [consume 
     action(move value)
 }
 
-type FunctionTestPayload = { value: Int }
+type FunctionTestPayload = {
+    value: Int
+}
 
 func matches<T>(value: T, predicate: Predicate<T>) -> Bool {
     predicate(value)
@@ -80,7 +85,9 @@ test "consuming callable contracts transfer ownership" {
 }
 
 test "callable aliases preserve borrowing consuming and supplying modes" {
-    let payload = FunctionTestPayload { value: 42 }
+    let payload = FunctionTestPayload {
+        value: 42
+    }
     accept(move payload, discard)
     assert(matches(42, (value: Int) -> value > 40))
     assert(provide(() -> 42) == 42)

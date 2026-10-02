@@ -22,7 +22,11 @@ Save this as `main.fos` and run `foster run main.fos`:
 
 ```foster
 import core.list
+import core.list.List
+
 import core.option
+import core.option.Option
+
 
 func main() -> Int {
     let doubled = [10, 20, 30].map((value: Int) -> value * 2)
@@ -112,7 +116,11 @@ are evaluated before a call; `_else` callbacks defer computation until needed.
 
 ```foster
 import core.byte
+
+
 import core.result
+import core.result.Result
+
 
 func main() -> Int {
     branch Byte.from(256) {

@@ -4,9 +4,11 @@
 //! are linear. Use std.collections.hash_map for hashed lookup. borrow returns a reference;
 //! remove transfers a value and preserves the map. put consumes and returns the updated collection.
 
-import core.option
-import std.collections
-import std.iter
+import core.option.Option
+
+import std.collections.Collection
+
+import std.iter.Iterator
 
 /// A key-value pair yielded while iterating a map.
 pub type Entry<K, V> = {
@@ -36,7 +38,9 @@ pub type Map<K, V> = & Collection<Entry<K, V>> & {
 
 impl Map {
     /// Creates an insertion-ordered list-backed map; use HashMap.empty for hashed storage.
-    pub func empty<K, V>() -> ListMap<K, V> { ListMap.empty() }
+    pub func empty<K, V>() -> ListMap<K, V> {
+        ListMap.empty()
+    }
 }
 
 /// An insertion-ordered associative collection.
@@ -47,7 +51,9 @@ pub type ListMap<K, V> = & Map<K, V> & {
 impl ListMap<K, V> {
     /// Creates an empty map.
     pub func empty() -> ListMap<K, V> {
-        ListMap { entries: [] }
+        ListMap {
+            entries: []
+        }
     }
 
     /// Borrows the stored value; absent keys return `None`. No `Copy` is required.
@@ -71,7 +77,9 @@ impl ListMap<K, V> {
         let cursor = 0
         for entry in self.entries {
             branch {
-                cursor == index -> { removed = Option.Some(entry.value) }
+                cursor == index -> {
+                    removed = Option.Some(entry.value)
+                }
                 _ -> remaining.push(entry)
             }
             cursor = cursor + 1
@@ -90,8 +98,16 @@ impl ListMap<K, V> {
     pub func put(self, key: K, value: V) -> ListMap<K, V> [mut self.entries, consume key, consume self, consume value] {
         let index = find_index(self.entries, key)
         branch {
-            index >= 0 -> { self.entries[index] = Entry { key, value } }
-            _ -> { self.entries = self.entries.append(Entry { key, value }) }
+            index >= 0 -> {
+                self.entries[index] = Entry {
+                    key, value
+                }
+            }
+            _ -> {
+                self.entries = self.entries.append(Entry {
+                    key, value
+                })
+            }
         }
         self
     }

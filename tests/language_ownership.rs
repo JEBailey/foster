@@ -23,6 +23,8 @@ func main() -> Int { inspect(false) }
     let moved = foster::compile(
         r#"
 import core.string
+import core.string.*
+import static core.string.*
 func discard_text(value: String) -> () [consume value] {}
 func inspect(flag: Bool) -> Int {
     let value = "hello"
@@ -177,6 +179,8 @@ func main() -> Int { 0 }
 fn remote_objects_process_methods_on_virtual_threads() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Counter = {
     value: Int
@@ -203,6 +207,8 @@ func main() -> Int {
 fn remote_objects_dispatch_overloaded_methods() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Formatter = {}
 
@@ -228,7 +234,11 @@ func main() -> Int {
 fn remote_assertion_failures_are_delivered_through_futures() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 type Worker = {}
 
 impl Worker {
@@ -257,6 +267,8 @@ func main() -> String {
 fn remote_read_loans_observe_owner_mutation() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Counter = {
     value: Int
@@ -289,6 +301,8 @@ func main() -> Int {
 fn remote_read_loans_serialize_reads_with_owner_methods() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Pair = {
     left: Int
@@ -354,6 +368,8 @@ func main() {
 fn remote_borrowed_arguments_are_live_read_only_loans() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Document = { value: Int }
 type Inspector = {}
@@ -387,6 +403,8 @@ func main() -> Int {
 fn remote_borrowed_arguments_serialize_with_owner_mutation() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Pair = { left: Int, right: Int }
 type Inspector = {}
@@ -543,6 +561,8 @@ func main() { 0 }
 fn derives_suspend_from_await_and_callee_contracts() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Worker = {}
 impl Worker {
@@ -563,6 +583,8 @@ func main() { 0 }
 fn accepts_declared_suspension() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Worker = {}
 impl Worker {
@@ -2535,6 +2557,8 @@ func main() -> Int {
 fn ownership_mir_models_loans_across_suspend_and_scope_destruction() {
     let source = r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Worker = {}
 impl Worker {
@@ -2709,6 +2733,8 @@ func main() -> Int {
 fn expression_temporaries_are_destroyed_on_try_return_paths() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 
 func combine(item: ref[item] Int, other: Int) -> Int { other }
 func make() -> Int { 42 }
@@ -3119,7 +3145,7 @@ fn ownership_mir_distinguishes_abrupt_host_failures_from_result_errors() {
     use foster::intrinsics::Builtin;
     use foster::ownership::{FailureOperation, Terminator};
     let compilation = foster::compile(
-        "import std.fs\nimport std.time\nimport std.net.tcp\nfunc main() -> Int { 0 }",
+        "import std.fs\nimport std.fs.*\nimport static std.fs.*\nimport std.time\nimport std.time.*\nimport static std.time.*\nimport std.net.tcp\nimport std.net.tcp.*\nimport static std.net.tcp.*\nfunc main() -> Int { 0 }",
     )
     .unwrap();
     let mut hosts = Vec::new();
@@ -3204,6 +3230,8 @@ fn remote_await_requires_handling_the_outer_result() {
     let error = foster::compile(
         r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Worker = {}
 impl Worker { func value(self) -> Int { 42 } }

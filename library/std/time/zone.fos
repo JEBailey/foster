@@ -4,10 +4,19 @@
 //! local values as unique, ambiguous, or skipped; choose a `Disambiguation` policy
 //! when selecting an instant. Fixed-offset support does not supply an IANA zone database.
 
-import core.ordering
-import core.result
-import std.time as exact
-import std.time.civil as civil
+import core.ordering.Ordering
+import core.ordering.Ordered
+
+import core.result.Result
+
+import std.time.Duration
+import std.time.Instant
+
+import std.time.civil.Overflow
+import std.time.civil.Span
+import std.time.civil.Date
+import std.time.civil.TimeOfDay
+import std.time.civil.DateTime
 
 /// Describes an invalid offset, unknown zone, or rejected local-time resolution.
 pub type ZoneError = {

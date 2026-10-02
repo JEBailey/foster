@@ -28,8 +28,23 @@ impl Parser {
         self.peek().kind == *kind
     }
     pub(super) fn take(&mut self, kind: &TokenKind) -> bool {
+        if *kind == TokenKind::Comma {
+            let mut next = self.current;
+            while self.tokens[next].kind == TokenKind::Newline {
+                next += 1;
+            }
+            if self.tokens[next].kind != TokenKind::Comma {
+                return false;
+            }
+            self.current = next + 1;
+            self.newlines();
+            return true;
+        }
         if self.at(kind) {
             self.advance();
+            if matches!(kind, TokenKind::LParen | TokenKind::LBracket) {
+                self.newlines();
+            }
             true
         } else {
             false
@@ -45,6 +60,12 @@ impl Parser {
         }
     }
     pub(super) fn expect(&mut self, kind: &TokenKind, message: &str) -> Result<(), FosterError> {
+        if matches!(
+            kind,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::Greater
+        ) {
+            self.newlines();
+        }
         if self.take(kind) {
             Ok(())
         } else {

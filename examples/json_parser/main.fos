@@ -1,9 +1,12 @@
 //! Remote parsing workers and result aggregation built around the JSON parser module.
 
 import parser
+import parser.*
+import static parser.*
 
-import core.result as outcomes
-import core.remote_error
+import core.result.Result
+
+import core.remote_error.RemoteError
 
 type ParserWorker = {}
 
@@ -52,7 +55,9 @@ impl Statistics {
 func main() -> Result<PipelineReport, RemoteError> {
     let parser_a = remote ParserWorker {}
     let parser_b = remote ParserWorker {}
-    let statistics = remote Statistics { processed: 0, failed: 0 }
+    let statistics = remote Statistics {
+        processed: 0, failed: 0
+    }
 
     let first = parser_a.parse_document("{\"name\":\"Ada\",\"active\":true}")
     let second = parser_b.parse_document("[1,2,3,4]")

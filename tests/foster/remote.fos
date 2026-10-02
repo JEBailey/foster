@@ -31,14 +31,18 @@ impl Inspector {
 }
 
 test "remote objects process messages in FIFO order" {
-    let counter = remote Counter { value: 0 }
+    let counter = remote Counter {
+        value: 0
+    }
     let first = counter.increment(2)
     let second = counter.increment(3)
     assert((await first).unwrap_or(0) + (await second).unwrap_or(0) == 7)
 }
 
 test "persistent remote read loans observe owner mutation" {
-    let counter = Counter { value: 0 }
+    let counter = Counter {
+        value: 0
+    }
     let reader = remote ref counter
     let before = (await reader.snapshot()).unwrap_or(0)
     counter.assign(42)
@@ -47,7 +51,9 @@ test "persistent remote read loans observe owner mutation" {
 }
 
 test "remote borrowed arguments remain live read-only loans" {
-    let counter = Counter { value: 0 }
+    let counter = Counter {
+        value: 0
+    }
     let inspector = remote Inspector {}
     let before = (await inspector.inspect(counter)).unwrap_or(0)
     counter.assign(42)

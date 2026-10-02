@@ -314,7 +314,11 @@ fn initializes_address_taken_pattern_binding_homes() {
     let compilation = foster::compile(
         r#"
 import core.list
+import core.list.*
+import static core.list.*
 import core.option
+import core.option.*
+import static core.option.*
 enum Tree = Empty | Array(List<Int>)
 func total(tree: Tree) -> Int {
     branch tree {
@@ -389,9 +393,17 @@ fn lowers_native_lists_and_core_list_algorithms() {
     let compilation = foster::compile(
         r#"
 import core.list
+import core.list.*
+import static core.list.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.float
+import core.float.*
+import static core.float.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 
 func main() -> Int {
     let values = [10, 0]
@@ -438,9 +450,17 @@ fn lowers_string_algorithms_and_descriptor_backed_bytes() {
     let compilation = foster::compile(
         r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.string
+import core.string.*
+import static core.string.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func main() -> String {
     let encoded = "Foster λ".bytes
@@ -479,8 +499,14 @@ fn lowers_foster_written_byte_buffers_over_native_lists() {
     let compilation = foster::compile(
         r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.bytes.buffer
+import core.bytes.buffer.*
+import static core.bytes.buffer.*
 
 func main() -> String {
     let output = ByteBuffer.empty()
@@ -731,13 +757,29 @@ fn lowers_native_path_environment_filesystem_clock_and_entropy_services() {
     let compilation = foster::compile(
         r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.env as environment
+import std.env.*
+import static std.env.*
 import std.fs as filesystem
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 import std.path as paths
+import std.path.*
+import static std.path.*
 import std.random
+import std.random.*
+import static std.random.*
 import std.time
+import std.time.*
+import static std.time.*
 
 func require_unit(outcome: Result<(), IoError>) -> () {
     branch outcome {
@@ -837,7 +879,11 @@ fn lowers_native_tcp_resource_handles() {
     let source = format!(
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 
 func finish(connection: Connection, text: String) -> String [consume connection, consume text] {{
     (move connection).close()
@@ -908,6 +954,8 @@ fn lowers_native_remote_workers_and_blocking_await() {
     let compilation = foster::compile(
         r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Counter = {
     value: Int

@@ -4,10 +4,16 @@
 //! Hex tokens encode a requested byte count; URL-safe tokens use a requested character
 //! count. These lengths have different meanings and are documented per operation.
 
-import core.bytes
-import core.result
-import core.string
+import core.bytes.Bytes
+
+import core.result.Result
+
+import core.string.String
+
 import std.random
+import std.random.RandomError
+import std.random.RandomSource
+import std.random.SystemRandom
 
 /// A fallible source of bytes drawn from external entropy.
 pub type EntropySource = {

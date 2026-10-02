@@ -730,7 +730,11 @@ mod tests {
             root.join("main.fos"),
             r#"
 import first as one
+import first.*
+import static first.*
 import second as two
+import second.*
+import static second.*
 pub type Holder = {
     pub first: one::Box<one::Item>
     pub second: two::Item
@@ -969,7 +973,7 @@ func main() -> Int { 0 }
     #[test]
     fn site_omits_embedded_modules() {
         let compilation = crate::compile(
-            "import core.option\n\nfunc main() -> Option<Int> { Option.Some(42) }\n",
+            "import core.option.*\n\nfunc main() -> Option<Int> { Option.Some(42) }\n",
         )
         .unwrap();
         let site = site(&compilation).unwrap();

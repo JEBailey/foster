@@ -30,6 +30,8 @@ fn string_if_empty_on_both_backends() {
         "string-if-empty",
         r#"
 import core.string
+import core.string.*
+import static core.string.*
 type Text = { value: String }
 func main() -> Int {
     let source = Text { value: "fallback" }
@@ -55,6 +57,8 @@ fn string_strip_prefix_on_both_backends() {
         "string-strip-prefix",
         r#"
 import core.string
+import core.string.*
+import static core.string.*
 func main() -> Int {
     let text = "const const Int"
     let prefix = "const "
@@ -91,7 +95,11 @@ fn if_statements_cleanup_and_propagate_on_both_backends() {
         "if-statement-cleanup",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.result
+import core.result.*
+import static core.result.*
 type Resource = & Drop & { id: Int }
 impl Resource { func deinit(self) -> () { println(self.id) } }
 func take(value: Resource) -> () [consume value] { () }
@@ -154,6 +162,8 @@ fn deferred_initialization_failure_cleanup_on_both_backends() {
         "deferred-initialization-failure",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Resource = & Drop & { id: Int }
 impl Resource { func deinit(self) -> () { println(self.id) } }
 type Pair = & Drop & { first: Resource, second: Resource }
@@ -212,6 +222,8 @@ fn named_scopes_cleanup_on_failure_on_both_backends() {
         "named-scopes-failure",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Resource = & Drop & { id: Int }
 impl Resource { func deinit(self) -> () { println(self.id) } }
 func main() {
@@ -259,7 +271,11 @@ fn type_branch_queries_borrow_without_copying_or_extra_cleanup() {
         "type-branch-cleanup",
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = { value: Int }
 impl Item {
     func copy(self) -> self { println(1)
@@ -298,8 +314,14 @@ fn map_borrow_supports_noncopyable_values() {
     ] {
         let source = r#"
 import core.option
+import core.option.*
+import static core.option.*
 import std.collections.map
+import std.collections.map.*
+import static std.collections.map.*
 import std.collections.hash_map
+import std.collections.hash_map.*
+import static std.collections.hash_map.*
 type Resource = { value: Int }
 func main() -> Int {
     let values = __MAP__.put(1, Resource { value: 42 })
@@ -322,10 +344,20 @@ fn map_access_preserves_originals_and_releases_removed_values_once() {
         "map-access-cleanup",
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.option
+import core.option.*
+import static core.option.*
 import std.collections.map
+import std.collections.map.*
+import static std.collections.map.*
 import std.collections.hash_map
+import std.collections.hash_map.*
+import static std.collections.hash_map.*
 type Item = & Copy & Drop & { id: Int }
 impl Item {
     func copy(self) -> self { Item { id: self.id + 10 } }
@@ -446,6 +478,8 @@ fn concrete_intersection_arguments_preserve_borrow_and_consume_cleanup() {
         "concrete-intersection-ownership",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type A = { pub func first(self) -> Int }
 type B = { pub func second(self) -> Int }
 type Item = & A & B & Drop & { value: Int }
@@ -584,6 +618,8 @@ fn library_integer_storage_preserves_scalar_behavior() {
         "integer-storage",
         r#"
 import core.int
+import core.int.*
+import static core.int.*
 type Pair = { left: Int, right: Int }
 func identity<T>(value: T) -> T [consume value] { value }
 func copied(value: int::Int) -> int::Int { value.copy() }
@@ -735,9 +771,17 @@ fn builtin_sequence_tail_calls_preserve_concrete_types() {
         "concrete-sequence-tails",
         r#"
 import core.string
+import core.string.*
+import static core.string.*
 import core.list
+import core.list.*
+import static core.list.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import std.sequence
+import std.sequence.*
+import static std.sequence.*
 
 func tail<T>(values: Sequence<T>) -> Sequence<T> { values.rest() }
 func main() -> Int {
@@ -932,8 +976,14 @@ fn owned_list_reads_return_copy_or_a_typed_error_in_both_backends() {
         "list-at-result",
         r#"
 import core.list
+import core.list.*
+import static core.list.*
 import core.copy
+import core.copy.*
+import static core.copy.*
 import core.result
+import core.result.*
+import static core.result.*
 type Plain = { value: Int }
 type Item = & Copy & { value: Int }
 impl Item {
@@ -968,7 +1018,11 @@ fn destructors_follow_ownership_and_run_before_fields() {
         "deinit",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Tracked = & Drop & Copy & { id: Int }
 impl Tracked {
     func copy(self) -> self { Tracked { id: self.id + 10 } }
@@ -1015,7 +1069,11 @@ fn checked_arithmetic_failures_clean_staged_arguments_without_invoking_callee() 
     ] {
         let source = r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 type Item = & Drop & { id: Int }
 impl Item {
     func deinit(self) -> () { println(self.id) }
@@ -1115,6 +1173,8 @@ fn destructors_handle_replacement_branches_and_loop_exits() {
         "deinit-control-flow",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 func finish_value(value: Item) -> () [consume value] { println(60) }
@@ -1153,9 +1213,17 @@ fn list_at_copy_results_have_independent_cleanup() {
         "deinit-list-copy",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.copy
+import core.copy.*
+import static core.copy.*
 import core.list
+import core.list.*
+import static core.list.*
 import core.result
+import core.result.*
+import static core.result.*
 type Item = & Drop & Copy & { id: Int }
 impl Item {
     func copy(self) -> self { Item { id: self.id + 10 } }
@@ -1189,6 +1257,8 @@ fn enum_destructors_observe_the_live_payload() {
         "deinit-enum",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 enum Choice = Value(Int) | Empty & Drop
 impl Choice {
     func deinit(self) -> () {
@@ -1244,7 +1314,11 @@ fn tcp_connections_close_on_return_try_failure_and_runtime_failure() {
     let source = format!(
         r#"
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 import core.result
+import core.result.*
+import static core.result.*
 type Worker = {{}}
 func fail() -> Result<(), NetworkError> {{
     Result.Error(NetworkError {{ operation: "test", message: "expected" }})
@@ -1381,7 +1455,11 @@ fn tcp_listeners_release_the_port_and_borrows_preserve_the_owner() {
         &format!(
             r#"
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 import core.result
+import core.result.*
+import static core.result.*
 func borrowed(listener: Listener) -> Bool {{
     assert(listener.location.port() == {port})
     tcp::listen("127.0.0.1", {port}).error?()
@@ -1466,8 +1544,14 @@ fn collection_cursors_release_visited_and_unvisited_values_on_failure() {
         "cursor-cleanup",
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Held = & Drop & { id: Int }
 impl Held { func deinit(self) -> () { println(self.id) } }
 func main() -> Int {
@@ -1491,11 +1575,23 @@ fn collection_cursors_preserve_snapshots_and_decode_utf8() {
         "collection-cursors",
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import std.iter.map
+import std.iter.map.*
+import static std.iter.map.*
 import std.iter.take
+import std.iter.take.*
+import static std.iter.take.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.string
+import core.string.*
+import static core.string.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 func saved() -> Iterator<String> {
     let source = ["first", "second"]
     source.iterator()
@@ -1546,13 +1642,29 @@ fn generic_sequence_iterators_dispatch_all_builtin_representations() {
         "sequence-iterators",
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 import std.iter.map
+import std.iter.map.*
+import static std.iter.map.*
 import std.iter.filter
+import std.iter.filter.*
+import static std.iter.filter.*
 import std.iter.skip
+import std.iter.skip.*
+import static std.iter.skip.*
 import std.iter.take
+import std.iter.take.*
+import static std.iter.take.*
 func iterator<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
     Iterator.from_sequence(move values)
 }
@@ -1598,8 +1710,14 @@ fn generic_sequence_user_accessors_can_change_tail_representation() {
         "sequence-user-accessors",
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import std.sequence
+import std.sequence.*
+import static std.sequence.*
 import core.string
+import core.string.*
+import static core.string.*
 type TextSlice = & Sequence<String> & { text: String }
 impl TextSlice {
     func empty?(self) -> Bool { self.text.empty? }
@@ -1633,8 +1751,14 @@ fn generic_sequence_failure_releases_the_callers_values() {
         "sequence-failure",
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import std.iter.map
+import std.iter.map.*
+import static std.iter.map.*
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Held = & Drop & { text: String }
 impl Held { func deinit(self) -> () { println(self.text) } }
 func main() -> Int {
@@ -1658,6 +1782,8 @@ fn aggregates_compare_by_value() {
         "equality",
         r#"
 import core.list
+import core.list.*
+import static core.list.*
 type Point = { x: Int, label: String }
 enum Choice = Number(Int) | Text(String) | Empty
 func empty() -> List<Int> { [] }
@@ -1914,6 +2040,8 @@ fn ownership_and_remote_ordering_agree() {
         "ownership-remote",
         r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Counter = { value: Int }
 impl Counter {
@@ -1966,6 +2094,8 @@ fn generic_remote_calls_preserve_logical_types() {
         "remote-generics",
         r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 type Echo = {}
 impl Echo {
@@ -2024,7 +2154,11 @@ fn remote_failures_are_contained_sticky_and_typed() {
         "remote-failure",
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 type Worker = { value: Int }
 impl Worker {
     func good(self) -> Int { self.value }
@@ -2079,8 +2213,14 @@ fn completed_remote_outcomes_outlive_the_owner_and_receiver_cleanup() {
         "remote-completed",
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Held = & Drop & {}
 impl Held { func deinit(self) -> () { println("closed") } }
 type Worker = { held: Held }
@@ -2102,7 +2242,11 @@ fn vm_remote_shutdown_resolves_pending_futures_without_draining() {
     let compilation = foster::compile(
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 type Worker = {}
 impl Worker {
     func barrier(self) -> Int { 0 }
@@ -2197,9 +2341,15 @@ fn remote_runtime_failures_stop_nested_execution() {
         let source = format!(
             r#"
 import core.result as outcomes
+import core.result.*
+import static core.result.*
 
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.float
+import core.float.*
+import static core.float.*
 func nested(value: Int) -> {result_type} {{ {expression} }}
 type Worker = {{}}
 impl Worker {{
@@ -2226,7 +2376,11 @@ fn borrowed_remote_failure_releases_access_and_remains_terminal() {
         "borrowed-remote-failure",
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 type Worker = { value: Int }
 impl Worker {
     func check(self) -> Int {
@@ -2253,7 +2407,11 @@ fn overloaded_remote_methods_deliver_typed_outcomes() {
         "overloaded-remote",
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 type Worker = {}
 impl Worker {
     func get(self, value: Int) -> Int { value }
@@ -2276,6 +2434,8 @@ func main() -> Bool {
 fn destructors_continue_after_failure_and_preserve_the_original_error() {
     let declarations = r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & { id: Int }
 impl Item {
     func deinit(self) -> () {
@@ -2309,6 +2469,8 @@ fn projected_moves_transfer_cleanup_to_the_new_owner() {
         "deinit-projected-move",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 type Box = { child: Item }
@@ -2333,7 +2495,11 @@ fn remote_consumed_arguments_run_deinit_before_completion() {
         "deinit-remote",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.result
+import core.result.*
+import static core.result.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 type Worker = { id: Int }
@@ -2360,6 +2526,8 @@ fn destructor_temporaries_survive_the_full_expression() {
         "deinit-temporaries",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 func inspect(value: Item) -> Int { println(10)
@@ -2394,7 +2562,7 @@ fn invalid_destructors_and_partial_moves_are_rejected() {
             "cannot move a field",
         ),
         (
-            "import core.copy\ntype Item = & Copy & { id: Int }\nimpl Item { func copy(self) -> Int { 1 } }\nfunc require_copy(value: Copy) -> () {}\nfunc main() -> () { require_copy(Item { id: 1 }) }",
+            "import core.copy\nimport core.copy.*\nimport static core.copy.*\ntype Item = & Copy & { id: Int }\nimpl Item { func copy(self) -> Int { 1 } }\nfunc require_copy(value: Copy) -> () {}\nfunc main() -> () { require_copy(Item { id: 1 }) }",
             "type `Int` cannot adapt to `Item`",
         ),
     ] {
@@ -2412,7 +2580,11 @@ fn empty_resources_and_closure_environments_keep_their_drop_identity() {
         "deinit-empty-closure",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Empty = & Drop & Copy & {}
 impl Empty {
     func copy(self) -> self { Empty {} }
@@ -2545,8 +2717,14 @@ fn nested_indexed_writes_preserve_iterator_snapshots() {
         "nested-index-snapshot",
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.string
+import core.string.*
+import static core.string.*
 type Item = { text: String, number: Int }
 impl Item { func copy(self) -> self { Item { text: self.text.copy(), number: self.number } } }
 func rename(items: ref[items] List<Item>) -> () [mut items] {
@@ -2598,6 +2776,8 @@ fn nested_indexed_writes_replace_owned_fields_and_drop_them_once() {
         "nested-index-drop",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Resource = & Drop & { id: Int }
 impl Resource { func deinit(self) -> () { println(self.id) } }
 type Item = { resource: Resource }
@@ -2735,8 +2915,14 @@ fn explicit_library_contracts_dispatch_on_both_backends() {
         "explicit-library-contracts",
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.bytes.buffer
+import core.bytes.buffer.*
+import static core.bytes.buffer.*
 type ListView = & List<Int> & {}
 type TextView = & String & {}
 type BufferView = & ByteBuffer & {}
@@ -2806,6 +2992,8 @@ fn selected_try_preserves_owned_failure_cleanup() {
         "selected-try-cleanup",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 enum Input = Match(Int) | Failed(Item)
@@ -2850,7 +3038,11 @@ fn never_panic_unwinds_owners_and_is_not_caught_by_try() {
         "never-cleanup",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 import core.result
+import core.result.*
+import static core.result.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 func fail(item: Item) -> Never [consume item] {
@@ -2876,6 +3068,8 @@ fn never_panic_cleans_arguments_before_invocation() {
         "never-staged-cleanup",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = & Drop & { id: Int }
 impl Item { func deinit(self) -> () { println(self.id) } }
 func take(item: Item, value: Int) -> Int [consume item] { println(99)
@@ -2911,6 +3105,8 @@ fn record_destructuring_transfers_cleanup_once() {
         "record-destructuring-cleanup",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = { value: Int }
 impl Item {
     func deinit(self) -> () { println(self.value) }
@@ -2933,6 +3129,8 @@ fn record_destructuring_from_a_projected_source_cleans_up_once() {
         "record-destructuring-projection",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = { value: Int }
 impl Item { func deinit(self) -> () { println(self.value) } }
 type Pair = { first: Item, second: Item }
@@ -2954,6 +3152,8 @@ fn record_branch_bindings_do_not_duplicate_cleanup() {
         "record-pattern-cleanup",
         r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = { value: Int }
 impl Item { func deinit(self) -> () { println(9) } }
 type Pair = { first: Item, second: Item }

@@ -1,7 +1,7 @@
 # Foster semantic specification
 
 Status: **draft normative specification**, revision 10, 2026-09-25.
-Baseline: **language version 19, ownership-model version 5**.
+Baseline: **language version 20, ownership-model version 5**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -53,8 +53,16 @@ decoding and boundary-line handling follow [the string syntax](language-design.m
 **S-03 — Static meaning.** Names, types, overload choices, ownership modes, and effect contracts
 must be checked before ordinary execution. `let` introduces a local; assignment does not declare
 one. Declarations are private unless made public. Module qualification uses `::`; fields, methods,
-associated functions, and enum cases use `.`. Imports do not run application initialization code.
+associated functions, and enum cases use `.`. Imports do not run application initialization code. Module imports bind namespaces only.
+Ordinary item imports expose public types; static imports expose public constants and functions
+without `self`. Wildcards select immediate members and preserve declaration identity.
+In comma-separated lists, newlines at opening, separator, and closing boundaries have the
+same meaning as spaces. Required commas remain separators, and newlines inside nested
+statement blocks retain their statement-separating meaning.
 Module constants have compile-time initializers; cyclic constant dependencies are rejected.
+For manifest projects, `package.entry` selects the file supplying the package-root declarations.
+The dependency key names that root when imported, independently of the selected filename.
+Selecting a library entry does not execute its declarations or imply an initialization function.
 
 Methods and associated functions are declared in module-scope `impl Type { ... }` blocks.
 The block supplies the member owner and optional shared type parameters. An unannotated first

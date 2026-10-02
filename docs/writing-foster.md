@@ -10,10 +10,10 @@ complete program that returns `42`, checked by
 
 Requirements on implementation parameters are structural. Here `T` must provide the
 method required by `Copy`; the copied result still has the original concrete type `T`.
-Import the requirement's module, and join multiple requirements with `&`.
+Import the requirement's type, and join multiple requirements with `&`.
 
 ```foster
-import core.copy
+import core.copy.Copy
 
 type Box<T> = { value: T }
 
@@ -28,7 +28,7 @@ Generic functions can also declare structural bounds while retaining the concret
 argument type:
 
 ```foster
-import core.copy
+import core.copy.Copy
 
 func duplicate<T & Copy>(value: T) -> T [read value] { value.copy() }
 func main() -> Int { duplicate(42) }
@@ -71,10 +71,32 @@ The compiler embeds the library: use `cargo run --bin foster -- ...` from this
 checkout when checking changes to library source or the language itself.
 
 Source lives in `.fos` files. A project manifest can select its source directory
-with `[package]`, `name`, and `source` (normally `src`). Filesystem paths define
+with `[package]`, `name`, and `source` (normally `src`). `package.entry` selects the
+root filename: normally `main.fos` for an executable, explicitly `lib.fos` for a library.
+A dependency's selected entry is imported using its dependency key, without a `.main`
+or `.lib` suffix. The entry filename is relative to the source directory. Filesystem paths define
 modules. `import std.net.tcp` imports that module; `tcp::connect(...)` calls a
-module function. Importing a module also exposes its public names directly.
+module function. A module import binds only its namespace.
+Use `import core.result.Result` for a named type, `import core.result.*` for public types,
+and `import static std.fs.*` for public functions and constants. Named imports can use `as`.
 Import the modules whose APIs you use; there is no general library prelude.
+
+Ordinary imports bring in types; static imports bring in functions without `self` and
+constants. Aliases change the local name, while keeping the original declaration's identity:
+
+```foster
+import std.path.Path as FilePath
+import static std.path.Path.from as path
+
+func classify(value: FilePath) -> Int {
+    branch {
+        value.as_string() == "answer" -> 42
+        _ -> 0
+    }
+}
+
+func main() -> Int { classify(path("answer")) }
+```
 
 ## Multiline text and substitution
 
@@ -87,7 +109,12 @@ left to right, followed by `as_string()` on each result.
 
 ```foster
 import core.string
+import core.string.String
+
 import core.int
+import core.int.Int
+import core.int.IntConversionError
+
 
 func main() -> Int {
     let name = "Ada"
@@ -104,6 +131,25 @@ The answer is %answer%.
 ```
 
 ## Variables, records, methods, and control flow
+
+Comma-separated lists can span lines. Newlines are whitespace at the list boundaries:
+after the opening delimiter, around commas, and before the closing delimiter. The same
+rule applies to parameter lists, list literals, generic lists, captures, and patterns.
+Keep commas between items; newlines within statement blocks still separate statements.
+
+```foster
+func sum(
+    left: Int,
+    right: Int
+) -> Int { left + right }
+
+func main() -> Int {
+    sum(
+        20,
+        22
+    )
+}
+```
 
 `let` introduces a mutable binding. Assign with `=` afterward; do not redeclare
 the same binding to update it. Local types are inferred from expressions.
@@ -269,6 +315,8 @@ Use `Option.Some(value)` / `Option.None` for absence and `Result.Ok(value)` /
 
 ```foster
 import core.result
+import core.result.Result
+
 
 enum InputError = Negative
 
@@ -346,6 +394,8 @@ An ordinary mutable method call does not require manually constructing a referen
 
 ```foster
 import core.string
+import core.string.String
+
 
 type Counter = { value: Int }
 
@@ -384,8 +434,10 @@ Use `is Copy` to test copyability in generic code. The test only reads the value
 the successful arm can invoke `.copy()` and the fallback must handle failure.
 
 ```foster
-import core.copy
+import core.copy.Copy
 import core.result
+import core.result.Result
+
 
 enum CopyError = NotCopyable
 
@@ -436,6 +488,8 @@ across targets, so compare approximate results using a tolerance.
 ```foster
 import core.float
 
+
+
 func main() -> Int {
     let x = 3.0
     let y = 4.0
@@ -456,8 +510,15 @@ binary32 methods for GPU data. These operations preserve their receiver.
 
 ```foster
 import core.int
+import core.int.Int
+import core.int.IntConversionError
+
 import core.float
+
+
 import core.bytes
+
+
 
 func main() -> Int {
     let value = 42
@@ -537,8 +598,15 @@ Rounding methods return Float, so choose rounding before converting when needed.
 
 ```foster
 import core.float
+
+
 import core.int
+import core.int.Int
+import core.int.IntConversionError
+
 import core.result
+import core.result.Result
+
 
 func whole(value: Float) -> Result<Int, IntConversionError> {
     let integer = try Int.from(value.floor())

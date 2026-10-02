@@ -1,7 +1,10 @@
-import std.collections
-import core.option
-import core.range
-import std.collections.set
+import std.collections.Collection
+
+import core.option.Option
+
+import core.range.Range
+
+import std.collections.set.Set
 
 func size<T>(values: Collection<T>) -> Int {
     values.length()

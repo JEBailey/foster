@@ -296,7 +296,15 @@ fn declaration_key(hir: &hir::PackageHir) -> String {
     }
     let mut parts = DeclarationText(String::new());
     for (_, module) in hir.modules.iter() {
-        parts.push(format_args!("{:?}", (&module.name, &module.imports)));
+        parts.push(format_args!(
+            "{:?}",
+            (
+                &module.name,
+                &module.imports,
+                &module.imported_types,
+                &module.imported_values
+            )
+        ));
     }
     for (_, record) in hir.records.iter() {
         let mut value = record.clone();

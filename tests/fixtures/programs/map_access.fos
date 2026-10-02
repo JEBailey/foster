@@ -1,20 +1,41 @@
 import core.option
-import core.copy
-import core.list
-import std.collections.map
-import std.collections.hash_map
+import core.option.Option
 
-type Payload = { pub values: List<Int> }
-impl Payload {
-    func copy(self: Payload) -> self { Payload { values: self.values.slice(0, self.values.length) } }
+import core.copy
+
+import static core.copy.*
+import core.list
+import core.list.List
+
+import std.collections.map
+import std.collections.map.Map
+
+import std.collections.hash_map
+import std.collections.hash_map.HashMap
+
+type Payload = {
+    pub values: List<Int>
 }
-type Owned = { pub value: Int }
+impl Payload {
+    func copy(self: Payload) -> self {
+        Payload {
+            values: self.values.slice(0, self.values.length)
+        }
+    }
+}
+type Owned = {
+    pub value: Int
+}
 
 func exercise(values: Map<Int, Payload>) -> () [reshape values] {
     let borrowed = values.borrow(1)
     branch borrowed {
-        Option.Some(item) -> { item.values.push(99) }
-        Option.None -> { assert(false, "missing borrowed value") }
+        Option.Some(item) -> {
+            item.values.push(99)
+        }
+        Option.None -> {
+            assert(false, "missing borrowed value")
+        }
     }
     branch values.borrow(1) {
         Option.Some(item) -> {
@@ -23,13 +44,19 @@ func exercise(values: Map<Int, Payload>) -> () [reshape values] {
             copied.values.push(100)
             assert(item.values == [42, 99], "an explicit copy must be independent")
         }
-        Option.None -> { assert(false) }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(values.length() == 2)
     assert(values.borrow(99) == Option.None)
     branch values.remove(1) {
-        Option.Some(item) -> { assert(item.values == [42, 99]) }
-        Option.None -> { assert(false) }
+        Option.Some(item) -> {
+            assert(item.values == [42, 99])
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(values.length() == 1)
     assert(values.contains_key?(2))
@@ -41,17 +68,29 @@ func exercise(values: Map<Int, Payload>) -> () [reshape values] {
 
 func remove_owned(values: Map<Int, Owned>) -> () [reshape values] {
     branch values.borrow(1) {
-        Option.Some(item) -> { item.value = 43 }
-        Option.None -> { assert(false) }
+        Option.Some(item) -> {
+            item.value = 43
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     branch values.remove(1) {
-        Option.Some(item) -> { assert(item.value == 43, "map noncopyable mutation") }
-        Option.None -> { assert(false) }
+        Option.Some(item) -> {
+            assert(item.value == 43, "map noncopyable mutation")
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(values.length() == 1)
     branch values.remove(2) {
-        Option.Some(item) -> { assert(item.value == 7) }
-        Option.None -> { assert(false) }
+        Option.Some(item) -> {
+            assert(item.value == 7)
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(values.empty?())
     assert(values.remove(2) == Option.None)
@@ -61,32 +100,66 @@ func remove_owned(values: Map<Int, Owned>) -> () [reshape values] {
 func main() -> Int {
     let numbers = [1]
     branch numbers.borrow(0) {
-        Option.Some(value) -> { value = 42 }
-        Option.None -> { assert(false) }
+        Option.Some(value) -> {
+            value = 42
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(numbers[0] == 42, "borrowed scalar assignment")
-    let items = [Owned { value: 1 }, Owned { value: 7 }, Owned { value: 3 }]
+    let items = [Owned {
+        value: 1
+    }, Owned {
+        value: 7
+    }, Owned {
+        value: 3
+    }]
     assert(items.borrow(-1) == Option.None)
     assert(items.borrow(3) == Option.None)
     branch items.borrow(1) {
-        Option.Some(item) -> { item.value = 42 }
-        Option.None -> { assert(false) }
+        Option.Some(item) -> {
+            item.value = 42
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(items[1].value == 42, "list borrow mutation")
     assert(items.remove(-1) == Option.None)
     assert(items.remove(3) == Option.None)
     branch items.remove(1) {
-        Option.Some(item) -> { assert(item.value == 42, "list removed value") }
-        Option.None -> { assert(false) }
+        Option.Some(item) -> {
+            assert(item.value == 42, "list removed value")
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(items.length == 2, "list remove length")
     assert(items[0].value == 1, "list remove first")
     assert(items[1].value == 3, "list remove last")
-    let ordered = Map.empty().put(1, Payload { values: [42] }).put(2, Payload { values: [7] })
+    let ordered = Map.empty().put(1, Payload {
+        values: [42]
+    }).put(2, Payload {
+        values: [7]
+    })
     exercise(ordered)
-    let hashed = HashMap.empty((key: Int) -> 0).put(1, Payload { values: [42] }).put(2, Payload { values: [7] })
+    let hashed = HashMap.empty((key: Int) -> 0).put(1, Payload {
+        values: [42]
+    }).put(2, Payload {
+        values: [7]
+    })
     exercise(hashed)
-    remove_owned(Map.empty().put(1, Owned { value: 42 }).put(2, Owned { value: 7 }))
-    remove_owned(HashMap.empty((key: Int) -> 0).put(1, Owned { value: 42 }).put(2, Owned { value: 7 }))
+    remove_owned(Map.empty().put(1, Owned {
+        value: 42
+    }).put(2, Owned {
+        value: 7
+    }))
+    remove_owned(HashMap.empty((key: Int) -> 0).put(1, Owned {
+        value: 42
+    }).put(2, Owned {
+        value: 7
+    }))
     42
 }

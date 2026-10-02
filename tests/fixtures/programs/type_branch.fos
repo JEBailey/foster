@@ -1,17 +1,38 @@
 import core.copy
+import core.copy.Copy
+import static core.copy.*
 import core.result
+import core.result.Result
+
 import core.string
+import core.string.String
+
 import core.symbol
+import core.symbol.Symbol
+
 import core.bytes.buffer
+import core.bytes.buffer.ByteBuffer
+
 import core.bytes as bytes
+import core.bytes.Bytes
+
 import core.int as integers
+import core.int.Int
 
 enum CopyError = NotCopyable
-type Item = { value: Int }
-impl Item {
-    func copy(self) -> self { Item { value: self.value } }
+type Item = {
+    value: Int
 }
-type Resource = { value: Int }
+impl Item {
+    func copy(self) -> self {
+        Item {
+            value: self.value
+        }
+    }
+}
+type Resource = {
+    value: Int
+}
 enum Status = Ready | Done
 
 func attempt<T>(value: T) -> Result<T, CopyError> [read value] {
@@ -22,18 +43,30 @@ func attempt<T>(value: T) -> Result<T, CopyError> [read value] {
 }
 
 func main() -> Int {
-    let original = Item { value: 42 }
+    let original = Item {
+        value: 42
+    }
     branch attempt(original) {
-        Result.Ok(copied) -> { assert(copied.value == 42) }
-        Result.Error(_) -> { assert(false) }
+        Result.Ok(copied) -> {
+            assert(copied.value == 42)
+        }
+        Result.Error(_) -> {
+            assert(false)
+        }
     }
     assert(original.value == 42)
     assert(attempt(42) == Result.Ok(42))
-    assert(attempt(Resource { value: 0 }) == Result.Error(CopyError.NotCopyable))
+    assert(attempt(Resource {
+        value: 0
+    }) == Result.Error(CopyError.NotCopyable))
     assert(classify(40) == 42)
     assert(classify(true) == 1)
-    assert(classify(Item { value: 41 }) == 42)
-    assert(classify(Resource { value: 41 }) == 42, "structural fields")
+    assert(classify(Item {
+        value: 41
+    }) == 42)
+    assert(classify(Resource {
+        value: 41
+    }) == 42, "structural fields")
     assert(classify(()) == 3, "unit narrowing")
     assert(classify("hello") == 5, "String narrowing")
     assert(classify(:hello) == 6, "Symbol narrowing")

@@ -911,8 +911,12 @@ fn report_project_compilation_error(
                 }
             };
             let mut source_path = candidate.source_root.clone();
-            source_path.extend(local_module.split('.'));
-            source_path.set_extension("fos");
+            if local_module == "main" {
+                source_path.push(&candidate.entry);
+            } else {
+                source_path.extend(local_module.split('.'));
+                source_path.set_extension("fos");
+            }
             if let Ok(source) = fs::read_to_string(&source_path) {
                 let diagnostic = foster::diagnostic::Diagnostic::from_source_error(&source, error);
                 if let Err(render_error) =

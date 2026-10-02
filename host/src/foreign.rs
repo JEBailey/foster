@@ -1,6 +1,6 @@
 // Shared verbatim by the VM and native runtime; keep this module std-only.
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -15,6 +15,7 @@ type Call =
     unsafe extern "C" fn(u32, *mut u8, *const u8, u64, *mut u8, u64, *mut u64, *mut *mut u8) -> i32;
 type Destroy = unsafe extern "C" fn(u32, *mut u8);
 type Close = unsafe extern "C" fn(u32, *mut u8, *mut u8) -> i64;
+type Forget = unsafe extern "C" fn(u32, *mut u8);
 
 struct Library {
     _module: Module,
@@ -23,11 +24,183 @@ struct Library {
     call: Call,
     destroy: Destroy,
     close: Close,
+    forget: Option<Forget>,
 }
 struct Resource {
     library: Rc<Library>,
     kind: u32,
     pointer: *mut u8,
+    leased: bool,
+    _parents: Vec<Rc<RefCell<Resource>>>,
+}
+
+struct ResourceLease(Rc<RefCell<Resource>>);
+impl ResourceLease {
+    fn acquire(resource: Rc<RefCell<Resource>>) -> Result<Self, String> {
+        {
+            let mut value = resource
+                .try_borrow_mut()
+                .map_err(|_| "C resource is already in use")?;
+            if value.leased || value.pointer.is_null() {
+                return Err("C resource is closed or already in use".into());
+            }
+            value.leased = true;
+        }
+        Ok(Self(resource))
+    }
+}
+impl Drop for ResourceLease {
+    fn drop(&mut self) {
+        self.0.borrow_mut().leased = false;
+    }
+}
+
+struct ResourceFrame {
+    library: Rc<Library>,
+    pointers: HashMap<i64, (u32, *mut u8)>,
+    leases: Vec<ResourceLease>,
+    parents: HashMap<i64, Rc<RefCell<Resource>>>,
+    transfers: HashSet<i64>,
+}
+thread_local! {
+    static RESOURCE_FRAMES: RefCell<Vec<ResourceFrame>> = const { RefCell::new(Vec::new()) };
+    static RESOURCE_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+struct ResourceFrameGuard;
+impl ResourceFrameGuard {
+    fn new(
+        library: Rc<Library>,
+        token: i64,
+        resource: Option<Rc<RefCell<Resource>>>,
+    ) -> Result<Self, String> {
+        let mut frame = ResourceFrame {
+            library,
+            pointers: HashMap::new(),
+            leases: Vec::new(),
+            parents: HashMap::new(),
+            transfers: HashSet::new(),
+        };
+        if let Some(resource) = resource {
+            let lease = ResourceLease::acquire(resource)?;
+            {
+                let value = lease.0.borrow();
+                frame.pointers.insert(token, (value.kind, value.pointer));
+            }
+            frame.leases.push(lease);
+        }
+        RESOURCE_FRAMES.with(|frames| frames.borrow_mut().push(frame));
+        Ok(Self)
+    }
+    fn parents(&self) -> Vec<Rc<RefCell<Resource>>> {
+        RESOURCE_FRAMES.with(|frames| {
+            frames
+                .borrow()
+                .last()
+                .unwrap()
+                .parents
+                .values()
+                .cloned()
+                .collect()
+        })
+    }
+}
+impl Drop for ResourceFrameGuard {
+    fn drop(&mut self) {
+        // Drop leases outside the frame stack borrow, allowing native destructors
+        // to make independent bridge calls while releasing retained parents.
+        let frame = RESOURCE_FRAMES.with(|frames| frames.borrow_mut().pop());
+        drop(frame);
+    }
+}
+
+unsafe extern "C" fn resolve_resource(
+    schema: u64,
+    token: i64,
+    kind: u32,
+    action: u32,
+    output: *mut *mut u8,
+) -> i32 {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if output.is_null() || action > 3 {
+            return Err("invalid C resource resolver request");
+        }
+        RESOURCE_FRAMES.with(|frames| {
+            let mut frames = frames
+                .try_borrow_mut()
+                .map_err(|_| "C resource resolver is already in use")?;
+            let frame = frames
+                .last_mut()
+                .ok_or("C resource lookup requires an active call")?;
+            if format!("{schema:016x}") != frame.library.schema {
+                return Err("C resource binding schema mismatch");
+            }
+            let resource = STATE
+                .with(|state| state.borrow().resources.get(&token).cloned())
+                .ok_or("C resource is closed or belongs to another thread")?;
+            {
+                let value = resource
+                    .try_borrow()
+                    .map_err(|_| "C resource is already in use")?;
+                if value.kind != kind
+                    || !Rc::ptr_eq(&value.library, &frame.library)
+                    || value.pointer.is_null()
+                {
+                    return Err("C resource has a different kind or bridge");
+                }
+            }
+            if !frame.pointers.contains_key(&token) {
+                let lease = ResourceLease::acquire(resource.clone())
+                    .map_err(|_| "C resource is already in use")?;
+                let value = resource.borrow();
+                frame.pointers.insert(token, (value.kind, value.pointer));
+                frame.leases.push(lease);
+            }
+            let pointer = frame.pointers[&token].1;
+            if action == 1 {
+                if frame.transfers.contains(&token) {
+                    return Err("C resource cannot be both retained and transferred");
+                }
+                frame.parents.insert(token, resource.clone());
+            } else if action == 3 {
+                if Rc::strong_count(&resource) > 3
+                    || frame.parents.contains_key(&token)
+                    || !frame.transfers.insert(token)
+                {
+                    return Err("C resource is retained or transferred more than once");
+                }
+                if frame.library.forget.is_none() {
+                    return Err("C bridge does not support ownership transfer");
+                }
+                // The consumed owner may itself retain borrowed native backing.
+                // Keep its tombstone as a parent of the result so that backing
+                // outlives the newly adopted native value as well.
+                frame.parents.insert(token, resource.clone());
+            } else if action == 2 {
+                if !frame.transfers.remove(&token) {
+                    return Err("C resource ownership transfer was not checked");
+                }
+                let forget = frame
+                    .library
+                    .forget
+                    .ok_or("C bridge does not support ownership transfer")?;
+                unsafe { forget(kind, pointer) };
+                resource.borrow_mut().pointer = std::ptr::null_mut();
+                // Keep a tombstone until the consumed Foster owner runs deinit.
+                // Its ordinary release removes the entry without destroying the
+                // native value now owned by the constructor's result.
+            }
+            unsafe { *output = pointer };
+            Ok(())
+        })
+    }));
+    match result {
+        Ok(Ok(())) => 0,
+        Ok(Err(message)) => {
+            RESOURCE_ERROR.with(|error| *error.borrow_mut() = Some(message.to_owned()));
+            2
+        }
+        Err(_) => 2,
+    }
 }
 impl Drop for Resource {
     fn drop(&mut self) {
@@ -167,16 +340,9 @@ pub fn exchange(
             };
             Ok::<_, String>((library, state.resources.get(&token).cloned()))
         })?;
-        // Never hold the registry across C: a callback may call another bridge.
-        // A receiver remains exclusively leased until its native call returns.
-        let resource_lease = resource
-            .as_ref()
-            .map(|resource| {
-                resource
-                    .try_borrow_mut()
-                    .map_err(|_| "C resource is already in use")
-            })
-            .transpose()?;
+        // Keep every native argument leased across callbacks without holding the
+        // registry or a RefCell borrow across C. Nested calls get their own frame.
+        let resource_frame = ResourceFrameGuard::new(library.clone(), token, resource.clone())?;
         if token == 0 && schema != library.schema {
             return Err(
                 "C bridge binding schema mismatch; rebuild the bindings and program together"
@@ -192,7 +358,7 @@ pub fn exchange(
         let pointer = match (mode, token) {
             (1 | 2, 0) => std::ptr::null_mut(),
             (3, _) if token != 0 => {
-                let resource = resource_lease.as_ref().ok_or("C resource is closed")?;
+                let resource = resource.as_ref().ok_or("C resource is closed")?.borrow();
                 if resource.kind != kind {
                     return Err("C operation requires a different resource type".into());
                 }
@@ -212,6 +378,7 @@ pub fn exchange(
         ];
         let mut length = 0;
         let mut created = std::ptr::null_mut();
+        RESOURCE_ERROR.with(|error| error.borrow_mut().take());
         let status = unsafe {
             (library.call)(
                 operation,
@@ -230,11 +397,16 @@ pub fn exchange(
                 library: library.clone(),
                 kind,
                 pointer: created,
+                leased: false,
+                _parents: resource_frame.parents(),
             })
         } else {
             None
         };
         if status != 0 {
+            if let Some(message) = RESOURCE_ERROR.with(|error| error.borrow_mut().take()) {
+                return Err(message);
+            }
             return Err(format!("C bridge operation {operation} failed ({status})"));
         }
         if length > output.len() as u64 {
@@ -266,9 +438,18 @@ pub fn close(token: i64) -> String {
         let resource = STATE
             .with(|state| state.borrow().resources.get(&token).cloned())
             .ok_or("C resource is closed or belongs to another thread")?;
+        if Rc::strong_count(&resource) > 2 {
+            return Err("C resource is in use or retained by another owner".into());
+        }
         let mut resource = resource
             .try_borrow_mut()
             .map_err(|_| "C resource is already in use")?;
+        if resource.leased {
+            return Err("C resource is already in use".into());
+        }
+        if resource.pointer.is_null() {
+            return Err("C resource ownership has been transferred".into());
+        }
         let mut consumed = 0;
         let status =
             unsafe { (resource.library.close)(resource.kind, resource.pointer, &mut consumed) };
@@ -360,11 +541,13 @@ pub fn release(token: i64) -> Result<(), String> {
     let resource = STATE
         .with(|state| state.borrow().resources.get(&token).cloned())
         .ok_or("C resource is closed or belongs to another thread")?;
-    drop(
-        resource
-            .try_borrow_mut()
-            .map_err(|_| "C resource is already in use")?,
-    );
+    if resource
+        .try_borrow_mut()
+        .map_err(|_| "C resource is already in use")?
+        .leased
+    {
+        return Err("C resource is already in use".into());
+    }
     STATE.with(|state| state.borrow_mut().resources.remove(&token));
     drop(resource);
     Ok(())
@@ -388,6 +571,14 @@ impl Library {
                     return Err("C callback ABI mismatch".into());
                 }
             }
+            if let Ok(initialize) = module.symbol(b"foster_c_resources_init\0") {
+                type Resolve = unsafe extern "C" fn(u64, i64, u32, u32, *mut *mut u8) -> i32;
+                let initialize: unsafe extern "C" fn(u64, Resolve) -> i32 =
+                    std::mem::transmute(initialize);
+                if initialize(1, resolve_resource) != 0 {
+                    return Err("C resource argument ABI mismatch".into());
+                }
+            }
             let schema: unsafe extern "C" fn() -> u64 =
                 std::mem::transmute(module.symbol(b"foster_c_schema\0")?);
             Ok(Self {
@@ -396,6 +587,10 @@ impl Library {
                 call: std::mem::transmute(module.symbol(b"foster_c_call\0")?),
                 destroy: std::mem::transmute(module.symbol(b"foster_c_destroy\0")?),
                 close: std::mem::transmute(module.symbol(b"foster_c_close\0")?),
+                forget: module
+                    .symbol(b"foster_c_forget\0")
+                    .ok()
+                    .map(|symbol| std::mem::transmute(symbol)),
                 _module: module,
             })
         }

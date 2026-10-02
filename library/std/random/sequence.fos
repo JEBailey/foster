@@ -4,11 +4,18 @@
 //! operating-system randomness. Operations return `RandomError` for invalid requests
 //! or source failures; see individual functions for empty-input behavior.
 
-import core.list
-import core.option
-import core.result
+import core.list.List
+
+import core.option.Option
+
+import core.result.Result
+
 import std.random
-import std.random.generator
+import std.random.RandomError
+import std.random.RandomSource
+import std.random.SystemRandom
+
+import std.random.generator.LehmerRandom
 
 /// Chooses one list element with `source`, returning `None` for an empty list.
 pub func choose_with<T>(source: RandomSource, values: List<T>) -> Result<Option<T>, RandomError> [mut source] {

@@ -7,16 +7,26 @@
 //! `stringify` borrows its tree and emits compact JSON; `pretty` uses two spaces.
 //! Both parsing and serialization default to at most 128 nested containers.
 
-import core.copy
-import core.result
-import core.option
-import core.list
-import core.string
-import core.bytes
-import core.bytes.buffer
+import core.copy.Copy
+import static core.copy.*
+import core.result.Result
+
+import core.option.Option
+
+import core.list.List
+
+import core.string.String
+
+import core.bytes.Bytes
+
+import core.bytes.buffer.ByteBuffer
+
 import core.byte as octets
+
 import core.code_point
-import core.int
+
+import core.int.Int
+
 import core.float
 
 /// Machine-readable categories shared by parsing, conversion, and serialization.

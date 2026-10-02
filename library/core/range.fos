@@ -3,8 +3,9 @@
 //! `Range<T>` stores supplied values; it is not a lazy numeric interval. Use `Int.range`
 //! to construct consecutive integers. Iterators traverse the stored order.
 
-import std.collections
-import std.iter
+import std.collections.Collection
+
+import std.iter.Iterator
 
 /// A reusable sequence view over a bounded list of values.
 ///
@@ -17,7 +18,9 @@ pub type Range<T> = & Sequence<T> & Collection<T> & {
 impl Range<T> {
     /// Creates a range view over `values`.
     pub func from(values: List<T>) -> Range<T> [consume values] {
-        Range { values: move values }
+        Range {
+            values: move values
+        }
     }
 
     /// Returns whether the range is empty.

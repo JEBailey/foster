@@ -4,6 +4,8 @@ use foster::compile;
 fn reference_payload_assignment_updates_the_original_scalar() {
     let source = r#"
 import core.option
+import core.option.*
+import static core.option.*
 type Box = { pub value: Int }
 impl Box {
     func borrow(self: Box) -> Option<ref[self] Int> { Option.Some(ref self.value) }
@@ -32,7 +34,11 @@ fn mutation_through_a_collection_borrow_requires_mutation_effects() {
         let source = format!(
             r#"
 import core.option
+import core.option.*
+import static core.option.*
 import core.list
+import core.list.*
+import static core.list.*
 type Item = {{ pub value: Int }}
 func inspect(values: List<Item>) -> () [read values] {{
     let borrowed = values.borrow(0)
@@ -64,9 +70,17 @@ fn collection_borrows_cannot_survive_removal_or_escape_the_owner() {
             let source = format!(
                 r#"
 import core.option
+import core.option.*
+import static core.option.*
 import core.list
+import core.list.*
+import static core.list.*
 import std.collections.map
+import std.collections.map.*
+import static std.collections.map.*
 import std.collections.hash_map
+import std.collections.hash_map.*
+import static std.collections.hash_map.*
 type Item = {{ pub value: Int }}
 func main() {{
     let values = {constructor}
@@ -95,7 +109,11 @@ fn collection_get_is_not_available() {
 fn collection_borrow_can_forward_an_exposed_input_group() {
     let source = r#"
 import core.option
+import core.option.*
+import static core.option.*
 import core.list
+import core.list.*
+import static core.list.*
 func selected(values: ref[values] List<Int>) -> Option<ref[values] Int> {
     values.borrow(0)
 }

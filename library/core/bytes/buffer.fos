@@ -4,8 +4,9 @@
 //! and returns `Bytes`. Capacity and reservation APIs are allocation hints, not
 //! guarantees about reserved storage. Negative sizes fail an assertion.
 
-import core.bytes
-import core.list
+import core.bytes.Bytes
+
+import core.list.List
 
 /// Mutable byte construction storage.
 ///
@@ -41,17 +42,25 @@ pub type ByteBuffer = {
 
 impl ByteBuffer {
     /// Returns whether the buffer contains no bytes.
-    pub func empty?(self) -> Bool { self.value.empty? }
+    pub func empty?(self) -> Bool {
+        self.value.empty?
+    }
 
     /// Returns the number of buffered bytes.
-    pub func length(self) -> Int { self.value.length }
+    pub func length(self) -> Int {
+        self.value.length
+    }
 
     /// Reports current length without exposing allocation strategy.
-    pub func capacity(self) -> Int { self.value.length }
+    pub func capacity(self) -> Int {
+        self.value.length
+    }
 
     /// Creates an empty mutable byte buffer.
     pub func empty() -> ByteBuffer {
-        ByteBuffer { value: [] }
+        ByteBuffer {
+            value: []
+        }
     }
 
     /// Creates an empty buffer with a nonnegative allocation hint.

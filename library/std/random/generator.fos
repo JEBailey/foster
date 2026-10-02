@@ -4,8 +4,14 @@
 //! `FastRandom`'s algorithm may change across releases. Both are deterministic;
 //! use std.random.secure for tokens that must be unpredictable.
 
-import core.result
-import std.random
+import core.result.Result
+
+import std.random.RandomError
+import std.random.RandomSource
+import std.random.SeedableRandom
+import std.random.SplittableRandom
+import std.random.SystemRandom
+import static std.random.*
 
 /// Prime modulus used by the portable Lehmer generator.
 const LEHMER_MODULUS = 2147483647

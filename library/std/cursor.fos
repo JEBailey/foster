@@ -20,12 +20,17 @@
 //!     0
 //! }
 //! ```
-import core.option
-import core.result
-import core.list
-import core.bytes
+import core.option.Option
+
+import core.result.Result
+
+import core.list.List
+
+import core.bytes.Bytes
+
 import core.byte
-import std.iter
+
+import std.iter.Iterator
 
 /// A reader whose checkpoints are offsets in its source (bytes for UTF-8 text).
 /// Checkpoints must come from the same source snapshot; this is a caller obligation.

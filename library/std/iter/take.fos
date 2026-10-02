@@ -3,8 +3,9 @@
 //! take owns its source. Once the requested count is reached it returns `None`
 //! without requesting another source item. Nonpositive counts yield no items.
 
-import core.option
-import std.iter
+import core.option.Option
+
+import std.iter.Iterator
 
 type TakeIterator<T> = & Iterator<T> & {
     source: Iterator<T>
@@ -31,7 +32,9 @@ impl Iterator<T> {
     /// Consumes this iterator and lazily yields at most `amount` remaining elements.
     /// Nonpositive amounts never pull the source; reaching the limit makes no extra source call.
     pub func take(self, amount: Int) -> Iterator<T> [consume self] {
-        TakeIterator { source: move self, remaining: amount }
+        TakeIterator {
+            source: move self, remaining: amount
+        }
     }
 }
 

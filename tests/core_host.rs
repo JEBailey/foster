@@ -16,6 +16,8 @@ fn standard_time_clocks_cross_the_host_boundary_with_canonical_readings() {
     let value = foster::run(
         r#"
 import std.time
+import std.time.*
+import static std.time.*
 
 func clock_read<T>(clock: Clock<T>) -> T { clock.now() }
 
@@ -51,9 +53,17 @@ fn standard_randomness_crosses_the_host_boundary_through_public_contracts() {
     let value = foster::run(
         r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.random
+import std.random.*
+import static std.random.*
 import std.random.secure
+import std.random.secure.*
+import static std.random.secure.*
 
 func draw(source: RandomSource) -> Result<Int, RandomError> [mut source] {
     random::below_with(source, 20)
@@ -93,6 +103,8 @@ fn every_standard_library_function_has_attached_documentation() {
     let compilation = foster::compile(
         r#"
 import std.sequence
+import std.sequence.*
+import static std.sequence.*
 func main() -> Int { 0 }
 "#,
     )
@@ -247,8 +259,14 @@ weight = 1.0
     let source = format!(
         r#"
 import core.option
+import core.option.*
+import static core.option.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.toml
+import std.toml.*
+import static std.toml.*
 
 func second_product_has_details(document: TomlDocument) -> Bool [consume document] {{
     branch (move document).get("products") {{
@@ -311,8 +329,14 @@ fn filesystem_mutation_operations_create_copy_move_and_remove_entries() {
     let source = format!(
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 
 func unit(outcome: Result<(), IoError>) -> () {{
     let succeeded = branch outcome {{
@@ -359,8 +383,14 @@ fn core_io_reads_writes_and_inspects_host_files() {
     let source = format!(
         r#"
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func read_after_write(path: String, outcome: Result<(), IoError>) -> String {{
     branch outcome {{
@@ -402,9 +432,17 @@ fn core_io_preserves_arbitrary_binary_files() {
     let source = format!(
         r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func bytes_or_empty(outcome: Result<Bytes, HexError>) -> Bytes {{
     branch outcome {{
@@ -453,9 +491,17 @@ fn filesystem_positioned_reads_and_appends_stream_binary_chunks() {
     let source = format!(
         r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 
 func decoded(value: String) -> Bytes {{
     branch Bytes.from_hex(value) {{
@@ -497,9 +543,17 @@ func main() -> String {{
 fn standard_path_and_environment_modules_share_io_errors() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.io
+import std.io.*
+import static std.io.*
 import std.path as paths
+import std.path.*
+import static std.path.*
 import std.env as environment
+import std.env.*
+import static std.env.*
 
 func text(outcome: Result<String, IoError>) -> String {
     branch outcome {
@@ -534,12 +588,26 @@ fn typed_files_implement_location_based_resource_capabilities() {
     let source = format!(
         r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.int
+import core.int.*
+import static core.int.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 import std.path as paths
+import std.path.*
+import static std.path.*
 import std.resource
+import std.resource.*
+import static std.resource.*
 
 func identifier_text(value: ResourceIdentifier) -> String {{ value.resource_id() }}
 
@@ -597,8 +665,14 @@ func main() -> String {{
 fn uri_is_a_parsed_resource_identifier_without_implicit_io() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.resource
+import std.resource.*
+import static std.resource.*
 import std.uri
+import std.uri.*
+import static std.uri.*
 
 func identifier_text(value: ResourceIdentifier) -> String { value.resource_id() }
 
@@ -633,8 +707,14 @@ func main() -> String {
 fn resource_identifiers_preserve_provider_kinds_and_reject_accidental_matches() {
     let uri_as_file = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.uri
+import std.uri.*
+import static std.uri.*
 
 func open(outcome: Result<Uri, UriError>) [consume outcome] {
     branch move outcome {
@@ -657,6 +737,8 @@ func main() { open(Uri.parse("https://example.com/artifact")) }
 
     let displayable_integer = r#"
 import std.resource
+import std.resource.*
+import static std.resource.*
 
 func identify(value: ResourceIdentifier) -> String { value.resource_id() }
 func main() -> String { identify(42) }
@@ -673,9 +755,17 @@ func main() -> String { identify(42) }
 fn tcp_endpoints_are_uri_shaped_resource_identifiers() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 import std.resource
+import std.resource.*
+import static std.resource.*
 import std.uri
+import std.uri.*
+import static std.uri.*
 
 func identifier_text(value: ResourceIdentifier) -> String { value.resource_id() }
 
@@ -723,9 +813,17 @@ fn core_tcp_accepts_reads_and_writes_a_connection() {
     let source = format!(
         r#"
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.resource
+import std.resource.*
+import static std.resource.*
 import std.uri
+import std.uri.*
+import static std.uri.*
 
 func open(outcome: Result<Uri, UriError>) -> String [consume outcome] {{
     branch move outcome {{

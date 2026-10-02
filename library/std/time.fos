@@ -5,8 +5,10 @@
 //! converting a large value to a single `Int` can overflow. Use std.time.civil for
 //! calendar arithmetic and std.time.zone for local-time resolution.
 
-import core.ordering
-import core.result
+import core.ordering.Ordering
+import core.ordering.Ordered
+
+import core.result.Result
 
 type TimeHost = {}
 

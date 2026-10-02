@@ -393,6 +393,7 @@ impl Parser {
             TokenKind::Ident(name) if name == "_" => Expr::Placeholder,
             TokenKind::Ident(name) => Expr::Name(name),
             TokenKind::LParen => {
+                self.newlines();
                 if self.closure_follows_lparen() {
                     self.closure()?
                 } else if self.take(&TokenKind::RParen) {
@@ -404,6 +405,7 @@ impl Parser {
                 }
             }
             TokenKind::LBracket => {
+                self.newlines();
                 let copy_capture = matches!(&self.peek().kind, TokenKind::Ident(name) if name == "copy")
                     && self.peek_n(1).is_some_and(|token| {
                         matches!(

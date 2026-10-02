@@ -690,11 +690,23 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
         }
     }
     for import in &mut program.imports {
-        if let Some(name) = names.get(&import.path.join(".")) {
-            if import.alias.is_none() {
+        if let Some((count, name)) = (1..=import.path.len()).rev().find_map(|count| {
+            names
+                .get(&import.path[..count].join("."))
+                .map(|name| (count, name))
+        }) {
+            if count == import.path.len()
+                && !import.wildcard
+                && !import.static_
+                && import.alias.is_none()
+            {
                 import.alias = import.path.last().cloned();
             }
-            import.path = name.split('.').map(str::to_owned).collect();
+            import.path = name
+                .split('.')
+                .map(str::to_owned)
+                .chain(import.path[count..].iter().cloned())
+                .collect();
         }
     }
     for r in &mut program.records {

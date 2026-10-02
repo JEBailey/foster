@@ -1,7 +1,11 @@
-import core.bytes.buffer as byte_buffer
-import core.bytes
-import core.string
-import core.result
+import core.bytes.buffer.ByteBuffer
+
+import core.bytes.Bytes
+import core.bytes.HexError
+
+import core.string.String
+
+import core.result.Result
 
 func render(value: Result<Bytes, HexError>) -> String {
     branch value {

@@ -1,7 +1,15 @@
 import core.option
+import core.option.Option
+
 import std.collections.map
+import std.collections.map.Map
+
 import std.collections.hash_map
+import std.collections.hash_map.HashMap
+
 import std.collections.hashing
+
+import static std.collections.hashing.*
 
 type Item = {
     value: Int, text: String

@@ -109,7 +109,7 @@ fn init_creates_a_project_that_commands_discover_from_nested_directories() {
     );
     assert_eq!(
         fs::read_to_string(root.join("foster.toml")).unwrap(),
-        "[package]\nname = \"sample-app\"\nsource = \"src\"\n"
+        "[package]\nname = \"sample-app\"\nsource = \"src\"\nentry = \"main.fos\"\n"
     );
     assert_eq!(
         fs::read_to_string(root.join("src/main.fos")).unwrap(),
@@ -164,11 +164,11 @@ fn projects_compile_and_run_transitive_path_dependencies() {
     .unwrap();
     fs::write(
         middle.join("foster.toml"),
-        "[package]\nname = \"middle-package\"\nsource = \"src\"\n[dependencies]\nleaf = { path = \"../leaf\" }\n",
+        "[package]\nname = \"middle-package\"\nsource = \"src\"\nentry = \"lib.fos\"\n[dependencies]\nleaf = { path = \"../leaf\" }\n",
     )
     .unwrap();
     fs::write(
-        middle.join("src/main.fos"),
+        middle.join("src/lib.fos"),
         "import helper\nimport leaf\npub func answer() -> Int { base() + increment() }\n",
     )
     .unwrap();
@@ -179,10 +179,10 @@ fn projects_compile_and_run_transitive_path_dependencies() {
     .unwrap();
     fs::write(
         leaf.join("foster.toml"),
-        "[package]\nname = \"leaf-package\"\nsource = \"src\"\n",
+        "[package]\nname = \"leaf-package\"\nsource = \"src\"\nentry = \"lib.fos\"\n",
     )
     .unwrap();
-    fs::write(leaf.join("src/main.fos"), "pub func base() -> Int { 40 }\n").unwrap();
+    fs::write(leaf.join("src/lib.fos"), "pub func base() -> Int { 40 }\n").unwrap();
 
     let symbols = foster()
         .arg("build")
@@ -229,6 +229,71 @@ fn projects_compile_and_run_transitive_path_dependencies() {
         "ok: checked 1 module (0 implicit)"
     );
 
+    // The selected root keeps the same public namespace after independent compilation.
+    let artifact = root.join("middle.flib");
+    let build = foster()
+        .arg("build")
+        .arg(&middle)
+        .args(["--library", "-o"])
+        .arg(&artifact)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    fs::write(
+        app.join("foster.toml"),
+        "[package]\nname = 'app'\n[dependencies]\nmiddle = { path = '../middle.flib' }\n",
+    )
+    .unwrap();
+    let run = foster().arg("run").arg(&app).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "42");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn explicit_package_entry_controls_execution_and_diagnostics() {
+    let root = temporary_directory("explicit-entry");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("foster.toml"),
+        "[package]\nname = 'app'\nentry = 'start.fos'\n",
+    )
+    .unwrap();
+    let entry = root.join("src/start.fos");
+    fs::write(
+        &entry,
+        "import helper\npub func base() -> Int { 40 }\nfunc main() -> Int { answer() }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/helper.fos"),
+        "import start\npub func answer() -> Int { start::base() + 2 }\n",
+    )
+    .unwrap();
+    let run = foster().arg("run").arg(&root).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "42");
+    fs::write(
+        &entry,
+        "pub func base() -> Int { 40 }\nfunc main() -> Int { true }\n",
+    )
+    .unwrap();
+    let check = foster().arg("check").arg(&root).output().unwrap();
+    assert!(!check.status.success());
+    assert!(String::from_utf8_lossy(&check.stderr).contains("start.fos"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -903,7 +968,11 @@ fn pack_writes_deterministic_runnable_archive_with_resources() {
     fs::write(
         directory.join("main.fos"),
         r#"import core.result
+import core.result.*
+import static core.result.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 
 func main() -> String {
     branch read_text("resources/config/message.txt") {

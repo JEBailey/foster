@@ -1,4 +1,6 @@
 import library
+import library.*
+import static library.*
 
 func main() -> Int {
     library::hidden()

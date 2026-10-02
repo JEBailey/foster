@@ -1,7 +1,18 @@
 import core.result
+import core.result.Result
+
 import std.host
+import std.host.NetworkProvider
+import std.host.RuntimeHost
+
 import std.io
+import std.io.ReadReady
+
 import std.net.tcp
+import std.net.tcp.NetworkError
+import std.net.tcp.Connection
+import std.net.tcp.Listener
+import static std.net.tcp.*
 
 func readable(socket: ReadReady<NetworkError>, timeout: Int) -> Bool {
     socket.wait_readable(timeout).unwrap_or(false)
@@ -29,7 +40,9 @@ func connect(provider: NetworkProvider<Connection, Listener>, port: Int) -> Int 
 
 type Worker = {}
 impl Worker {
-    func check(self, port: Int) -> Int { connect(RuntimeHost.new(), port) }
+    func check(self, port: Int) -> Int {
+        connect(RuntimeHost.new(), port)
+    }
 }
 
 func check_listener(listener: Listener) -> Int [consume listener] {

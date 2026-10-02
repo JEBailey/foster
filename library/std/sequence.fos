@@ -4,8 +4,9 @@
 //! `Collection`-producing operations return lists. Use std.iter for lazy pipelines;
 //! use receiver methods when working with a concrete `List` or `String`.
 
-import core.functions
-import core.option
+import core.functions.Predicate
+
+import core.option.Option
 
 /// Applies `transform` to every element of a string or list and returns the results as a list.
 pub func map<T, U>(values: Sequence<T>, transform: func(T) -> U) -> List<U> {

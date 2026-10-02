@@ -86,6 +86,148 @@ mod tests {
     use super::*;
 
     #[test]
+    fn comma_separated_lists_allow_newlines_at_their_boundaries() {
+        let source = r#"
+enum Pair = Values(
+    Int
+    , Int
+)
+type Fields = {
+    left: Int
+    , right: Int
+}
+func sum(
+    left: Int
+    , right: Int
+) -> Int { left + right }
+func main() -> Int {
+    let values = [
+        20 // a comment before the comma
+        ,
+
+        22
+    ]
+    let fields = Fields {
+        left: values[0]
+        , right: values[1]
+    }
+    let {
+        left
+        , right
+    } = fields
+    let action = [
+        copy left
+        , copy right
+    ] (
+    ) -> {
+        let first = left
+        first + right
+    }
+    assert(
+        action() == 42
+        , "multiline captures must preserve their values"
+    )
+    branch Pair.Values(
+        left
+        , right
+    ) {
+        Pair.Values(
+            a
+            , b
+        ) -> sum(
+            a
+            , b
+        )
+    }
+}
+"#;
+        assert_eq!(crate::run(source).unwrap(), crate::vm::Value::Integer(42));
+        assert!(
+            crate::parse_recovering(source)
+                .unwrap()
+                .diagnostics
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn multiline_type_parameter_argument_and_effect_lists_parse() {
+        crate::parse(
+            r#"
+type Pair<
+    T
+    , U
+> = { left: T, right: U }
+impl Pair<
+    T
+    , U
+> {
+    func pick(
+        self
+        , input: T
+    ) -> T [
+        read self
+        , read input
+    ] { input }
+}
+type Contract = {
+    func apply<
+        T
+        , U
+    > (
+        self
+        , value: Pair<
+            T
+            , U
+        >
+    ) -> ()
+}
+func apply<
+    T
+    , U
+>(
+    callback: func(
+        T
+        , U
+    ) -> ()
+    , left: T
+    , right: U
+) -> () { callback(left, right) }
+func main() -> Int {
+    let callback = (
+        left: Int
+        , right: Int
+    ) -> left + right
+    callback(20, 22)
+}
+"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn multiline_lists_still_require_commas_and_blocks_keep_statement_boundaries() {
+        for source in [
+            "func main() { let values = [1\n2] }",
+            "func f(a: Int, b: Int) {}\nfunc main() { f(1\n2) }",
+            "func main(a: Int\nb: Int) {}",
+            "type Pair<T\nU> = { a: T, b: U }",
+        ] {
+            assert!(crate::parse(source).is_err(), "{source}");
+        }
+        let source = "func main() -> Int {\nlet a = 20\nlet b = 22\na + b\n}";
+        let program = crate::parse(source).unwrap();
+        assert_eq!(program.functions[0].body.len(), 3);
+        assert_eq!(crate::run(source).unwrap(), crate::vm::Value::Integer(42));
+    }
+
+    #[test]
+    fn empty_multiline_lists_and_delimited_unit_remain_valid() {
+        crate::parse("func main(\n) -> (\n) {\nlet values = [\n]\nprintln(\n)\n(\n)\n}").unwrap();
+        assert!(crate::parse("enum Empty = Case(\n)\n").is_err());
+    }
+
+    #[test]
     fn copy_is_an_identifier_outside_capture_mode_position() {
         let tokens = crate::lexer::lex("copy").unwrap();
         assert_eq!(tokens[0].kind, TokenKind::Ident("copy".into()));

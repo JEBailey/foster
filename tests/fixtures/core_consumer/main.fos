@@ -1,8 +1,10 @@
-import core.list
-import core.option
-import core.result
+import core.list.List
+import core.option.Option
+import core.result.Result
 
-func double(value: Int) -> Int { value * 2 }
+func double(value: Int) -> Int {
+    value * 2
+}
 
 func initial() -> Result<Int, String> {
     Result.Ok(20)

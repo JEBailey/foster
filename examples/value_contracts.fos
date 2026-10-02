@@ -1,4 +1,6 @@
-import core.ordering
+import core.ordering.Ordering
+import core.ordering.Ordered
+import core.ordering.Hashing
 
 type Version = & Ordered<Version> & Hashing & {
     number: Int
@@ -31,6 +33,10 @@ func compare_score(left: Ordered<Version>, right: Version) -> Int {
 }
 
 func main() -> Int {
-    let version = Version { number: 7 }
-    version.hash() + compare_score(version, Version { number: 8 })
+    let version = Version {
+        number: 7
+    }
+    version.hash() + compare_score(version, Version {
+        number: 8
+    })
 }

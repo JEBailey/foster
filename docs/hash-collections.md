@@ -11,9 +11,17 @@ or `ListSet` annotations when callers specifically require the list-backed repre
 
 ```foster
 import core.option
+import core.option.Option
+
 import std.collections.hash_map
+import std.collections.hash_map.HashMap
+
 import std.collections.hash_set
+import std.collections.hash_set.HashSet
+
 import std.collections.hashing
+
+
 
 func main() -> Int {
     let scores = HashMap.empty(hashing::text).put("Ada", 42).put("Lin", 7)

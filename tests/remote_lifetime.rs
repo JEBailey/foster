@@ -1,6 +1,10 @@
 const PRELUDE: &str = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import core.remote_error
+import core.remote_error.*
+import static core.remote_error.*
 type Worker = {}
 impl Worker { func work(self) -> Int { 42 } }
 "#;

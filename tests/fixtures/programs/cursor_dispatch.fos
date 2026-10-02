@@ -1,6 +1,13 @@
 import core.string
+import core.string.StringCursor
+
 import std.cursor
+import std.cursor.Cursor
+import std.cursor.ListCursor
+import std.cursor.BytesCursor
+
 import core.option
+import core.option.Option
 
 func rewind<T>(reader: Cursor<T>) -> Int {
     let start = reader.checkpoint()
@@ -8,13 +15,19 @@ func rewind<T>(reader: Cursor<T>) -> Int {
     assert(reader.checkpoint() == start)
     reader.next()
     branch reader.span(start, reader.checkpoint()) {
-        Option.Some(items) -> { assert(items.length == 1) }
-        Option.None -> { assert(false) }
+        Option.Some(items) -> {
+            assert(items.length == 1)
+        }
+        Option.None -> {
+            assert(false)
+        }
     }
     assert(reader.restore(start))
     reader.checkpoint()
 }
-func drain<T>(reader: Cursor<T>) -> Int { reader.count() }
+func drain<T>(reader: Cursor<T>) -> Int {
+    reader.count()
+}
 
 func main() -> Int {
     let text = StringCursor.from("λ🙂")

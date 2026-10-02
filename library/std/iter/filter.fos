@@ -3,9 +3,11 @@
 //! Each next call advances until a predicate match or source exhaustion. Rejected
 //! items are consumed. A next call can therefore inspect several source items.
 
-import core.functions
-import core.option
-import std.iter
+import core.functions.Predicate
+
+import core.option.Option
+
+import std.iter.Iterator
 
 type FilterIterator<T> = & Iterator<T> & {
     source: Iterator<T>
@@ -21,7 +23,9 @@ impl FilterIterator<T> {
                     return Option.Some(value) if self.predicate(value)
                     ()
                 }
-                Option.None -> { break }
+                Option.None -> {
+                    break
+                }
             }
         }
         Option.None
@@ -32,7 +36,9 @@ impl Iterator<T> {
     /// Consumes this iterator and `predicate`, retaining items that satisfy the predicate.
     /// Each inspected item is tested once; one pull may discard several items before yielding.
     pub func filter(self, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
-        FilterIterator { source: move self, predicate: move predicate }
+        FilterIterator {
+            source: move self, predicate: move predicate
+        }
     }
 }
 

@@ -96,21 +96,68 @@ pub fn build(
 mod tests {
     use super::*;
     #[test]
+    fn generated_names_adjust_initial_case_and_escape_reserved_names() {
+        let manifest = Manifest::parse(
+            r#"{
+            "abi":1,"headers":[],
+            "enums":[{"name":"cMode","c_type":"CMode"}],
+            "records":[{"name":"color","c_type":"Color","fields":[
+                {"name":"type","type":"i32"},
+                {"name":"type_","type":"i32"},
+                {"name":"c_type","type":"i32"},
+                {"name":"copy","type":"i32"}
+            ]}],
+            "constants":[{"name":"C_ANSWER","type":"i32","value":42}],
+            "operations":[
+                {"name":"c_original","symbol":"c_original","parameters":[],"result":"i32"},
+                {"name":"Type","symbol":"Type","parameters":[],"result":"i32"},
+                {"name":"RoundTrip","symbol":"RoundTrip","parameters":[{"record":"color"}],"result":{"record":"color"}}
+            ]
+        }"#,
+        )
+        .unwrap();
+        let source = manifest.foster_source(Path::new("unused.dll")).unwrap();
+        assert!(source.contains("pub type Color ="));
+        assert!(source.contains("pub type CMode = Int"));
+        assert!(source.contains("pub const C_ANSWER = 42"));
+        assert!(source.contains("pub func c_original()"));
+        assert!(source.contains("pub func type_()"));
+        assert!(source.contains("pub func roundTrip(p0: Color) -> Result<Color, CError>"));
+        assert!(source.contains("Calls the C symbol `RoundTrip`"));
+        let program = crate::compile(&(source + "\nfunc main() -> Int {\nlet color = Color { type_: 1, type__: 2, c_type: 3, copy_: 4 }\nlet copied = color.copy()\nassert(copied.type_ + copied.type__ + copied.c_type + copied.copy_ == 10)\nC_ANSWER\n}\n")).unwrap();
+        assert_eq!(crate::vm::run(&program).unwrap().to_string(), "42");
+    }
+    #[test]
+    fn generated_names_reject_initial_case_collisions() {
+        for input in [
+            r#"{"abi":1,"headers":[],"enums":[{"name":"mode","c_type":"mode"},{"name":"Mode","c_type":"Mode"}],"operations":[]}"#,
+            r#"{"abi":1,"headers":[],"operations":[{"name":"Foo","symbol":"Foo","parameters":[],"result":"void"},{"name":"foo","symbol":"foo","parameters":[],"result":"void"}]}"#,
+            r#"{"abi":1,"headers":[],"records":[{"name":"Point","c_type":"Point","fields":[{"name":"x","type":"i32"}]}],"constants":[{"name":"ORIGIN","type":{"record":"Point"},"value":{"x":0}}],"operations":[{"name":"oRIGIN","symbol":"oRIGIN","parameters":[],"result":"void"}]}"#,
+        ] {
+            assert!(
+                Manifest::parse(input)
+                    .err()
+                    .expect("case collision")
+                    .contains("duplicate generated Foster")
+            );
+        }
+    }
+    #[test]
     fn large_array_results_decode_in_separate_statements() {
         let manifest = Manifest::parse(r#"{"abi":1,"headers":[],"records":[{"name":"Large","c_type":"Large","fields":[{"name":"items","type":{"array":"f32","length":80}}]}],"operations":[{"name":"large","symbol":"large","parameters":["i32"],"parameter_names":["slot0"],"result":{"record":"Large"}}]}"#).unwrap();
         let source = manifest.foster_source(Path::new("large.dll")).unwrap();
-        assert!(source.contains("c_large(slot0_: Int)"));
+        assert!(source.contains("large(slot0_: Int)"));
         assert!(source.contains("let slot79 = (try (try value.slot(79)).floating())"));
-        assert!(source.contains("Result.Ok(CLarge { items: [slot0, slot1"));
+        assert!(source.contains("Result.Ok(Large { items: [slot0, slot1"));
         crate::compile(&(source + "\nfunc main() -> Int { 42 }")).unwrap();
     }
     #[test]
     fn fixed_arrays_and_enum_aliases_generate_checked_value_bindings() {
         let manifest = Manifest::parse(r#"{"abi":1,"headers":[],"enums":[{"name":"Mode","c_type":"enum Mode"}],"records":[{"name":"Array","c_type":"Array","fields":[{"name":"grid","type":{"array":{"array":"f32","length":2},"length":2}},{"name":"mode","type":{"enum":"Mode"}}]}],"operations":[{"name":"roundtrip","symbol":"roundtrip","parameters":[{"record":"Array"}],"result":{"record":"Array"}}]}"#).unwrap();
         let source = manifest.foster_source(Path::new("sample.dll")).unwrap();
-        let compiled = crate::compile(&(source.clone() + "\nfunc main() -> Int { let a = CArray { grid: [[1.0,2.0],[3.0,4.0]], mode: 3 }\nlet b = a.copy()\nassert(b.grid[1][0] == 3.0)\n42 }")).unwrap();
+        let compiled = crate::compile(&(source.clone() + "\nfunc main() -> Int { let a = Array { grid: [[1.0,2.0],[3.0,4.0]], mode: 3 }\nlet b = a.copy()\nassert(b.grid[1][0] == 3.0)\n42 }")).unwrap();
         assert_eq!(crate::vm::run(&compiled).unwrap().to_string(), "42");
-        assert!(source.contains("pub type CMode = Int"));
+        assert!(source.contains("pub type Mode = Int"));
         assert!(source.contains("C array length mismatch"));
         assert!(manifest.generate().unwrap().contains("float (*)[2][2]"));
         for ty in [
@@ -202,8 +249,7 @@ mod tests {
         let source = manifest
             .foster_source(Path::new("quote\"\u{301}.dll"))
             .unwrap();
-        let compilation =
-            crate::compile(&(source + "\nfunc main() -> String { C_TEXT }\n")).unwrap();
+        let compilation = crate::compile(&(source + "\nfunc main() -> String { TEXT }\n")).unwrap();
         for optimize in [false, true] {
             let value =
                 crate::vm::run_with_options(&compilation, crate::vm::CompileOptions { optimize })
@@ -225,12 +271,11 @@ mod tests {
         }"#).unwrap();
         let source = manifest.foster_source(Path::new("unused.dll")).unwrap();
         assert!(
-            source
-                .contains("arguments_: Int, value_: Int, result_: Int, c_type: Int, c_c_type: Int")
+            source.contains("arguments_: Int, value_: Int, result_: Int, type_: Int, c_type: Int")
         );
         assert!(source.contains("/// First line.\n/// Second line."));
         let program = crate::compile(
-            &(source + "\nfunc main() -> Int { assert(C_ORIGIN().x == 0.0)\nC_ANSWER }\n"),
+            &(source + "\nfunc main() -> Int { assert(oRIGIN().x == 0.0)\nANSWER }\n"),
         )
         .unwrap();
         assert_eq!(crate::vm::run(&program).unwrap().to_string(), "42");

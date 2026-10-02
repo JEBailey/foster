@@ -1,4 +1,6 @@
 import missing.module
+import missing.module.*
+import static missing.module.*
 
 func main() {
     0

@@ -2,11 +2,19 @@
 //! implementations; the default adapters use the embedding runtime's HostContext.
 //! Clock providers use the existing std.time.Clock<T> contract.
 
-import core.result
-import std.fs
-import std.io
+import core.result.Result
+
+import std.fs.File
+import static std.fs.*
+import std.io.IoError
+
 import std.net.tcp
+import std.net.tcp.NetworkError
+import std.net.tcp.Connection
+import std.net.tcp.Listener
+import static std.net.tcp.*
 import std.path as paths
+import std.path.Path
 
 /// Supplies located file resources. Implementations choose their own resource type.
 pub type FileProvider<F> = {
@@ -27,7 +35,9 @@ pub type RuntimeHost = & FileProvider<File> & NetworkProvider<Connection, Listen
 
 impl RuntimeHost {
     /// Creates an adapter without performing host I/O.
-    pub func new() -> RuntimeHost { RuntimeHost {} }
+    pub func new() -> RuntimeHost {
+        RuntimeHost {}
+    }
     /// Creates a located file; actual I/O may subsequently fail.
     pub func file(self, location: paths::Path) -> Result<File, IoError> [consume location] {
         Result.Ok(File.at(move location))

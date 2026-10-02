@@ -6,8 +6,19 @@ coercing mismatched values.
 
 ```foster
 import std.json
+import std.json.JsonError
+import std.json.JsonParseOptions
+import std.json.JsonWriteOptions
+import std.json.JsonNumber
+import std.json.JsonMember
+import std.json.JsonValue
+import static std.json.*
 import core.result
+import core.result.Result
+
 import core.option
+import core.option.Option
+
 
 func main() -> Result<Int, JsonError> {
     let tree = try json::parse("{\"answer\":42}")

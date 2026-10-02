@@ -1,7 +1,10 @@
 //! Foster source scanner. Offsets are UTF-8 bytes; lines and scalar columns start at one.
 import core.code_point
-import core.list
-import core.string
+
+import core.list.List
+
+import core.string.String
+import core.string.StringBuilder
 
 /// Stable token data exchanged with the bootstrap compiler.
 pub type Token = {
@@ -74,7 +77,9 @@ impl Scanner {
                 self.line = self.line + 1
                 self.column = 1
             }
-            _ -> { self.column = self.column + 1 }
+            _ -> {
+                self.column = self.column + 1
+            }
         }
         c
     }
@@ -108,7 +113,9 @@ impl Scanner {
             }
             if self.peek(0) == '%' && identifier_start(self.peek(1)) {
                 self.advance()
-                while self.index < self.chars.length && identifier_part(self.peek(0)) { self.advance() }
+                while self.index < self.chars.length && identifier_part(self.peek(0)) {
+                    self.advance()
+                }
                 if self.peek(0) == '%' self.advance()
                 continue
             }
@@ -162,7 +169,9 @@ impl Scanner {
                     ()
                 }
                 c == '/' && next == '/' -> {
-                    while self.index < self.chars.length && self.peek(0) != '\n' { self.advance() }
+                    while self.index < self.chars.length && self.peek(0) != '\n' {
+                        self.advance()
+                    }
                 }
                 c == '"' && next == '"' && self.peek(2) == '"' -> {
                     self.interpolated(self.line, self.column)
@@ -506,6 +515,7 @@ func keyword(name: String) -> String {
         "type" -> "Type"
         "enum" -> "Enum"
         "import" -> "Import"
+        "static" -> "Static"
         "as" -> "As"
         "return" -> "Return"
         "assert" -> "Assert"

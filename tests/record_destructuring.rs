@@ -238,6 +238,8 @@ fn malformed_record_pattern_metadata_is_rejected() {
 fn destructuring_cannot_move_fields_out_of_drop_owners() {
     let source = r#"
 import core.drop
+import core.drop.*
+import static core.drop.*
 type Item = { value: Int }
 type Parent = { item: Item }
 impl Parent { func deinit(self) -> () { () } }

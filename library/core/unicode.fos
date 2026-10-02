@@ -21,11 +21,19 @@
 //! String.byte_length() for UTF-8 storage size. Numeric IDs in this module serve
 //! the library algorithms; CodePoint offers named categories and classification methods.
 
-import core.bytes
+import core.bytes.Bytes
+
 import core.list
-import core.string
-import core.option
+
+import core.string.String
+import core.string.StringBuilder
+import core.string.StringCursor
+
+import core.option.Option
+
 import core.unicode.data as data
+
+import static core.unicode.data.*
 
 /// Advances a scalar cursor over one extended grapheme cluster and returns its byte end.
 /// The cursor must start at a grapheme boundary. Implements Unicode 17.0.0

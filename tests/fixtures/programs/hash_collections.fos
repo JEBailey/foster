@@ -1,14 +1,29 @@
 import core.option
+import core.option.Option
+
 import std.collections
+import std.collections.Collection
+
 import std.collections.hash_map
+import std.collections.hash_map.HashMap
+
 import std.collections.hash_set
+import std.collections.hash_set.HashSet
+
 import std.collections.hashing
+
 import std.iter
 
-type Key = { id: Int, name: String }
-type Payload = { values: List<Int> }
+type Key = {
+    id: Int, name: String
+}
+type Payload = {
+    values: List<Int>
+}
 
-func count<T>(values: Collection<T>) -> Int { values.length() }
+func count<T>(values: Collection<T>) -> Int {
+    values.length()
+}
 
 func main() -> Int {
     let map = HashMap.empty(hashing::integer).put(-1, "negative")
@@ -31,7 +46,9 @@ func main() -> Int {
     let seen = 0
     loop {
         branch snapshot.next() {
-            Option.None -> { break }
+            Option.None -> {
+                break
+            }
             Option.Some(entry) -> {
                 assert(entry.value == "negative" || entry.value == "value", "hash collection check 30")
                 seen = seen + 1
@@ -40,8 +57,10 @@ func main() -> Int {
     }
     assert(seen == 81, "hash collection check 35")
     assert(snapshot.next() == Option.None, "hash collection check 36")
-    assert(branch map.borrow(-1) { Option.Some(value) -> value == "changed"
-        Option.None -> false }, "hash collection check 37")
+    assert(branch map.borrow(-1) {
+        Option.Some(value) -> value == "changed"
+        Option.None -> false
+    }, "hash collection check 37")
     let missing = HashMap.empty(hashing::integer).put(1, "value")
     assert(missing.borrow(2) == Option.None, "hash collection check 39")
     let strings = HashMap.empty(hashing::text).put("ab", 10).put("ba", 20).put("λ", 12)
@@ -52,8 +71,10 @@ func main() -> Int {
     assert(collided.remove(1) == Option.Some(10))
     assert(collided.remove(3) == Option.Some(30))
     assert(collided.length() == 1, "hash collection check 45")
-    assert(branch collided.borrow(2) { Option.Some(value) -> value == 42
-        Option.None -> false }, "hash collection check 46")
+    assert(branch collided.borrow(2) {
+        Option.Some(value) -> value == 42
+        Option.None -> false
+    }, "hash collection check 46")
     let set = HashSet.from([1, 2, 1, 3], (value: Int) -> -1)
     let before = set.iterator()
     set = (move set).remove(2).insert(4)
@@ -63,20 +84,38 @@ func main() -> Int {
     let total = 0
     loop {
         branch before.next() {
-            Option.None -> { break }
-            Option.Some(value) -> { total = total + value }
+            Option.None -> {
+                break
+            }
+            Option.Some(value) -> {
+                total = total + value
+            }
         }
     }
     assert(total == 6, "hash collection check 60")
     assert((move set).values().length == 3, "hash collection check 61")
     let salt = 17
-    let records = HashMap.empty((key: Key) -> key.id + salt).put(Key { id: 1, name: "Ada" }, Payload { values: [20, 22] })
-    assert(records.contains_key?(Key { id: 1, name: "Ada" }), "structurally equal record key")
-    assert(not records.contains_key?(Key { id: 1, name: "Lin" }), "unequal record key with identical hash")
-    let found = records.remove(Key { id: 1, name: "Ada" })
+    let records = HashMap.empty((key: Key) -> key.id + salt).put(Key {
+        id: 1, name: "Ada"
+    }, Payload {
+        values: [20, 22]
+    })
+    assert(records.contains_key?(Key {
+        id: 1, name: "Ada"
+    }), "structurally equal record key")
+    assert(not records.contains_key?(Key {
+        id: 1, name: "Lin"
+    }), "unequal record key with identical hash")
+    let found = records.remove(Key {
+        id: 1, name: "Ada"
+    })
     branch found {
-        Option.None -> { assert(false, "record payload missing") }
-        Option.Some(payload) -> { assert(payload.values[0] + payload.values[1] == 42, "record payload contents") }
+        Option.None -> {
+            assert(false, "record payload missing")
+        }
+        Option.Some(payload) -> {
+            assert(payload.values[0] + payload.values[1] == 42, "record payload contents")
+        }
     }
     let empty = HashMap.empty(hashing::integer).put(1, 42)
     assert(empty.remove(1) == Option.Some(42))

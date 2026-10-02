@@ -269,9 +269,17 @@ mod tests {
         let compilation = crate::compile(
             r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.time
+import std.time.*
+import static std.time.*
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 func use_socket(socket: Connection) -> Int [consume socket] {
     assert(socket.wait_readable(0).unwrap_or(false))
     assert(socket.wait_writable(0).error?())
@@ -545,11 +553,23 @@ check_reclamation();
         let compilation = crate::compile(
             r#"
 import core.string
+import core.string.*
+import static core.string.*
 import core.result
+import core.result.*
+import static core.result.*
 import core.list
+import core.list.*
+import static core.list.*
 import std.process
+import std.process.*
+import static std.process.*
 import std.path
+import std.path.*
+import static std.path.*
 import std.iter
+import std.iter.*
+import static std.iter.*
 type Box = { text: String }
 impl Box { func copy(self) -> self { Box { text: self.text.copy() } } }
 func crash(kind: String, text: String) -> String {
@@ -858,13 +878,29 @@ fn main() {
         let compilation = crate::compile(
             r#"
 import core.string
+import core.string.*
+import static core.string.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.result
+import core.result.*
+import static core.result.*
 import core.list
+import core.list.*
+import static core.list.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import std.process
+import std.process.*
+import static std.process.*
 import std.iter
+import std.iter.*
+import static std.iter.*
 type Box = { text: String }
 impl Box { func deinit(self) -> () { assert(self.text.length >= 0, "nonnegative length in destructor") } }
 type Token = { symbol: Symbol }

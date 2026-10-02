@@ -1,4 +1,5 @@
 import values
+import static values.EXPORTED
 
 func main() -> Int {
     EXPORTED + values::OFFSET

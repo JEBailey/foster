@@ -4,7 +4,7 @@
 //! choosing a storage representation. Use concrete collection types for construction
 //! and structural contracts for algorithms that accept several implementations.
 
-import std.iter
+import std.iter.Iterable
 
 /// A repeatable collection with a known number of elements.
 ///

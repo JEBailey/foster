@@ -7,6 +7,10 @@ members. Interface declarations must match these constraints exactly.
 
 Build a project once and distribute its `.flib` file:
 
+Source-library manifests select their public root with `package.entry = "lib.fos"`
+(relative to `package.source`). The selected file is normalized to the package-root module,
+so its public declarations keep the same import namespace in source and compiled form.
+
 ```sh
 foster build path/to/library --library -o math.flib
 ```
@@ -27,7 +31,7 @@ name = "application"
 math = { path = "vendor/math.flib" }
 ```
 
-Use `import math` in source. The library's `main` module is mounted at `math`; other modules
+Use `import math` in source. The library's selected root module is mounted at `math`; other modules
 are mounted under `math.<original-path>`. The dependency alias does not change the package-qualified
 symbol identity. `check`, `run`, `build`, native builds, and `pack` use these dependencies.
 The library source and its original project directory are not needed by the consumer.

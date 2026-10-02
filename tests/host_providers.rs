@@ -43,11 +43,23 @@ fn vm_uses_installed_provider_for_files_clocks_network_and_drop() {
     let compilation = foster::compile(
         r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.host
+import std.host.*
+import static std.host.*
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 import std.time
+import std.time.*
+import static std.time.*
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 
 func readiness(socket: Connection) -> Int [consume socket] {
     branch socket.wait_writable(0) {
@@ -89,11 +101,23 @@ func main() -> Int {
 fn application_providers_can_be_implemented_in_foster() {
     let compilation = foster::compile(r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 import std.host
+import std.host.*
+import static std.host.*
 import std.io
+import std.io.*
+import static std.io.*
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 import std.path as paths
+import std.path.*
+import static std.path.*
 type Memory = & FileProvider<Bytes> & NetworkProvider<Int, Int> & {}
 impl Memory {
     func file(self, location: paths::Path) -> Result<Bytes, IoError> [read self, consume location] {

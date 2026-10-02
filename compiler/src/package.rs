@@ -510,7 +510,14 @@ impl Package {
             library_bindings: BTreeMap::new(),
             modules: BTreeMap::new(),
         };
-        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays, cache)?;
+        package.discover_modules_from(
+            &root,
+            ModuleOrigin::Input,
+            None,
+            "main.fos",
+            overlays,
+            cache,
+        )?;
         package.finish_loading(cache)?;
         Ok(package)
     }
@@ -562,7 +569,14 @@ impl Package {
             library_bindings: BTreeMap::new(),
             modules: BTreeMap::new(),
         };
-        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays, cache)?;
+        package.discover_modules_from(
+            &root,
+            ModuleOrigin::Input,
+            None,
+            &project.entry,
+            overlays,
+            cache,
+        )?;
         for name in package.modules.keys() {
             package
                 .symbol_modules
@@ -583,6 +597,7 @@ impl Package {
                 &dependency_root,
                 ModuleOrigin::Dependency,
                 Some(&dependency.name),
+                &dependency_project.entry,
                 overlays,
                 cache,
             )?;
@@ -933,6 +948,7 @@ impl Package {
         root: &Utf8Path,
         origin: ModuleOrigin,
         prefix: Option<&str>,
+        entry: &str,
         overlays: &HashMap<Utf8PathBuf, String>,
         cache: &mut Option<&mut ModuleCache>,
     ) -> Result<(), FosterError> {
@@ -968,10 +984,17 @@ impl Package {
                     .strip_prefix(root)
                     .expect("walked source paths are beneath the package root");
                 if *is_directory || path.extension() == Some("fos") {
-                    let local = module_components(relative, !is_directory)?;
+                    let local = entry_components(relative, !is_directory, entry)?;
+                    let physical = module_components(relative, !is_directory)?;
+                    rewrites.insert(physical.join("."), mounted_components(prefix, &local));
                     rewrites.insert(local.join("."), mounted_components(prefix, &local));
                 }
             }
+        }
+
+        if prefix.is_none() && entry != "main.fos" {
+            let physical = module_components(Utf8Path::new(entry), true)?;
+            rewrites.insert(physical.join("."), vec!["main".to_owned()]);
         }
 
         for (path, is_directory) in entries {
@@ -987,17 +1010,10 @@ impl Package {
                     prefix.map_or_else(|| local.clone(), |name| mounted_components(name, &local));
                 self.ensure_implicit(&mounted, origin);
             } else if path.extension() == Some("fos") {
-                let local = module_components(relative, true)?;
+                let local = entry_components(relative, true, entry)?;
                 let mounted =
                     prefix.map_or_else(|| local.clone(), |name| mounted_components(name, &local));
-                self.add_explicit(
-                    mounted,
-                    path,
-                    origin,
-                    prefix.map(|_| &rewrites),
-                    overlays,
-                    cache,
-                )?;
+                self.add_explicit(mounted, path, origin, Some(&rewrites), overlays, cache)?;
             }
         }
         Ok(())
@@ -1045,8 +1061,25 @@ impl Package {
             })?;
         if let Some(import_rewrites) = import_rewrites {
             for import in &mut program.imports {
-                if let Some(rewritten) = import_rewrites.get(&import.path.join(".")) {
-                    import.path.clone_from(rewritten);
+                if let Some((count, rewritten)) = (1..=import.path.len()).rev().find_map(|count| {
+                    import_rewrites
+                        .get(&import.path[..count].join("."))
+                        .map(|path| (count, path))
+                }) {
+                    // Rebasing a root file must preserve its source-level qualifier.
+                    if count == import.path.len()
+                        && !import.wildcard
+                        && !import.static_
+                        && import.alias.is_none()
+                        && import.path.last() != rewritten.last()
+                    {
+                        import.alias = import.path.last().cloned();
+                    }
+                    import.path = rewritten
+                        .iter()
+                        .cloned()
+                        .chain(import.path[count..].iter().cloned())
+                        .collect();
                 }
             }
         }
@@ -1125,18 +1158,35 @@ impl Package {
                     })
                     .or_else(|| {
                         program.imports.iter().find_map(|import| {
-                            let imported =
-                                self.modules.get(&import.path.join("."))?.program.as_ref()?;
+                            if import.static_ {
+                                return None;
+                            }
+                            let (count, imported) =
+                                (1..=import.path.len()).rev().find_map(|count| {
+                                    self.modules
+                                        .get(&import.path[..count].join("."))
+                                        .map(|module| (count, module))
+                                })?;
+                            let selected = import.path[count..].join(".");
+                            let actual = if import.wildcard {
+                                owner.as_str()
+                            } else {
+                                if import.alias.as_ref().or_else(|| import.path.last())? != owner {
+                                    return None;
+                                }
+                                selected.as_str()
+                            };
+                            let imported = imported.program.as_ref()?;
                             imported
                                 .records
                                 .iter()
-                                .find(|record| record.public && &record.name == owner)
+                                .find(|record| record.public && record.name == actual)
                                 .map(|record| record.parameters.len())
                                 .or_else(|| {
                                     imported
                                         .variants
                                         .iter()
-                                        .find(|variant| variant.public && &variant.name == owner)
+                                        .find(|variant| variant.public && variant.name == actual)
                                         .map(|variant| variant.parameters.len())
                                 })
                         })
@@ -1222,11 +1272,16 @@ impl Package {
             let mut aliases = HashSet::new();
             for import in &program.imports {
                 let target = import.path.join(".");
-                if !self.modules.contains_key(&target) {
+                if !(1..=import.path.len())
+                    .any(|count| self.modules.contains_key(&import.path[..count].join(".")))
+                {
                     return Err(FosterError::runtime(format!(
                         "module `{}` imports unknown module `{target}`",
                         module.name
                     )));
+                }
+                if import.wildcard {
+                    continue;
                 }
                 let local_name = import
                     .alias
@@ -1456,13 +1511,22 @@ fn utf8_source_root(root: &Path) -> Result<Utf8PathBuf, FosterError> {
 
 fn mounted_components(prefix: &str, local: &[String]) -> Vec<String> {
     let mut mounted = vec![prefix.to_owned()];
-    let local = if local.first().is_some_and(|name| name == "main") {
+    let local = if local == ["main"] {
         &local[1..]
     } else {
         local
     };
     mounted.extend_from_slice(local);
     mounted
+}
+
+fn entry_components(path: &Utf8Path, file: bool, entry: &str) -> Result<Vec<String>, FosterError> {
+    let components = module_components(path, file)?;
+    if file && path.as_str() == entry {
+        Ok(vec!["main".to_owned()])
+    } else {
+        Ok(components)
+    }
 }
 
 fn module_components(path: &Utf8Path, strip_extension: bool) -> Result<Vec<String>, FosterError> {
@@ -1604,6 +1668,7 @@ pub struct ProjectSource {
     pub name: String,
     pub root: std::path::PathBuf,
     pub source_root: std::path::PathBuf,
+    pub entry: String,
 }
 #[derive(Debug, Clone)]
 pub struct DependencySource {

@@ -1,6 +1,7 @@
 //! Records, enums, methods, closures, and lazy iterators in an account-processing pipeline.
 
 import std.iter
+
 import std.iter.filter as filtering
 
 type Account = {
@@ -14,7 +15,9 @@ enum AccountResult = Created(Account)
 
 func create_account(owner: String, opening_balance: Int) -> AccountResult {
     return InvalidOpeningBalance("opening balance must not be negative") if opening_balance < 0
-    Created(Account { owner, balance: opening_balance, transactions: [] })
+    Created(Account {
+        owner, balance: opening_balance, transactions: []
+    })
 }
 
 impl Account {
@@ -33,9 +36,13 @@ func multiplier(factor: Int) -> func(Int) -> Int {
     (value: Int) -> factor * value
 }
 
-func over_ten?(value: Int) -> Bool { value > 10 }
+func over_ten?(value: Int) -> Bool {
+    value > 10
+}
 
-func add(total: Int, value: Int) -> Int { total + value }
+func add(total: Int, value: Int) -> Int {
+    total + value
+}
 
 func use_account(result: AccountResult) -> Int {
     branch result {

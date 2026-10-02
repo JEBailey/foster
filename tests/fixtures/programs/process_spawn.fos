@@ -1,21 +1,42 @@
 import std.process
+import std.process.Arguments
+import std.process.ProcessError
+import std.process.ProcessStatus
+import std.process.ProcessOutput
+import std.process.SpawnOptions
+
 import std.fs
+
+import static std.fs.*
 import core.result
+import core.result.Result
+
 import core.option
+
 import core.bytes
+
 import core.string
+import core.string.String
 
-func finish(value: Future<Result<ProcessOutput, ProcessError>>) -> Result<ProcessOutput, ProcessError> [consume value, suspend] { await value }
+func finish(value: Future<Result<ProcessOutput, ProcessError>>) -> Result<ProcessOutput, ProcessError> [consume value, suspend] {
+    await value
+}
 
-type Worker = { executable: String }
+type Worker = {
+    executable: String
+}
 impl Worker {
     func run(self) -> Int {
         let child = branch process::spawn(self.executable, ["ok"]) {
             Result.Ok(value) -> value
-            Result.Error(_) -> { return -1 }
+            Result.Error(_) -> {
+                return -1
+            }
         }
         branch await child {
-            Result.Ok(output) -> branch { output.status.success -> 42 _ -> -2 }
+            Result.Ok(output) -> branch {
+                output.status.success -> 42 _ -> -2
+            }
             Result.Error(_) -> -3
         }
     }
@@ -24,7 +45,9 @@ impl Worker {
 func main(arguments: Arguments) -> Result<Int, ProcessError> {
     let executable = arguments.values[0].copy()
     let directory = arguments.values[1].copy()
-    let child = try process::spawn_with(executable, ["arguments", "", "two words", "a\"b\\c", "λ\nvalue"], SpawnOptions { directory: directory.copy(), output_limit: 1024 })
+    let child = try process::spawn_with(executable, ["arguments", "", "two words", "a\"b\\c", "λ\nvalue"], SpawnOptions {
+        directory: directory.copy(), output_limit: 1024
+    })
     assert(child.pid() > 0)
     let output = try finish(move child)
     assert(!output.status.success)
@@ -38,11 +61,19 @@ func main(arguments: Arguments) -> Result<Int, ProcessError> {
     assert(captured.stdout.length == 131072)
     assert(captured.stderr.length == 131072)
 
-    let limited = try process::spawn_with(executable, ["pipes"], SpawnOptions { directory: "", output_limit: 32 })
-    branch await limited { Result.Error(_) -> () Result.Ok(_) -> panic("capture limit ignored") }
-    branch process::spawn("foster-nonexistent-executable-932857", []) { Result.Error(_) -> () Result.Ok(_) -> panic("missing executable launched") }
+    let limited = try process::spawn_with(executable, ["pipes"], SpawnOptions {
+        directory: "", output_limit: 32
+    })
+    branch await limited {
+        Result.Error(_) -> () Result.Ok(_) -> panic("capture limit ignored")
+    }
+    branch process::spawn("foster-nonexistent-executable-932857", []) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("missing executable launched")
+    }
     for limit in [0, 67108865] {
-        branch process::spawn_with(executable, ["ok"], SpawnOptions { directory: "", output_limit: limit }) {
+        branch process::spawn_with(executable, ["ok"], SpawnOptions {
+            directory: "", output_limit: limit
+        }) {
             Result.Error(_) -> ()
             Result.Ok(_) -> panic("invalid capture limit accepted")
         }
@@ -64,19 +95,27 @@ func main(arguments: Arguments) -> Result<Int, ProcessError> {
     let ready = directory + "/ready"
     let survived = directory + "/survived"
     let sleeper = try process::spawn(executable, ["sleep", ready.copy(), survived.copy()])
-    loop { break if fs::exists?(ready) }
-    branch try sleeper.poll() { ProcessStatus.Running -> () _ -> panic("child exited early") }
+    loop {
+        break if fs::exists?(ready)
+    }
+    branch try sleeper.poll() {
+        ProcessStatus.Running -> () _ -> panic("child exited early")
+    }
     try sleeper.terminate()
     let terminated = try await sleeper
     assert(!terminated.status.success)
 
     :cleanup {
         let dropped = try process::spawn(executable, ["sleep", directory + "/drop-ready", directory + "/drop-survived"])
-        loop { break if fs::exists?(directory + "/drop-ready") }
+        loop {
+            break if fs::exists?(directory + "/drop-ready")
+        }
         assert(dropped.pid() > 0)
     }
 
-    let worker = remote Worker { executable: executable.copy() }
+    let worker = remote Worker {
+        executable: executable.copy()
+    }
     let remote_result = await worker.run()
     assert(remote_result.unwrap_or(-1) == 42)
     Result.Ok(42)

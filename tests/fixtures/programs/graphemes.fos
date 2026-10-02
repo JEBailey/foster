@@ -1,7 +1,13 @@
 import core.string
+import core.string.String
+
 import core.list
+
 import core.option
+import core.option.Option
+
 import std.iter
+
 import std.sequence
 
 func main() -> Int {
@@ -38,7 +44,9 @@ func main() -> Int {
     assert("é".scalar_slice(1, 2) == "́")
     assert("é".code_points() == ['e', '́'])
     let items = []
-    for cluster in text { items.push(cluster) }
+    for cluster in text {
+        items.push(cluster)
+    }
     assert(items == text.graphemes())
     assert(sequence_head("é!") == "é")
     assert(sequence_length("é!") == 2)
@@ -50,5 +58,9 @@ func main() -> Int {
     42
 }
 
-func sequence_head(text: Sequence<String>) -> String { text.head() }
-func sequence_length(text: Sequence<String>) -> Int { text.length() }
+func sequence_head(text: Sequence<String>) -> String {
+    text.head()
+}
+func sequence_length(text: Sequence<String>) -> Int {
+    text.length()
+}

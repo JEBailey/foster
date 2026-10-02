@@ -1,6 +1,9 @@
 import core.list
+
 import core.string
+
 import std.iter.map
+
 func main() -> Int {
     let seen = []
     let values = [1, 2].iterator().map([ref seen] (value: Int) -> {

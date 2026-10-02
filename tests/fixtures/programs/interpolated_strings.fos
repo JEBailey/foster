@@ -1,5 +1,9 @@
 import core.string
+import core.string.String
+
 import core.int
+import core.int.Int
+
 import core.bool
 
 type Label = {

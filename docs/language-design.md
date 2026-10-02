@@ -32,6 +32,15 @@ A project may select that source root with `package.source` in a `foster.toml` m
 is relative to the project directory and defaults to `src`. Without a manifest, a directory passed
 directly to a Foster command remains the source root.
 
+`package.entry` explicitly selects a `.fos` filename in that source root, defaulting to
+`main.fos` when omitted. Libraries select `entry = "lib.fos"`; executable projects normally
+select `entry = "main.fos"`. An explicit entry must exist and cannot contain directory components.
+The entry's declarations form the package root: a dependency named `graphics` exposes its
+entry through `import graphics`, never `import graphics.lib`. Other files remain submodules.
+A different entry and an additional root-level `main.fos` conflict with the package root.
+Imports expose public declarations and perform no initialization. `run` still requires a
+`main` function in the entry.
+
 Source libraries are packages with their own `foster.toml` and source directory:
 
 ```toml
@@ -81,18 +90,44 @@ Imports use canonical dotted names and may bind an alias:
 
 ```foster
 import json
+import json.*
+import static json.*
 import json.parser as parser
+import json.parser.*
+import static json.parser.*
 
 func decode(source: String) {
     parser::parse(source)
 }
 ```
 
-An import makes the module's public declarations available directly and also binds its final path
-component as a module qualifier. Thus `import core.option` permits both `Option<T>` and
-`option::Option<T>`. Same-module declarations take precedence. If multiple imported modules expose
-the same unqualified name, Foster requires a module-qualified use at that point; importing the
-modules themselves remains valid.
+A plain module import binds a namespace for qualified access; it does not expose names directly.
+Ordinary item imports select public types. Static item imports select public functions without
+`self` and constants. Both support named imports and wildcards:
+
+```foster
+import core.result.Result
+
+import static std.fs.read_text
+import static std.fs.*
+import shapes.Foo.Child
+import shapes.Foo.*
+import static shapes.Foo.create
+import static shapes.Foo.*
+```
+
+A wildcard selects only immediate members. Type wildcards never select functions, constants,
+or enum cases; static wildcards never select types or instance methods. Named imports may use
+`as`; wildcard imports cannot. Private members are excluded. Same-module declarations take
+precedence over wildcard names. Ambiguous imported names must be qualified or imported with
+an alias. Importing a type preserves its identity and makes its associated and instance methods
+available through the type and values, respectively.
+
+Child types are declared at module scope with a qualified name, for example
+`pub type Foo.Child = { pub value: Int }`, and methods use `impl Foo.Child { ... }`.
+Child constants likewise use `pub const Foo.VALUE = 42`. The parent must be a declared type.
+A child cannot be accessed from another module through a private parent.
+Qualified child-type annotations use `Foo::Child`; child factories use `Foo.Child.create()`.
 
 Module qualification uses `::`, while type accessors and runtime value access use `.`. Module
 functions, qualified constants, and qualified type names therefore use `::`; associated functions,
@@ -267,6 +302,11 @@ An executable entry may remain `func main()`, or take exactly one command-argume
 
 ```foster
 import std.process
+import std.process.Arguments
+import std.process.ProcessError
+import std.process.ProcessOutput
+import std.process.Process
+import static std.process.*
 
 func main(arguments: Arguments) -> String {
     return arguments.executable if arguments.values.empty?
@@ -429,6 +469,12 @@ recoverable errors remain ordinary typed `Result` values.
 
 Identifiers may end in `?`, conventionally marking Boolean observations such as `empty?` and
 `whitespace?`. Commas separate arguments and generic parameters. Newlines separate statements.
+Comma-separated lists allow spaces, comments, and newlines after the opening delimiter,
+before and after commas, and before the closing delimiter. This applies to calls, parameters,
+list literals, captures, record fields and patterns, enum payloads and patterns, generic lists,
+function-type parameters, and effects. Commas remain required in lists that require them;
+a newline alone does not replace one. Newlines inside a nested statement block still separate
+its statements. This does not add trailing commas to list forms that do not already allow them.
 A leading `.` on the next nonempty line continues the preceding expression, allowing field
 access and method chains to span lines. A leading `(` or `[` does not continue an expression.
 
@@ -816,7 +862,11 @@ The operation still needs parentheses, and both arms need compatible results.
 
 ```foster
 import core.copy
+import core.copy.Copy
+import static core.copy.*
 import core.result
+
+
 
 enum CopyError = NotCopyable
 
@@ -1156,6 +1206,8 @@ than a compiler-owned protocol:
 ```foster
 import core.option
 
+
+
 pub type Iterator<T> = {
     pub func next(self) -> Option<T> [mut self]
 }
@@ -1405,6 +1457,10 @@ func(consume Job) -> () // takes ownership of its argument
 
 ```foster
 import core.functions
+import core.functions.Predicate
+import core.functions.Consumer
+import core.functions.Supplier
+
 
 Predicate<Job> // func(Job) -> Bool
 Consumer<Job>  // func(consume Job) -> ()
@@ -1472,6 +1528,8 @@ Foster-written `Result<T, E>` enum:
 
 ```foster
 import core.result
+
+
 
 func parse(input: String) -> Result<Json, JsonError> {
     branch parse_value(input) {

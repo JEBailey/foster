@@ -1,4 +1,4 @@
-import std.process
+import std.process.Arguments
 
 func main(arguments: Arguments) -> String {
     return arguments.executable if arguments.values.empty?

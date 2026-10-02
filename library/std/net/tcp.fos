@@ -6,17 +6,33 @@
 //! `close()` also reports errors from the host.
 //! Timeouts are configured in milliseconds; this module does not provide TLS.
 
-import core.bytes
+import core.bytes.Bytes
+
 import core.code_point
-import core.drop
-import core.int
-import core.list
-import core.option
-import core.result
-import core.string
-import std.io
-import std.resource
-import std.uri
+
+import core.drop.Drop
+
+import core.int.Int
+
+import core.list.List
+
+import core.option.Option
+
+import core.result.Result
+
+import core.string.String
+
+import std.io.ReadReady
+import std.io.WriteReady
+import std.io.TextWriter
+import std.io.Duplex
+
+import std.resource.ResourceIdentifier
+import std.resource.Resource
+import std.resource.Closable
+import std.resource.Accepting
+
+import std.uri.Uri
 
 /// Private namespace for TCP host operations.
 type TcpHost = {}
@@ -92,7 +108,9 @@ pub type TcpEndpoint = & ResourceIdentifier & {
 impl TcpEndpoint {
     /// Associates a host address and port with a typed TCP endpoint identifier.
     pub func at(address: String, port: Int) -> TcpEndpoint [consume address] {
-        TcpEndpoint { address_value: move address, port_value: port }
+        TcpEndpoint {
+            address_value: move address, port_value: port
+        }
     }
 
     /// Parses a `tcp://host:port` URI into a TCP endpoint.
@@ -113,7 +131,9 @@ impl TcpEndpoint {
     }
 
     /// Returns the stable endpoint identifier supplied to the TCP provider.
-    pub func resource_id(self) -> String { self.as_string() }
+    pub func resource_id(self) -> String {
+        self.as_string()
+    }
 
     /// Returns the host address without URI brackets.
     pub func address(self) -> String {
@@ -121,7 +141,9 @@ impl TcpEndpoint {
     }
 
     /// Returns the TCP port.
-    pub func port(self) -> Int { self.port_value }
+    pub func port(self) -> Int {
+        self.port_value
+    }
 }
 
 /// An opaque connected TCP stream associated with the endpoint that created it.
@@ -184,7 +206,9 @@ pub func connect_uri(value: Uri) -> Result<Connection, NetworkError> [consume va
 /// Converts a successful listener handle into an opaque `Listener`.
 func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) -> Result<Listener, NetworkError> [consume endpoint, consume outcome] {
     let handle = try move outcome
-    Result.Ok(Listener { location: move endpoint, handle })
+    Result.Ok(Listener {
+        location: move endpoint, handle
+    })
 }
 
 impl Listener {
@@ -218,7 +242,9 @@ impl Listener {
 /// Converts a successful connection handle into an opaque `Connection`.
 func wrap_connection(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) -> Result<Connection, NetworkError> [consume endpoint, consume outcome] {
     let handle = try move outcome
-    Result.Ok(Connection { location: move endpoint, handle })
+    Result.Ok(Connection {
+        location: move endpoint, handle
+    })
 }
 
 impl Connection {
@@ -371,5 +397,7 @@ func append_port_digit(characters: List<CodePoint>, value: Int, digit: Int) -> O
 
 /// Constructs a typed endpoint validation failure.
 func invalid_endpoint(value: String, message: String) -> Result<TcpEndpoint, NetworkError> {
-    Result.Error(NetworkError { operation: "tcp.endpoint", message: value + ": " + message })
+    Result.Error(NetworkError {
+        operation: "tcp.endpoint", message: value + ": " + message
+    })
 }

@@ -121,7 +121,11 @@ may reinitialize it.
 
 ```foster
 import core.copy
+import core.copy.Copy
+import static core.copy.*
 import core.drop
+import core.drop.Drop
+
 
 type Item = & Copy & Drop & { id: Int }
 impl Item {

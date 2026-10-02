@@ -213,7 +213,11 @@ impl Parser {
         let start = self.peek().range.start;
         let public = self.take(&TokenKind::Pub);
         self.expect(&TokenKind::Const, "expected `const`")?;
-        let name = self.expect_ident("expected constant name")?;
+        let mut name = self.expect_ident("expected constant name")?;
+        while self.take(&TokenKind::Dot) {
+            name.push('.');
+            name.push_str(&self.expect_ident("expected child constant name")?);
+        }
         self.expect(&TokenKind::Equal, "expected `=` after constant name")?;
         let value = self.expression()?;
         Ok(ConstDecl {
@@ -241,9 +245,14 @@ impl Parser {
         if intrinsic && kind == VariantKind::Enum {
             return Err(self.error("an intrinsic declaration must use `type`"));
         }
-        let name = self.expect_ident("expected record name")?;
+        let mut name = self.expect_ident("expected record name")?;
+        while self.take(&TokenKind::Dot) {
+            name.push('.');
+            name.push_str(&self.expect_ident("expected child type name")?);
+        }
         let mut parameters = Vec::new();
         if self.take(&TokenKind::Less) {
+            self.newlines();
             loop {
                 parameters.push(self.expect_ident("expected type parameter")?);
                 if !self.take(&TokenKind::Comma) {
@@ -543,11 +552,20 @@ impl Parser {
     pub(super) fn import(&mut self) -> Result<Import, FosterError> {
         let start = self.peek().range.start;
         self.expect(&TokenKind::Import, "expected `import`")?;
+        let static_ = self.take(&TokenKind::Static);
         let mut path = vec![self.expect_ident("expected module name after `import`")?];
+        let mut wildcard = false;
         while self.take(&TokenKind::Dot) {
+            if self.take(&TokenKind::Star) {
+                wildcard = true;
+                break;
+            }
             path.push(self.expect_ident("expected module name after `.`")?);
         }
         let alias = if self.take(&TokenKind::As) {
+            if wildcard {
+                return Err(self.error("a wildcard import cannot have an alias"));
+            }
             Some(self.expect_ident("expected alias after `as`")?)
         } else {
             None
@@ -556,6 +574,8 @@ impl Parser {
             span: start..self.tokens[self.current.saturating_sub(1)].range.end,
             path,
             alias,
+            wildcard,
+            static_,
         })
     }
 
@@ -576,10 +596,15 @@ impl Parser {
         let start = self.peek().range.start;
         self.expect(&TokenKind::Impl, "expected `impl`")?;
         let owner_span = self.peek().range.clone();
-        let owner = self.expect_ident("expected type name after `impl`")?;
+        let mut owner = self.expect_ident("expected type name after `impl`")?;
+        while self.take(&TokenKind::Dot) {
+            owner.push('.');
+            owner.push_str(&self.expect_ident("expected child type name")?);
+        }
         let mut type_parameters = Vec::new();
         let mut constraints = Vec::new();
         if self.take(&TokenKind::Less) {
+            self.newlines();
             loop {
                 let parameter = self.expect_ident("expected impl type parameter")?;
                 if self.take(&TokenKind::Ampersand) {
@@ -777,6 +802,7 @@ impl Parser {
         let mut type_parameters = Vec::new();
         let mut constraints = Vec::new();
         if self.take(&TokenKind::Less) {
+            self.newlines();
             loop {
                 let parameter = self.expect_ident("expected type parameter")?;
                 if self.take(&TokenKind::Ampersand) {
@@ -893,6 +919,7 @@ impl Parser {
         }
         let mut arguments = Vec::new();
         if self.take(&TokenKind::Less) {
+            self.newlines();
             loop {
                 arguments.push(self.type_expr()?);
                 if !self.take(&TokenKind::Comma) {
@@ -1002,16 +1029,19 @@ impl Parser {
 
     fn effect_clause_follows(&self) -> bool {
         self.at(&TokenKind::LBracket)
-            && self.peek_n(1).is_some_and(|token| {
-                matches!(
-                    token.kind,
-                    TokenKind::Read
-                        | TokenKind::Mut
-                        | TokenKind::Reshape
-                        | TokenKind::Consume
-                        | TokenKind::Suspend
-                )
-            })
+            && self.tokens[self.current + 1..]
+                .iter()
+                .find(|token| token.kind != TokenKind::Newline)
+                .is_some_and(|token| {
+                    matches!(
+                        token.kind,
+                        TokenKind::Read
+                            | TokenKind::Mut
+                            | TokenKind::Reshape
+                            | TokenKind::Consume
+                            | TokenKind::Suspend
+                    )
+                })
     }
 
     pub(super) fn block(&mut self) -> Result<crate::block::Block<Stmt>, FosterError> {

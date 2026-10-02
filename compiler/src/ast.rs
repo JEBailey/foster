@@ -125,6 +125,8 @@ pub struct Import {
     pub span: std::ops::Range<usize>,
     pub path: Vec<String>,
     pub alias: Option<String>,
+    pub wildcard: bool,
+    pub static_: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]

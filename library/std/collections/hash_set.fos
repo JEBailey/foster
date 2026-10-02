@@ -5,9 +5,13 @@
 //! insertion order is part of the required behavior.
 
 import core.option
-import std.collections.set
-import std.collections.hash_map
-import std.iter
+
+import std.collections.set.Set
+import std.collections.set.ListSet
+
+import std.collections.hash_map.HashMap
+
+import std.iter.Iterator
 
 /// A hash-backed collection of distinct values with unspecified iteration order.
 /// Equal values must have equal, stable hashes. Updates consume the set.
@@ -21,7 +25,9 @@ pub type HashSet<T> = & Set<T> & {
 impl HashSet<T> {
     /// Creates an empty set using the supplied stable hash function.
     pub func empty(hasher: func(T) -> Int) -> HashSet<T> [consume hasher] {
-        HashSet { table: HashMap.empty(move hasher) }
+        HashSet {
+            table: HashMap.empty(move hasher)
+        }
     }
 
     /// Creates a set containing each input value once.
@@ -34,24 +40,34 @@ impl HashSet<T> {
     }
 
     /// Returns the number of distinct values.
-    pub func length(self) -> Int { self.table.length() }
+    pub func length(self) -> Int {
+        self.table.length()
+    }
 
     /// Returns whether the set has no values.
-    pub func empty?(self) -> Bool { self.table.empty?() }
+    pub func empty?(self) -> Bool {
+        self.table.empty?()
+    }
 
     /// Tests membership without consuming the set.
-    pub func contains?(self, value: T) -> Bool { self.table.contains_key?(value) }
+    pub func contains?(self, value: T) -> Bool {
+        self.table.contains_key?(value)
+    }
 
     /// Returns a set containing the supplied value.
     pub func insert(self, value: T) -> HashSet<T> [consume self, consume value] {
-        HashSet { table: (move self.table).put(move value, ()) }
+        HashSet {
+            table: (move self.table).put(move value, ())
+        }
     }
 
     /// Returns a set without the supplied value; absent values leave it unchanged.
     pub func remove(self, value: T) -> HashSet<T> [consume self] {
         let table = move self.table
         table.remove(value)
-        HashSet { table }
+        HashSet {
+            table
+        }
     }
 
     /// Creates a snapshot iterator in unspecified order.

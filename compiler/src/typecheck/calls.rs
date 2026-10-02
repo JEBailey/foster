@@ -1228,7 +1228,7 @@ impl Checker<'_> {
         let mut candidates = Vec::new();
         let mut candidate_modules = HashSet::new();
         for module in std::iter::once(caller_module)
-            .chain(self.hir.modules[caller_module].imports.values().copied())
+            .chain(self.hir.scope_modules(caller_module))
             .filter(|module| Some(*module) != inherent_module)
         {
             for function in self.hir.modules[module]

@@ -169,7 +169,7 @@ fn expression(value: &Expr, scope: &Items, marker: &str) -> Option<Items> {
 fn declarations(program: &ast::Program, public_only: bool) -> Items {
     let mut items = Items::new();
     for function in &program.functions {
-        if function.owner.is_none() && (!public_only || function.public) {
+        if !function.receiver && (!public_only || function.public) {
             insert_documented_completion(
                 &mut items,
                 &function.name,
@@ -274,7 +274,13 @@ impl Workspace {
         uri: &Uri,
         selected: Option<&HashSet<String>>,
     ) -> BTreeMap<String, Items> {
-        let wanted = |name: &str| selected.is_none_or(|names| names.contains(name));
+        let wanted = |name: &str| {
+            selected.is_none_or(|names| {
+                names
+                    .iter()
+                    .any(|path| path == name || path.starts_with(&format!("{name}.")))
+            })
+        };
         let mut exports = crate::package::EMBEDDED_MODULES
             .iter()
             .filter(|(name, _)| wanted(name))
@@ -330,17 +336,53 @@ impl Workspace {
         let qualifier = qualifier_before(source, start);
         let mut items = Items::new();
         for import in &program.imports {
-            let name = import.alias.as_ref().or_else(|| import.path.last())?;
-            if name.starts_with('$') {
+            let path = import.path.join(".");
+            let local = import.alias.as_ref().or_else(|| import.path.last())?;
+            if local.starts_with('$') {
                 continue;
             }
-            if qualifier.as_ref().is_none_or(|qualifier| qualifier == name) {
-                if let Some(exported) = exports.get(&import.path.join(".")) {
+            let Some((target, exported)) = exports
+                .iter()
+                .filter(|(target, _)| path == **target || path.starts_with(&format!("{target}.")))
+                .max_by_key(|(target, _)| target.len())
+            else {
+                continue;
+            };
+            let namespace = path == *target && !import.wildcard && !import.static_;
+            if namespace {
+                if qualifier.as_ref() == Some(local) {
                     items.extend(exported.clone());
                 }
+                if qualifier.is_none() {
+                    insert_completion(&mut items, local, CompletionItemKind::MODULE, None);
+                }
+                continue;
             }
-            if qualifier.is_none() {
-                insert_completion(&mut items, name, CompletionItemKind::MODULE, None);
+            if qualifier.is_some() {
+                continue;
+            }
+            let prefix = path.strip_prefix(&format!("{target}.")).unwrap_or("");
+            for (name, item) in exported {
+                let is_type = matches!(
+                    item.kind,
+                    Some(
+                        CompletionItemKind::CLASS
+                            | CompletionItemKind::STRUCT
+                            | CompletionItemKind::ENUM
+                            | CompletionItemKind::INTERFACE
+                    )
+                );
+                if is_type == import.static_ {
+                    continue;
+                }
+                let (owner, member) = name.rsplit_once('.').unwrap_or(("", name));
+                if (import.wildcard && owner == prefix) || (!import.wildcard && name == prefix) {
+                    let name = import.alias.as_deref().unwrap_or(member);
+                    let mut item = item.clone();
+                    item.label = name.into();
+                    item.insert_text = Some(name.into());
+                    items.insert(name.into(), item);
+                }
             }
         }
         if qualifier.is_some() {
@@ -499,15 +541,30 @@ mod tests {
 
     #[test]
     fn completion_uses_current_declarations_and_imports_without_a_snapshot() {
-        let items =
-            complete("import core.option as options\nfunc edit() { Op| }\nfunc later() { 0 }");
+        let items = complete("import core.option.*\nfunc edit() { Op| }\nfunc later() { 0 }");
         assert!(items.contains_key("Option"));
-        assert!(items.contains_key("options"));
+        assert!(!items.contains_key("options"));
         assert!(items.contains_key("later"));
-        let items = complete("import core.option as options\nfunc edit() { options::Op| }");
+        let items = complete(
+            "import core.option as options\nimport core.option.*\nimport static core.option.*\nfunc edit() { options::Op| }",
+        );
         assert!(items.contains_key("Option"));
         assert!(!items.contains_key("edit"));
         assert!(!items.contains_key("let"));
+    }
+
+    #[test]
+    fn item_import_completion_respects_kinds_and_aliases() {
+        let items = complete("import core.copy.Copy as Clonable\nfunc edit() { Cl| }");
+        assert!(items.contains_key("Clonable"));
+        assert!(!items.contains_key("Copy"));
+        let items = complete("import static core.copy.*\nfunc edit() { Co| }");
+        assert!(!items.contains_key("Copy"));
+        let items = complete("import std.fs.*\nfunc edit() { rea| }");
+        assert!(!items.contains_key("read_text"));
+        let items = complete("import static std.fs.read_text as read\nfunc edit() { rea| }");
+        assert!(items.contains_key("read"));
+        assert!(!items.contains_key("read_text"));
     }
 
     #[test]
@@ -631,7 +688,7 @@ mod tests {
         let fixes = workspace.code_actions(&params).unwrap();
         let action = fixes.iter().find(|action| matches!(action, CodeActionOrCommand::CodeAction(action) if action.title == "Import `Arguments` from `std.process`")).expect("import fix");
         let fixed = apply(source, action);
-        assert!(fixed.contains("import std.process\r\n/// Entry documentation"));
+        assert!(fixed.contains("import std.process.Arguments\r\n/// Entry documentation"));
         crate::compile(&fixed).unwrap();
     }
 
@@ -885,18 +942,22 @@ impl Workspace {
                 {
                     continue;
                 }
-                let alias = module.rsplit('.').next().unwrap_or(module);
+                let item_is_type = members.get(name).is_some_and(type_candidate);
+                let path = format!("{module}.{name}");
                 if parsed.program.imports.iter().any(|import| {
-                    import.path.join(".") == *module
-                        || import
-                            .alias
-                            .as_ref()
-                            .or_else(|| import.path.last())
-                            .is_some_and(|name| name == alias)
+                    (import.path.join(".") == path && !import.wildcard)
+                        || (import.wildcard
+                            && import.path.join(".") == *module
+                            && import.static_ != item_is_type)
                 }) {
                     continue;
                 }
-                if let Some(edit) = import_edit(source, &parsed.program, module) {
+                let declaration = if item_is_type {
+                    path
+                } else {
+                    format!("static {path}")
+                };
+                if let Some(edit) = import_edit(source, &parsed.program, &declaration) {
                     offer(format!("Import `{name}` from `{module}`"), edit);
                 }
             }

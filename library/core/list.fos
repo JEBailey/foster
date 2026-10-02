@@ -6,13 +6,18 @@
 //! Borrowing reads preserve the list. Consuming updates return the resulting list.
 //! Use std.iter adaptors when intermediate collection allocation is unnecessary.
 
-import std.collections
+import std.collections.Collection
 
-import std.iter
-import core.functions
-import core.option
-import core.result as outcomes
-import core.string
+import std.iter.Iterator
+
+import core.functions.Predicate
+
+import core.option.Option
+
+import core.result.Result
+
+import core.string.String
+import core.string.StringBuilder
 
 /// Private descriptor-backed contiguous list storage shared by executable backends.
 intrinsic type RawList<T>

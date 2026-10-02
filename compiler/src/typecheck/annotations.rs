@@ -218,43 +218,7 @@ impl Checker<'_> {
         if let Some(nominal) = self.hir.composition_types.get(name) {
             return Ok(*nominal);
         }
-        if let Some((qualifier, local_name)) = name.rsplit_once('.') {
-            let first = qualifier.split('.').next().unwrap_or(qualifier);
-            let module = self.hir.modules[current_module]
-                .imports
-                .get(first)
-                .copied()
-                .or_else(|| self.hir.module_named(qualifier))
-                .ok_or_else(|| {
-                    FosterError::runtime(format!("unknown type module `{qualifier}`"))
-                })?;
-            let found = self
-                .nominal_type_in(module, local_name)
-                .ok_or_else(|| FosterError::runtime(format!("unknown type `{name}`")))?;
-            let public = match found {
-                NominalTypeId::Record(id) => self.hir.records[id].public,
-                NominalTypeId::Variant(id) => self.hir.variant_types[id].public,
-            };
-            if module != current_module && !public {
-                return Err(FosterError::runtime(format!("type `{name}` is private")));
-            }
-            return Ok(found);
-        }
-        if let Some(found) = self.nominal_type_in(current_module, name) {
-            return Ok(found);
-        }
-        let mut imported = Vec::new();
-        for imported_module in self.hir.modules[current_module].imports.values() {
-            if let Some(found) = self.nominal_type_in(*imported_module, name) {
-                let public = match found {
-                    NominalTypeId::Record(id) => self.hir.records[id].public,
-                    NominalTypeId::Variant(id) => self.hir.variant_types[id].public,
-                };
-                if public && !imported.contains(&found) {
-                    imported.push(found);
-                }
-            }
-        }
+        let imported = self.hir.visible_types(current_module, name);
         match imported.as_slice() {
             [found] => Ok(*found),
             [_, _, ..] => Err(FosterError::runtime(format!(
@@ -262,21 +226,6 @@ impl Checker<'_> {
             ))),
             [] => Err(FosterError::runtime(format!("unknown type `{name}`"))),
         }
-    }
-
-    pub(super) fn nominal_type_in(
-        &self,
-        module: hir::ModuleId,
-        name: &str,
-    ) -> Option<NominalTypeId> {
-        self.hir
-            .record_named(module, name)
-            .map(NominalTypeId::Record)
-            .or_else(|| {
-                self.hir
-                    .variant_type_named(module, name)
-                    .map(NominalTypeId::Variant)
-            })
     }
 
     pub(super) fn private_type_in(&self, ty: &Ty) -> Option<String> {

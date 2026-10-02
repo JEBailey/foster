@@ -1,8 +1,13 @@
 // Cases come from Unicode 17.0.0 auxiliary/GraphemeBreakTest.txt.
 import core.string
+import core.string.String
+
 import core.list
+
 import core.bytes
+
 import core.option
+
 import std.iter
 
 func hex(text: String) -> Int {
@@ -12,7 +17,9 @@ func hex(text: String) -> Int {
     loop {
         break if index == encoded.length
         let digit = encoded[index].int
-        value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 55 }
+        value = value * 16 + branch {
+            digit <= 57 -> digit - 48 _ -> digit - 55
+        }
         index = index + 1
     }
     value
@@ -46,6 +53,8 @@ func verify(row: String) -> () {
 
 func main() -> Int {
     let cases = "__CASES__".split("\n")
-    for row in cases { verify(row) }
+    for row in cases {
+        verify(row)
+    }
     42
 }

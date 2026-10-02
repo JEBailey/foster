@@ -378,15 +378,16 @@ impl Workspace {
                 && let Some(import) = module
                     .imports_with_spans
                     .iter()
-                    .find(|import| import.name == name)
+                    .find(|import| import.item_name.is_none() && import.name == name)
             {
                 return module_location(&compilation, import.target);
             }
             definition_in_module(&compilation, target_module, name).or_else(|| {
-                module
-                    .imports
-                    .values()
-                    .find_map(|imported| definition_in_module(&compilation, *imported, name))
+                imported_declarations(&compilation, module_id, name)
+                    .into_iter()
+                    .find_map(|(target, actual)| {
+                        definition_in_module(&compilation, target, &actual)
+                    })
             })
         })()?;
         self.remap_semantic_location(&compilation, location)
@@ -432,10 +433,11 @@ impl Workspace {
                 .unwrap_or(module_id);
             declaration_hover(&compilation, target, name).or_else(|| {
                 (qualifier.is_none()).then(|| {
-                    module
-                        .imports
-                        .values()
-                        .find_map(|imported| declaration_hover(&compilation, *imported, name))
+                    imported_declarations(&compilation, module_id, name)
+                        .into_iter()
+                        .find_map(|(target, actual)| {
+                            declaration_hover(&compilation, target, &actual)
+                        })
                 })?
             })?
         };
@@ -583,10 +585,28 @@ impl Workspace {
                 }
             }
             add_module_completions(&compilation, module_id, false, &mut items);
-            for imported in module.imports.values() {
-                add_module_completions(&compilation, *imported, true, &mut items);
+            for name in module.imported_types.keys() {
+                insert_completion(&mut items, name, CompletionItemKind::CLASS, None);
+            }
+            for name in module.imported_values.keys() {
+                let constant = module.imported_values[name]
+                    .iter()
+                    .any(|value| matches!(value, crate::hir::ResolvedName::Constant(_)));
+                insert_completion(
+                    &mut items,
+                    name,
+                    if constant {
+                        CompletionItemKind::CONSTANT
+                    } else {
+                        CompletionItemKind::FUNCTION
+                    },
+                    None,
+                );
             }
             for import in &module.imports_with_spans {
+                if import.item_name.is_some() {
+                    continue;
+                }
                 insert_completion(
                     &mut items,
                     &import.name,
@@ -873,10 +893,11 @@ fn add_arguments_auto_import_completion(
     if !in_parameter_type {
         return;
     }
-    let imported = program
-        .imports
-        .iter()
-        .any(|import| import.path == ["std", "process"]);
+    let imported = program.imports.iter().any(|import| {
+        !import.static_
+            && (import.path == ["std", "process", "Arguments"]
+                || (import.wildcard && import.path == ["std", "process"]))
+    });
     let additional_text_edits = (!imported)
         .then(|| arguments_import_edit(source, &program))
         .flatten()
@@ -901,7 +922,7 @@ fn add_arguments_auto_import_completion(
 
 fn arguments_import_edit(source: &str, program: &crate::ast::Program) -> Option<TextEdit> {
     let (offset, new_text) = if let Some(import) = program.imports.last() {
-        (import.span.end, "\nimport std.process")
+        (import.span.end, "\nimport std.process.Arguments")
     } else {
         let mut offset = 0;
         for token in crate::lexer::lex(source).ok()? {
@@ -912,7 +933,7 @@ fn arguments_import_edit(source: &str, program: &crate::ast::Program) -> Option<
                 _ => break,
             }
         }
-        (offset, "import std.process\n")
+        (offset, "import std.process.Arguments\n")
     };
     let position = byte_range_to_lsp(source, offset..offset).start;
     Some(TextEdit {
@@ -963,6 +984,14 @@ fn symbol_at(
     let (name, start) = identifier_at(source, offset)?;
     let module = &compilation.hir.modules[module_id];
     let qualifier = qualifier_before(source, start);
+    for import in &module.imports_with_spans {
+        if import.span.contains(&offset)
+            && let Some(item) = &import.item_name
+            && (name == import.name || item.rsplit('.').next() == Some(name))
+        {
+            return declaration_identity(compilation, import.target, item);
+        }
+    }
     // Recovery removes a failed body, but its parameter signatures remain valid.
     // Resolve simple parameter receivers from those signatures on a cold open too.
     if let Some(receiver) = qualifier.as_deref()
@@ -1096,10 +1125,9 @@ fn symbol_at(
         .unwrap_or(module_id);
     declaration_identity(compilation, target, name).or_else(|| {
         (qualifier.is_none()).then(|| {
-            let mut matches = module
-                .imports
-                .values()
-                .filter_map(|imported| declaration_identity(compilation, *imported, name));
+            let mut matches = imported_declarations(compilation, module_id, name)
+                .into_iter()
+                .filter_map(|(target, actual)| declaration_identity(compilation, target, &actual));
             let first = matches.next()?;
             matches.next().is_none().then_some(first)
         })?
@@ -1527,30 +1555,56 @@ fn add_module_completions(
     }
 }
 
+fn imported_declarations(
+    compilation: &crate::compiler::RecoveryCompilation,
+    module: crate::hir::ModuleId,
+    name: &str,
+) -> Vec<(crate::hir::ModuleId, String)> {
+    let mut found = compilation
+        .hir
+        .visible_types(module, name)
+        .iter()
+        .map(|ty| {
+            let (module, name) = compilation.hir.type_location(*ty);
+            (module, name.to_owned())
+        })
+        .collect::<Vec<_>>();
+    for value in compilation.hir.modules[module]
+        .imported_values
+        .get(name)
+        .into_iter()
+        .flatten()
+    {
+        match value {
+            crate::hir::ResolvedName::Function(id) => found.push((
+                compilation.hir.functions[*id].module,
+                compilation.hir.functions[*id].name.clone(),
+            )),
+            crate::hir::ResolvedName::Constant(id) => found.push((
+                compilation.hir.constants[*id].module,
+                compilation.hir.constants[*id].name.clone(),
+            )),
+            _ => {}
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
 fn add_associated_completions(
     compilation: &crate::compiler::RecoveryCompilation,
     current_module: crate::hir::ModuleId,
     type_name: &str,
     items: &mut std::collections::BTreeMap<String, CompletionItem>,
 ) -> bool {
-    let local = compilation.hir.record_named(current_module, type_name);
-    let imported = compilation.hir.modules[current_module]
-        .imports
-        .values()
-        .filter_map(|module| {
-            compilation
-                .hir
-                .record_named(*module, type_name)
-                .filter(|record| compilation.hir.records[*record].public)
-                .map(|_| *module)
-        })
-        .collect::<Vec<_>>();
-    let (module, public_only) = match (local, imported.as_slice()) {
-        (Some(_), _) => (current_module, false),
-        (None, [module]) => (*module, true),
-        _ => return false,
+    let types = compilation.hir.visible_types(current_module, type_name);
+    let [ty] = types.as_slice() else {
+        return false;
     };
-    let prefix = format!("{type_name}.");
+    let (module, actual_name) = compilation.hir.type_location(*ty);
+    let public_only = module != current_module;
+    let prefix = format!("{actual_name}.");
     for (name, overloads) in &compilation.hir.modules[module].functions {
         let Some(member) = name.strip_prefix(&prefix) else {
             continue;

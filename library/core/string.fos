@@ -27,18 +27,32 @@
 //! }
 //! ```
 
-import core.copy
-import std.collections
+import core.copy.Copy
+import static core.copy.*
+import std.collections.Collection
+
 import core.byte
-import core.bytes
-import core.bytes.buffer
+
+import core.bytes.Bytes
+import core.bytes.Utf8Error
+
+import core.bytes.buffer.ByteBuffer
+
 import core.code_point
-import core.functions
-import core.list
-import core.option
-import core.result
-import std.iter
-import std.cursor as cursors
+
+import core.functions.Predicate
+import core.functions.Supplier
+
+import core.list.List
+
+import core.option.Option
+
+import core.result.Result
+
+import std.iter.Iterator
+
+import std.cursor.Cursor
+
 import core.unicode as unicode
 
 /// Immutable Unicode text stored as validated UTF-8 bytes.
@@ -125,7 +139,9 @@ pub type String = & Copy & Sequence<String> & Collection<String> & {
 
 impl String {
     /// Returns the same text as an independent value, borrowing the source.
-    pub func as_string(self) -> String [read self] { self.copy() }
+    pub func as_string(self) -> String [read self] {
+        self.copy()
+    }
 
     /// Returns an independent text value; immutable byte storage may be shared.
     pub func copy(self) -> self [read self] {

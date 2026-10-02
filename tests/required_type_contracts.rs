@@ -171,6 +171,8 @@ fn list_requirements_are_callable_through_a_composed_view() {
         foster::run(
             r#"
 import core.result
+import core.result.*
+import static core.result.*
 type ListView = & List<Int> & {}
 func inspect(values: ListView) -> Int { values.at(0).unwrap_or(0) }
 func main() -> Int { inspect([42]) }

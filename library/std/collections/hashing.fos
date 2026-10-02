@@ -4,14 +4,19 @@
 //! compare values for equality rather than treating a hash as an identity.
 //! They are not cryptographic digest functions.
 
-import core.bytes as binary
-import core.string
+import core.bytes.Bytes
+
+import core.string.String
 
 /// Returns an integer's value as its hash, preserving all signed values.
-pub func integer(value: Int) -> Int { value }
+pub func integer(value: Int) -> Int {
+    value
+}
 
 /// Hashes UTF-8 text by its bytes. Equal strings always have equal hashes.
-pub func text(value: String) -> Int { bytes(value.bytes) }
+pub func text(value: String) -> Int {
+    bytes(value.bytes)
+}
 
 /// Computes an order-sensitive polynomial hash bounded to 31 bits.
 /// This deterministic hash is not cryptographic or randomized against hostile inputs.

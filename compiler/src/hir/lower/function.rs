@@ -301,6 +301,25 @@ impl FunctionLowerer<'_> {
             )));
         }
         if let Some(path) = accessor_path(expression)
+            && path.len() >= 2
+        {
+            let types = self
+                .hir
+                .visible_types(self.module, &path[..path.len() - 1].join("."));
+            if let [ty] = types.as_slice() {
+                let (module, owner) = self.hir.type_location(*ty);
+                if let Some(constant) = self
+                    .hir
+                    .constant_named(module, &format!("{owner}.{}", path[path.len() - 1]))
+                {
+                    if module != self.module && !self.hir.constants[constant].public {
+                        return Err(self.error("associated constant is private"));
+                    }
+                    return Ok(self.alloc_expression(Expr::Name(ResolvedName::Constant(constant))));
+                }
+            }
+        }
+        if let Some(path) = accessor_path(expression)
             && path.len() == 2
         {
             let mut unions = std::iter::once(self.module)
@@ -319,8 +338,11 @@ impl FunctionLowerer<'_> {
             }
         }
         if let Some(path) = accessor_path(expression)
-            && path.len() == 2
-            && let Some(variant) = self.resolve_variant_constructor(path[0], path[1])?
+            && path.len() >= 2
+            && let Some(variant) = self.resolve_variant_constructor(
+                &path[..path.len() - 1].join("."),
+                path[path.len() - 1],
+            )?
         {
             return Ok(self.alloc_expression(Expr::Name(ResolvedName::Variant(variant))));
         }
@@ -431,32 +453,14 @@ impl FunctionLowerer<'_> {
                 fields,
             } => {
                 let path = qualified_path(constructor)
+                    .or_else(|| accessor_path(constructor))
                     .ok_or_else(|| self.error("record constructor must be a type name"))?;
-                let resolved = if path.len() == 1 {
-                    if let Some(record) = self.hir.record_named(self.module, path[0]) {
-                        ResolvedName::Record(record)
-                    } else {
-                        let mut imported = self
-                            .imports
-                            .values()
-                            .filter_map(|module| self.hir.record_named(*module, path[0]))
-                            .filter(|record| self.hir.records[*record].public)
-                            .collect::<Vec<_>>();
-                        imported.sort();
-                        imported.dedup();
-                        match imported.as_slice() {
-                            [record] => ResolvedName::Record(*record),
-                            [_, _, ..] => {
-                                return Err(self.error(format!(
-                                    "imported record type `{}` is ambiguous; qualify it with its module",
-                                    path[0]
-                                )));
-                            }
-                            [] => self.resolve_name(path[0])?,
-                        }
-                    }
-                } else {
-                    self.resolve_qualified(&path)?
+                let types = self.hir.visible_types(self.module, &path.join("."));
+                let resolved = match types.as_slice() {
+                    [crate::types::NominalTypeId::Record(id)] => ResolvedName::Record(*id),
+                    [] if path.len() == 1 => self.resolve_name(path[0])?,
+                    [] => self.resolve_qualified(&path)?,
+                    _ => return Err(self.error("record constructor must name one record type")),
                 };
                 let ResolvedName::Record(record) = resolved else {
                     return Err(self.error("record constructor must name a record type"));
@@ -751,46 +755,31 @@ impl FunctionLowerer<'_> {
                         binding: None,
                     });
                 }
-                let (modules, name) = if let Some((qualifier, name)) = path.rsplit_once('.') {
-                    let module =
-                        self.imports.get(qualifier).copied().ok_or_else(|| {
-                            self.error(format!("unknown type module `{qualifier}`"))
-                        })?;
-                    (vec![module], name)
-                } else {
-                    let mut modules = vec![self.module];
-                    modules.extend(self.imports.values().copied());
-                    (modules, path.as_str())
-                };
                 let mut targets = Vec::new();
-                for module in modules {
-                    if let Some(record) = self.hir.record_named(module, name)
-                        && (module == self.module || self.hir.records[record].public)
-                    {
-                        if !self.hir.records[record].parameters.is_empty() {
-                            return Err(
-                                self.error("runtime type patterns require a nongeneric type")
-                            );
+                for ty in self.hir.visible_types(self.module, path) {
+                    match ty {
+                        crate::types::NominalTypeId::Record(record) => {
+                            if !self.hir.records[record].parameters.is_empty() {
+                                return Err(
+                                    self.error("runtime type patterns require a nongeneric type")
+                                );
+                            }
+                            targets.push(E::Record {
+                                record,
+                                arguments: Vec::new(),
+                            });
                         }
-                        targets.push(E::Record {
-                            record,
-                            arguments: Vec::new(),
-                        });
-                    } else if let Some(variant) = self.hir.variant_type_named(module, name)
-                        && (module == self.module || self.hir.variant_types[variant].public)
-                    {
-                        if self.hir.variant_types[variant].kind != ast::VariantKind::Enum
-                            || !self.hir.variant_types[variant].parameters.is_empty()
-                        {
-                            return Err(self.error("runtime type patterns require a concrete nongeneric enum or record"));
+                        crate::types::NominalTypeId::Variant(variant) => {
+                            if self.hir.variant_types[variant].kind != ast::VariantKind::Enum
+                                || !self.hir.variant_types[variant].parameters.is_empty()
+                            {
+                                return Err(self.error("runtime type patterns require a concrete nongeneric enum or record"));
+                            }
+                            targets.push(E::Variant {
+                                variant,
+                                arguments: Vec::new(),
+                            });
                         }
-                        targets.push(E::Variant {
-                            variant,
-                            arguments: Vec::new(),
-                        });
-                    }
-                    if module == self.module && !targets.is_empty() {
-                        break;
                     }
                 }
                 targets.sort();

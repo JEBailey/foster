@@ -266,7 +266,7 @@ mod recovery_tests {
     #[test]
     fn cached_effects_can_grow_and_shrink_through_callers() {
         let cache = Default::default();
-        let base = "import core.result as outcomes\ntype Worker = {}\nimpl Worker { func value(self: Worker) -> Int { 1 } }\nfunc wait(worker: Remote<Worker>) -> Int { BODY }\nfunc caller(worker: Remote<Worker>) -> Int { wait(worker) }\nfunc unrelated() -> Int { 3 }";
+        let base = "import core.result.*\ntype Worker = {}\nimpl Worker { func value(self: Worker) -> Int { 1 } }\nfunc wait(worker: Remote<Worker>) -> Int { BODY }\nfunc caller(worker: Remote<Worker>) -> Int { wait(worker) }\nfunc unrelated() -> Int { 3 }";
         for body in ["1", "(await worker.value()).unwrap_or(0)", "1"] {
             let source = base.replace("BODY", body);
             let incremental =

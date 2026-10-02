@@ -1,11 +1,26 @@
 import core.bytes
+import core.bytes.Bytes
+
 import core.int
+import core.int.Int
+
 import core.list
+
 import core.result
+import core.result.Result
+
 import core.string
+import core.string.String
+
 import std.time
+import std.time.Instant
+
 import std.time.zone
+import std.time.zone.TimeZone
+
 import tzdata
+import tzdata.*
+import static tzdata.*
 
 func expected(records: Bytes, position: Int) -> Int {
     let number = 0
@@ -15,7 +30,9 @@ func expected(records: Bytes, position: Int) -> Int {
         number = number * 10 + records[index].int - 48
         index = index + 1
     }
-    branch { records[position].int == 45 -> -number _ -> number }
+    branch {
+        records[position].int == 45 -> -number _ -> number
+    }
 }
 
 func verify(rules: TimeZone, records: Bytes, position: Int) -> () {
@@ -40,7 +57,9 @@ func main() -> Int {
         let name = String.from_utf8(records.slice(position, position + 40)).unwrap_or("").trim()
         branch database.find(name) {
             Result.Ok(rules) -> verify(rules, records, position)
-            Result.Error(error) -> { assert(false, error.zone + " missing from database") }
+            Result.Error(error) -> {
+                assert(false, error.zone + " missing from database")
+            }
         }
         index = index + REFERENCE_STRIDE
     }

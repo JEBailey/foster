@@ -10,9 +10,9 @@ fn integer_storage_is_private_and_bootstrapped() {
     assert!(!declaration.fields[0].public);
     assert_eq!(foster::vm::run(&compilation).unwrap().to_string(), "42");
     for source in [
-        "import core.int\nfunc main() -> Int { 42.value }",
-        "import core.int\nfunc main() -> Int { Int { value: 42 } }",
-        "import core.int\nfunc expose(value: RawInt) -> RawInt { value }\nfunc main() -> Int { 0 }",
+        "import core.int.*\nfunc main() -> Int { 42.value }",
+        "import core.int.*\nfunc main() -> Int { Int { value: 42 } }",
+        "import core.int.*\nfunc expose(value: RawInt) -> RawInt { value }\nfunc main() -> Int { 0 }",
     ] {
         assert!(
             foster::compile(source).is_err(),
@@ -26,6 +26,8 @@ fn nested_receiver_results_reject_an_unrelated_implementation() {
     let error = foster::compile(
         r#"
 import core.option
+import core.option.*
+import static core.option.*
 type Wrapped = { pub func wrap(self) -> Option<self> [consume self] }
 type Invalid = & Wrapped & { value: Int }
 impl Invalid {
@@ -209,11 +211,23 @@ fn resource_and_entropy_types_support_their_explicit_contract_views() {
     foster::compile(
         r#"
 import std.fs
+import std.fs.*
+import static std.fs.*
 import std.io
+import std.io.*
+import static std.io.*
 import std.resource
+import std.resource.*
+import static std.resource.*
 import std.net.tcp
+import std.net.tcp.*
+import static std.net.tcp.*
 import std.random
+import std.random.*
+import static std.random.*
 import std.random.secure
+import std.random.secure.*
+import static std.random.secure.*
 func text<E>(value: TextWriter<E>) -> () {}
 func binary<E>(value: ReadWrite<E>) -> () {}
 func entropy(value: EntropySource) -> () {}
@@ -268,7 +282,11 @@ fn map_contract_borrows_reject_invalidated_storage() {
     let error = foster::compile(
         r#"
 import core.option
+import core.option.*
+import static core.option.*
 import std.collections.map
+import std.collections.map.*
+import static std.collections.map.*
 func lookup(values: Map<String, Int>) -> Option<ref[values] Int> {
     values.borrow("answer")
 }

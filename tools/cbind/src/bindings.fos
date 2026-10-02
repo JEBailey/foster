@@ -1,9 +1,14 @@
 //! Windows x64 scalar and value-record bindings. Ownership is an explicit contract.
-import core.list
-import core.string
+import core.list.List
+
+import core.string.String
+
 import core.int
-import core.result
+
+import core.result.Result
+
 import std.json
+import std.json.JsonValue
 
 pub type Generated = {
     pub manifest: String, pub report: String

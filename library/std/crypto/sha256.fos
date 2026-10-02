@@ -13,9 +13,12 @@
 //! ```
 // Functions and constants: https://www.rfc-editor.org/rfc/rfc6234#section-5
 
-import core.bytes
-import core.list
-import core.string
+import core.bytes.Bytes
+
+import core.list.List
+
+import core.string.String
+import core.string.StringBuilder
 
 const MODULUS = 4294967296
 

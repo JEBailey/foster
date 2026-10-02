@@ -5,9 +5,13 @@
 //! earlier I/O. write_all and copy flush on success. Implementations must honor
 //! the progress requirements in `Reader` and `Writer` to avoid nonterminating retries.
 
-import core.bytes.buffer as byte_buffer
+import core.bytes.buffer.ByteBuffer
+
 import core.bytes
-import core.result
+import core.bytes.Bytes
+import core.bytes.HexError
+
+import core.result.Result
 
 /// Timed readiness for reading or accepting. Zero polls without waiting; negative timeouts fail.
 /// True includes EOF and pending I/O errors. Readiness is advisory when consumers race.
@@ -145,7 +149,9 @@ func finish_copy<E>(total: Int, outcome: Result<(), E>) -> Result<Int, E> [consu
     Result.Ok(total)
 }
 
-type IoTestError = { message: String }
+type IoTestError = {
+    message: String
+}
 
 type IoTestReader = & Reader<IoTestError> & {
     remaining: Bytes
@@ -160,8 +166,12 @@ type IoTestWriter = & Writer<IoTestError> & {
 impl IoTestReader {
     /// Reads a bounded chunk for the generic stream contract test.
     func read(self, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
-        let limit = branch { maximum < self.chunk_size -> maximum _ -> self.chunk_size }
-        let amount = branch { limit < self.remaining.length -> limit _ -> self.remaining.length }
+        let limit = branch {
+            maximum < self.chunk_size -> maximum _ -> self.chunk_size
+        }
+        let amount = branch {
+            limit < self.remaining.length -> limit _ -> self.remaining.length
+        }
         let chunk = self.remaining.slice(0, amount)
         self.remaining = self.remaining.slice(amount, self.remaining.length)
         Result.Ok(chunk)
@@ -171,7 +181,9 @@ impl IoTestReader {
 impl IoTestWriter {
     /// Accepts a bounded chunk for the generic stream contract test.
     func write(self, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
-        let amount = branch { self.chunk_size < contents.length -> self.chunk_size _ -> contents.length }
+        let amount = branch {
+            self.chunk_size < contents.length -> self.chunk_size _ -> contents.length
+        }
         self.contents = self.contents.concat(contents.slice(0, amount))
         Result.Ok(amount)
     }
@@ -197,14 +209,20 @@ func io_test_require(condition: Bool, message: String) -> () {
 }
 
 test "generic streams handle partial IO and EOF" {
-    let all_reader = IoTestReader { remaining: io_test_bytes(Bytes.from_hex("00010203040506")), chunk_size: 2 }
+    let all_reader = IoTestReader {
+        remaining: io_test_bytes(Bytes.from_hex("00010203040506")), chunk_size: 2
+    }
     branch read_all(all_reader) {
         Result.Ok(contents) -> io_test_require(contents.hex() == "00010203040506", "read_all changed stream contents")
         Result.Error(_) -> io_test_require(false, "read_all returned an error")
     }
 
-    let copy_reader = IoTestReader { remaining: io_test_bytes(Bytes.from_hex("00010203040506")), chunk_size: 2 }
-    let writer = IoTestWriter { contents: Bytes.empty(), chunk_size: 3 }
+    let copy_reader = IoTestReader {
+        remaining: io_test_bytes(Bytes.from_hex("00010203040506")), chunk_size: 2
+    }
+    let writer = IoTestWriter {
+        contents: Bytes.empty(), chunk_size: 3
+    }
     branch copy_remaining(copy_reader, writer, 0) {
         Result.Ok(count) -> io_test_require(count == 7, "copy returned the wrong byte count")
         Result.Error(_) -> io_test_require(false, "copy returned an error")

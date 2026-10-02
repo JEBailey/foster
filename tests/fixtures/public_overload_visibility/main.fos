@@ -1,4 +1,6 @@
 import library
+import library.*
+import static library.*
 
 func main() -> String {
     render("unqualified") + ":" + library::render("qualified")

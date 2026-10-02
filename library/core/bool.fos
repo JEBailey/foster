@@ -6,7 +6,8 @@
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.byte
-import core.bytes
+
+import core.bytes.Bytes
 
 impl Bool {
     /// Reads `.bytes`: one byte, `0` for false or `1` for true, leaving `self` unchanged.

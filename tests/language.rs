@@ -8,6 +8,8 @@ fn assert_string(value: Value, expected: &str) {
 fn try_unwraps_success_and_returns_errors_early() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 
 func operation(fail: Bool) -> Result<Int, Int> {
     branch fail {
@@ -59,6 +61,8 @@ func main() -> Result<Bool, Int> { propagate(false) }
 fn try_requires_compatible_result_types() {
     let non_result = r#"
 import core.result
+import core.result.*
+import static core.result.*
 func checked() -> Result<Int, String> { Result.Ok(try 1) }
 func main() -> () { () }
 "#;
@@ -70,6 +74,8 @@ func main() -> () { () }
 
     let non_result_function = r#"
 import core.result
+import core.result.*
+import static core.result.*
 func operation() -> Result<Int, String> { Result.Ok(1) }
 func checked() -> Int { try operation() }
 func main() -> () { () }
@@ -84,6 +90,8 @@ func main() -> () { () }
 
     let mismatched_error = r#"
 import core.result
+import core.result.*
+import static core.result.*
 func operation() -> Result<Int, String> { Result.Ok(1) }
 func checked() -> Result<Int, Bool> { Result.Ok(try operation()) }
 func main() -> () { () }
@@ -325,6 +333,8 @@ func main() -> Int {
 fn command_main_receives_the_typed_arguments_record() {
     let source = r#"
 import std.process
+import std.process.*
+import static std.process.*
 
 func main(arguments: Arguments) -> String {
     return arguments.executable if arguments.values.empty?
@@ -524,6 +534,8 @@ fn lists_and_byte_buffers_use_foster_type_representations() {
     let compilation = foster::compile(
         r#"
 import core.bytes.buffer as byte_buffer
+import core.bytes.buffer.*
+import static core.bytes.buffer.*
 
 func list() -> List<Int> { [1, 2, 3] }
 func buffer() -> ByteBuffer { ByteBuffer.empty() }
@@ -699,6 +711,8 @@ fn recursive_type_aliases_are_rejected() {
 fn reusable_function_aliases_preserve_callable_ownership() {
     let source = r#"
 import core.functions
+import core.functions.*
+import static core.functions.*
 
 type Payload = { value: Int }
 
@@ -993,7 +1007,7 @@ func main() -> Bool {
         .unwrap();
 
     let removed_method =
-        foster::compile("import core.bool\nfunc main() -> Bool { true.not() }").unwrap_err();
+        foster::compile("import core.bool.*\nfunc main() -> Bool { true.not() }").unwrap_err();
     assert!(removed_method.message.contains("no member `not`"));
 }
 
@@ -1225,6 +1239,8 @@ func main() {
 fn list_operations_resolve_through_owner_qualified_methods() {
     let source = r#"
 import core.list
+import core.list.*
+import static core.list.*
 
 func main() -> Int {
     let values = [1]
@@ -1727,6 +1743,8 @@ func main() -> Int {
 fn declared_type_composition_conforms_without_runtime_conversion() {
     let source = r#"
 import core.string as strings
+import core.string.*
+import static core.string.*
 
 type TextSlice = & Sequence<String> & {
     text: String
@@ -1818,7 +1836,11 @@ func main() -> Int {
 fn iterator_and_iterable_contracts_dispatch_stateful_iteration() {
     let source = r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import core.option
+import core.option.*
+import static core.option.*
 
 type Counter = & Iterator<Int> & {
     current: Int
@@ -1877,7 +1899,11 @@ func main() -> Int {
 fn core_iterator_adapts_sequences_and_advances_in_place() {
     let source = r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import core.option
+import core.option.*
+import static core.option.*
 
 func value_or(candidate: Option<Int>, fallback: Int) -> Int {
     branch candidate {
@@ -1909,7 +1935,11 @@ func main() -> Int {
 fn foster_written_iterator_consumers_process_remaining_elements() {
     let source = r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import core.option
+import core.option.*
+import static core.option.*
 
 func add(total: Int, value: Int) -> Int [consume total, consume value] {
     total + value
@@ -1945,10 +1975,20 @@ func main() -> Int {
 fn foster_written_iterator_adaptors_build_lazy_pipelines() {
     let source = r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 import std.iter.map as mapping
+import std.iter.map.*
+import static std.iter.map.*
 import std.iter.filter as filtering
+import std.iter.filter.*
+import static std.iter.filter.*
 import std.iter.skip as skipping
+import std.iter.skip.*
+import static std.iter.skip.*
 import std.iter.take as taking
+import std.iter.take.*
+import static std.iter.take.*
 
 func double(value: Int) -> Int [consume value] { value * 2 }
 func greater_than_four?(value: Int) -> Bool { value > 4 }
@@ -1973,7 +2013,11 @@ func main() -> Int {
 fn builtin_sequences_adapt_to_collection_and_iterable() {
     let source = r#"
 import std.collections
+import std.collections.*
+import static std.collections.*
 import core.option
+import core.option.*
+import static core.option.*
 
 func size<T>(values: Collection<T>) -> Int {
     values.length()
@@ -2000,7 +2044,11 @@ func main() -> Int {
 fn map_is_an_iterable_collection_of_public_entries() {
     let source = r#"
 import std.collections.map
+import std.collections.map.*
+import static std.collections.map.*
 import core.option
+import core.option.*
+import static core.option.*
 
 func first_value(candidate: Option<Entry<String, Int>>) -> Int {
     branch candidate {
@@ -2024,8 +2072,14 @@ func main() -> Int {
 fn foster_collections_and_range_share_collection_contract() {
     let source = r#"
 import std.collections
+import std.collections.*
+import static std.collections.*
 import core.range
+import core.range.*
+import static core.range.*
 import std.collections.set
+import std.collections.set.*
+import static std.collections.set.*
 
 func size<T>(values: Collection<T>) -> Int {
     values.length()
@@ -2063,6 +2117,8 @@ func main() -> Int { 0 }
 fn equality_ordering_and_hashing_contracts_compose_and_dispatch() {
     let source = r#"
 import core.ordering
+import core.ordering.*
+import static core.ordering.*
 
 type Key = & Ordered<Key> & Hashing & {
     value: Int
@@ -2157,6 +2213,8 @@ func main() -> String {
 fn intersection_parameters_require_every_composed_contract() {
     let source = r#"
 import core.string as strings
+import core.string.*
+import static core.string.*
 
 type Named = {
     pub name: String
@@ -2432,6 +2490,8 @@ fn computed_member_metadata_records_result_ownership() {
     let compilation = foster::compile(
         r#"
 import std.iter
+import std.iter.*
+import static std.iter.*
 
 type Storage = { bytes: String }
 func main() -> Int {
@@ -2786,6 +2846,8 @@ func main() -> Int {
 fn strings_and_lists_implement_sequence_without_conversion() {
     let source = r#"
 import std.sequence
+import std.sequence.*
+import static std.sequence.*
 
 func main() -> Int {
     let letters = sequence::count("banana", (value: String) -> value == "a")
@@ -2836,6 +2898,8 @@ func main() -> Int {
 fn code_point_core_methods_support_instance_and_associated_calls() {
     let source = r#"
 import core.code_point
+import core.code_point.*
+import static core.code_point.*
 
 func main() -> Int {
     let first = 'A'
@@ -2857,6 +2921,8 @@ func main() -> Int {
 fn byte_and_code_point_widen_to_int_in_expected_type_contexts() {
     let source = r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 
 func accept(value: Int) -> Int { value }
 
@@ -2896,6 +2962,8 @@ fn integer_widening_does_not_apply_in_reverse() {
     let byte = foster::compile(
         r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 func receive(value: Byte) -> Byte { value }
 func main() -> Byte { receive(65) }
 "#,
@@ -2941,10 +3009,20 @@ fn code_points_do_not_expose_a_value_member() {
 fn bytes_and_byte_buffers_enforce_bounds_and_round_trip_utf8() {
     let source = r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.string
+import core.string.*
+import static core.string.*
 import core.bytes.buffer as byte_buffer
+import core.bytes.buffer.*
+import static core.bytes.buffer.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func byte_or(value: Result<Byte, ByteError>, fallback: Byte) -> Byte {
     branch value {
@@ -2990,7 +3068,11 @@ func main() -> String {
 fn byte_construction_rejects_out_of_range_integers() {
     let source = r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func main() -> Int {
     branch Byte.from(256) {
@@ -3008,6 +3090,8 @@ func main() -> Int {
 fn byte_bitwise_operators_preserve_byte_values() {
     let source = r#"
 import core.byte
+import core.byte.*
+import static core.byte.*
 
 func main() -> Int {
     let high = Byte.unchecked(240)
@@ -3026,8 +3110,14 @@ func main() -> Int {
 fn bytes_decode_hex_and_report_invalid_utf8() {
     let source = r#"
 import core.string
+import core.string.*
+import static core.string.*
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func decode(value: Result<Bytes, HexError>) -> String {
     branch value {
@@ -3054,9 +3144,17 @@ func main() -> String {
 fn bytes_are_iterable_collections() {
     let source = r#"
 import core.bytes
+import core.bytes.*
+import static core.bytes.*
 import std.collections
+import std.collections.*
+import static std.collections.*
 import core.option
+import core.option.*
+import static core.option.*
 import core.result
+import core.result.*
+import static core.result.*
 
 func size(values: Collection<Byte>) -> Int {
     values.length()
@@ -3088,7 +3186,11 @@ func main() -> Int {
 fn freezing_a_byte_buffer_produces_bytes_and_consumes_the_buffer() {
     let source = r#"
 import core.bytes.buffer as byte_buffer
+import core.bytes.buffer.*
+import static core.bytes.buffer.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 
 func main() -> String {
     let buffer = ByteBuffer.empty()
@@ -3113,7 +3215,11 @@ func main() -> String {
 fn structural_byte_buffer_mutation_invalidates_element_loans() {
     let source = r#"
 import core.bytes.buffer as byte_buffer
+import core.bytes.buffer.*
+import static core.bytes.buffer.*
 import core.byte
+import core.byte.*
+import static core.byte.*
 
 func main() -> Int {
     let buffer = ByteBuffer.empty()
@@ -3132,8 +3238,14 @@ func main() -> Int {
 fn resource_identifiers_do_not_implicitly_gain_read_capability() {
     let source = r#"
 import core.result
+import core.result.*
+import static core.result.*
 import std.resource
+import std.resource.*
+import static std.resource.*
 import std.uri
+import std.uri.*
+import static std.uri.*
 
 func require_readable(value: Readable<UriError>) { () }
 
@@ -3161,6 +3273,8 @@ func main() {
 fn functions_overload_by_arity_and_parameter_type() {
     let source = r#"
 import core.code_point
+import core.code_point.*
+import static core.code_point.*
 
 func render(value: Int) -> String { "int" }
 func render(value: CodePoint) -> String { "code point" }

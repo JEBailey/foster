@@ -1,13 +1,22 @@
 //! Project creation used by the installed Foster command.
 import core.code_point
+
 import core.list
-import core.option
-import core.result
-import core.string
+
+import core.option.Option
+
+import core.result.Result
+
+import core.string.String
+
 import std.fs as fs
-import std.io
+
+import static std.fs.*
+import std.io.IoError
+
 import std.path as paths
-import std.process
+
+import std.process.Arguments
 
 func checked_io(outcome: Result<(), IoError>) -> Result<(), String> [consume outcome] {
     branch outcome {
@@ -50,6 +59,6 @@ func main(arguments: Arguments) -> Result<String, String> {
     if !fs::exists?(main_path) {
         try checked_io(fs::write_text(main_path, "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n"))
     }
-    try checked_io(fs::write_text(manifest, "[package]\nname = \"" + name + "\"\nsource = \"src\"\n"))
+    try checked_io(fs::write_text(manifest, "[package]\nname = \"" + name + "\"\nsource = \"src\"\nentry = \"main.fos\"\n"))
     Result.Ok("created Foster project `" + name + "` at " + root + "\n  " + manifest + "\n  " + main_path + "\n")
 }

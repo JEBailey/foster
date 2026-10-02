@@ -1,20 +1,44 @@
 //! Portable coverage for core library APIs.
 
 import core.option
+import core.option.Option
+
 import core.range
+import core.range.Range
+
 import core.result
+import core.result.Result
+
 import core.symbol
 
-func absent_value() -> Option<Int> { Option.None }
-func option_fallback() -> Int { 20 }
-func option_recovery() -> Option<Int> { Option.Some(3) }
-func nested_option() -> Option<Option<Int>> { Option.Some(Option.Some(2)) }
+func absent_value() -> Option<Int> {
+    Option.None
+}
+func option_fallback() -> Int {
+    20
+}
+func option_recovery() -> Option<Int> {
+    Option.Some(3)
+}
+func nested_option() -> Option<Option<Int>> {
+    Option.Some(Option.Some(2))
+}
 
-func failed_value(message: String) -> Result<Int, String> { Result.Error(message) }
-func successful_value() -> Result<Int, String> { Result.Ok(20) }
-func result_fallback(error: String) -> Int { error.length }
-func result_recovery(error: String) -> Result<Int, Int> { Result.Ok(error.length) }
-func nested_result() -> Result<Result<Int, String>, String> { Result.Ok(Result.Ok(5)) }
+func failed_value(message: String) -> Result<Int, String> {
+    Result.Error(message)
+}
+func successful_value() -> Result<Int, String> {
+    Result.Ok(20)
+}
+func result_fallback(error: String) -> Int {
+    error.length
+}
+func result_recovery(error: String) -> Result<Int, Int> {
+    Result.Ok(error.length)
+}
+func nested_result() -> Result<Result<Int, String>, String> {
+    Result.Ok(Result.Ok(5))
+}
 
 test "integer helpers cover signs predicates and conversions" {
     assert((-4).sign() == -1)

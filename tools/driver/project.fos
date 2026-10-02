@@ -1,16 +1,32 @@
 //! Project manifests, discovery, and dependency resolution for the Foster driver.
 import core.code_point
+
 import core.future
+
 import std.crypto.sha256
+
 import core.int
-import core.list
-import core.option
-import core.result
-import core.string
+
+import core.list.List
+
+import core.option.Option
+
+import core.result.Result
+
+import core.string.String
+
 import std.fs as fs
+
+import static std.fs.*
 import std.path as paths
+
+import static std.path.*
 import std.process
+import std.process.Arguments
+
 import std.toml
+import std.toml.TomlEntry
+import std.toml.TomlValue
 
 type Dependency = {
     name: String, root: String
@@ -23,12 +39,12 @@ impl Dependency {
     }
 }
 type ProjectData = {
-    name: String, root: String, manifest: String, source: String, dependencies: List<Dependency>
+    name: String, root: String, manifest: String, source: String, entry: String, dependencies: List<Dependency>
 }
 impl ProjectData {
     func copy(self) -> self {
         ProjectData {
-            name: self.name.copy(), root: self.root.copy(), manifest: self.manifest.copy(), source: self.source.copy(), dependencies: self.dependencies.map((value: Dependency) -> value.copy())
+            name: self.name.copy(), root: self.root.copy(), manifest: self.manifest.copy(), source: self.source.copy(), entry: self.entry.copy(), dependencies: self.dependencies.map((value: Dependency) -> value.copy())
         }
     }
 }
@@ -283,7 +299,7 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
         }
     }
     let package = try table(move package_value, "`package` in `" + manifest + "` must be a TOML table")
-    try reject_unknown(package, ["name", "source"], "`[package]` in `" + manifest + "`")
+    try reject_unknown(package, ["name", "source", "entry"], "`[package]` in `" + manifest + "`")
     let name_value = branch lookup(package, "name") {
         Option.Some(value) -> value
         Option.None -> {
@@ -303,6 +319,15 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
     }
     let source_root = paths::join(root, source_directory)
     return Result.Error("project source root `" + source_root + "` from `" + manifest + "` is not a directory") if !fs::directory?(source_root)
+    let entry = branch lookup(package, "entry") {
+        Option.Some(value) -> {
+            let entry = try string_value(move value, "`package.entry` in `" + manifest + "` must be a string")
+            return Result.Error("`package.entry` in `" + manifest + "` must be a .fos filename in the source root") if !relative(entry, windows) || components(entry, windows).length != 1 || !entry.ends_with?(".fos") || entry == ".fos"
+            return Result.Error("package entry `" + paths::join(source_root, entry) + "` is not a file") if !fs::file?(paths::join(source_root, entry))
+            entry
+        }
+        Option.None -> "main.fos"
+    }
     let dependencies = []
     branch lookup(document.entries, "dependencies") {
         Option.Some(value) -> {
@@ -387,7 +412,7 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
     }
     sort_dependencies(dependencies)
     Result.Ok(ProjectData {
-        name, root, manifest: manifest.copy(), source: source_root, dependencies
+        name, root, manifest: manifest.copy(), source: source_root, entry, dependencies
     })
 }
 
@@ -488,7 +513,7 @@ func main(arguments: Arguments) -> Result<List<Resolved>, String> {
         }
         "resolve" -> {
             let dependencies = []
-            let index = 6
+            let index = 7
             while index < values.length {
                 dependencies.push(Dependency {
                     name: values[index].copy(), root: values[index + 1].copy()
@@ -496,7 +521,7 @@ func main(arguments: Arguments) -> Result<List<Resolved>, String> {
                 index = index + 2
             }
             let project = ProjectData {
-                name: values[2].copy(), root: values[3].copy(), manifest: values[4].copy(), source: values[5].copy(), dependencies
+                name: values[2].copy(), root: values[3].copy(), manifest: values[4].copy(), source: values[5].copy(), entry: values[6].copy(), dependencies
             }
             let manifest = try canonical_manifest(project)
             let state = Resolution {

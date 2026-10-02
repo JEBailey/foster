@@ -9,6 +9,7 @@ use crate::error::FosterError;
 use crate::intrinsics::Builtin;
 use crate::package::Package;
 
+mod imports;
 mod lower;
 pub(crate) mod ownership;
 pub(crate) mod queries;
@@ -57,6 +58,8 @@ pub struct Module {
     pub records: BTreeMap<String, RecordId>,
     pub variant_types: BTreeMap<String, VariantTypeId>,
     pub imports: BTreeMap<String, ModuleId>,
+    pub imported_types: BTreeMap<String, Vec<crate::types::NominalTypeId>>,
+    pub imported_values: BTreeMap<String, Vec<ResolvedName>>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +90,7 @@ pub struct ImportBinding {
     pub name: String,
     pub target: ModuleId,
     pub span: std::ops::Range<usize>,
+    pub item_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]

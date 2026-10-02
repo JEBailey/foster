@@ -364,32 +364,7 @@ fn resolve(hir: &PackageHir, module: ModuleId, name: &str) -> Option<NominalType
     if let Some(found) = hir.composition_types.get(name) {
         return Some(*found);
     }
-    let lookup = |module, name: &str| {
-        hir.record_named(module, name)
-            .map(NominalTypeId::Record)
-            .or_else(|| {
-                hir.variant_type_named(module, name)
-                    .map(NominalTypeId::Variant)
-            })
-    };
-    if let Some((qualifier, name)) = name.rsplit_once('.') {
-        let module = hir.modules[module]
-            .imports
-            .get(qualifier)
-            .copied()
-            .or_else(|| hir.module_named(qualifier))?;
-        return lookup(module, name);
-    }
-    if let Some(found) = lookup(module, name) {
-        return Some(found);
-    }
-    let mut found = hir.modules[module]
-        .imports
-        .values()
-        .filter_map(|module| lookup(*module, name))
-        .collect::<Vec<_>>();
-    found.sort();
-    found.dedup();
+    let found = hir.visible_types(module, name);
     (found.len() == 1).then(|| found[0])
 }
 

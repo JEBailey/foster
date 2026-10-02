@@ -10,9 +10,12 @@
 //!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
-import core.ordering
-import core.int
-import core.bytes
+import core.ordering.Ordering
+
+import core.int.Int
+
+import core.bytes.Bytes
+
 import core.list
 
 type FloatHost = {}

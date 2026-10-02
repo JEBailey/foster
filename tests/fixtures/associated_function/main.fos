@@ -1,4 +1,5 @@
 import collection
+import collection.Box
 
 func main() -> Int {
     let direct = Box.create(41)

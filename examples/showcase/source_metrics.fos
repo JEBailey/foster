@@ -1,10 +1,12 @@
 //! Sequence traversal and recursive source-text metrics.
 
 import std.sequence
-import core.string
 
-import core.result as outcomes
-import core.remote_error
+import core.string.String
+
+import core.result.Result
+
+import core.remote_error.RemoteError
 
 type Metrics = {
     lines: Int
@@ -55,7 +57,9 @@ impl Analyzer {
 }
 
 func main() -> Result<Int, RemoteError> {
-    let worker = remote Analyzer { source: "import core\nfunction work()\n// TODO\n" }
+    let worker = remote Analyzer {
+        source: "import core\nfunction work()\n// TODO\n"
+    }
     let result = try await worker.run()
     Result.Ok(result.lines * 1000 + result.todos * 100 + result.functions * 10 + result.imports)
 }

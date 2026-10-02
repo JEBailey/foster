@@ -1,10 +1,13 @@
 //! Remote actors, futures, and asynchronous source-analysis aggregation.
 
 import std.sequence
-import core.string
 
-import core.result
-import core.remote_error
+import static std.sequence.*
+import core.string.String
+
+import core.result.Result
+
+import core.remote_error.RemoteError
 
 type Analysis = {
     files: Int
@@ -48,9 +51,15 @@ impl SourceWorker {
         Analysis {
             files: 1
             lines: sequence::count(self.source.code_points(), (character: CodePoint) -> character == '\n') + 1
-            todos: branch { contains(self.source, "TODO") -> 1 _ -> 0 }
-            functions: branch { contains(self.source, "func ") -> 1 _ -> 0 }
-            imports: branch { contains(self.source, "import ") -> 1 _ -> 0 }
+            todos: branch {
+                contains(self.source, "TODO") -> 1 _ -> 0
+            }
+            functions: branch {
+                contains(self.source, "func ") -> 1 _ -> 0
+            }
+            imports: branch {
+                contains(self.source, "import ") -> 1 _ -> 0
+            }
         }
     }
 }
@@ -66,10 +75,16 @@ func combine(left: Analysis, right: Analysis) -> Analysis {
 }
 
 func main() -> Result<Int, RemoteError> {
-    let summary = Analysis { files: 0, lines: 0, todos: 0, functions: 0, imports: 0 }
+    let summary = Analysis {
+        files: 0, lines: 0, todos: 0, functions: 0, imports: 0
+    }
     :analysis {
-        let first = remote SourceWorker { source: "import core.list\nfunc scan() { 1 }\n// TODO\n" }
-        let second = remote SourceWorker { source: "func render() { 2 }\n" }
+        let first = remote SourceWorker {
+            source: "import core.list\nfunc scan() { 1 }\n// TODO\n"
+        }
+        let second = remote SourceWorker {
+            source: "func render() { 2 }\n"
+        }
         let first_future = first.analyze()
         let second_future = second.analyze()
         // Finish both requests before either error can leave the owners' scope.

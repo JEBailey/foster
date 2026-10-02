@@ -4,8 +4,9 @@
 //! `Readable` and writable structural contracts describe the operations supported by
 //! a provider. Use std.fs or std.net.tcp for concrete host resources.
 
-import core.bytes
-import core.result
+import core.bytes.Bytes
+
+import core.result.Result
 
 /// An explicit identifier for a resource provider or target.
 ///

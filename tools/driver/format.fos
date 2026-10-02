@@ -1,9 +1,14 @@
 //! Formatting policy for already parser-validated Foster source.
 import core.code_point
-import core.list
-import core.result
-import core.string
-import std.process
+
+import core.list.List
+
+import core.result.Result
+
+import core.string.String
+import core.string.StringBuilder
+
+import std.process.Arguments
 
 type ScanState = {
     depth: Int, mode: Int, escaped: Bool, comment: Int, parents: List<Int>, indents: List<Int>
@@ -63,7 +68,9 @@ func literal_step(points: List<CodePoint>, index: Int, state: ScanState) -> Int 
             }
             if c == 37 {
                 let end = index + 1
-                while end < points.length && points[end].as_int() != 37 { end = end + 1 }
+                while end < points.length && points[end].as_int() != 37 {
+                    end = end + 1
+                }
                 return end - index + 1
             }
             if triple {

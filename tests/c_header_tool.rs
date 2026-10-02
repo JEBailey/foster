@@ -250,103 +250,103 @@ ModeAlias header_mode(ModeAlias value) { return value; }
     );
     let mut generated = fs::read_to_string(output.with_extension("fos")).unwrap();
     assert!(
-        generated.contains("c_header_add(a: Int, b: Int)"),
+        generated.contains("header_add(a: Int, b: Int)"),
         "{generated}"
     );
     assert!(generated.contains("Returns zero without changing state."));
-    assert!(generated.contains("pub type CMode = Int"));
-    assert!(generated.contains("pub type CModeAlias = Int"));
-    assert!(generated.contains("pub type CFlags = Int"));
+    assert!(generated.contains("pub type Mode = Int"));
+    assert!(generated.contains("pub type ModeAlias = Int"));
+    assert!(generated.contains("pub type Flags = Int"));
     assert!(generated.contains("pub grid: List<List<Float>>"));
     generated.push_str(
         r#"
 func main() -> Result<Int, CError> {
-    assert(C_LONG_MINIMUM == -2147483648 && C_ULONG_MAXIMUM == 4294967295 && C_CHAR_BYTE == 255)
-    let scalar_before = try c_header_calls()
-    assert((try c_header_long(-2147483648)) == -2147483648)
-    assert((try c_header_long(2147483647)) == 2147483647)
-    assert((try c_header_ulong(4294967295)) == 4294967295)
-    assert((try c_header_ulong(0)) == 0)
-    assert((try c_header_char(255)) == 255)
-    assert((try c_header_char(0)) == 0)
+    assert(LONG_MINIMUM == -2147483648 && ULONG_MAXIMUM == 4294967295 && CHAR_BYTE == 255)
+    let scalar_before = try header_calls()
+    assert((try header_long(-2147483648)) == -2147483648)
+    assert((try header_long(2147483647)) == 2147483647)
+    assert((try header_ulong(4294967295)) == 4294967295)
+    assert((try header_ulong(0)) == 0)
+    assert((try header_char(255)) == 255)
+    assert((try header_char(0)) == 0)
     for invalid in [-2147483649, 2147483648] {
-        branch c_header_long(invalid) { Result.Ok(_) -> panic("long overflow reached C") Result.Error(_) -> () }
+        branch header_long(invalid) { Result.Ok(_) -> panic("long overflow reached C") Result.Error(_) -> () }
     }
     for invalid in [-1, 4294967296] {
-        branch c_header_ulong(invalid) { Result.Ok(_) -> panic("unsigned long overflow reached C") Result.Error(_) -> () }
+        branch header_ulong(invalid) { Result.Ok(_) -> panic("unsigned long overflow reached C") Result.Error(_) -> () }
     }
     for invalid in [-1, 256] {
-        branch c_header_char(invalid) { Result.Ok(_) -> panic("char overflow reached C") Result.Error(_) -> () }
+        branch header_char(invalid) { Result.Ok(_) -> panic("char overflow reached C") Result.Error(_) -> () }
     }
-    let scalars = CScalars { count: -2147483648, flags: 4294967295, byte: 255, history: [-2147483648, 2147483647] }
-    let returned_scalars = try c_header_scalars(scalars)
+    let scalars = Scalars { count: -2147483648, flags: 4294967295, byte: 255, history: [-2147483648, 2147483647] }
+    let returned_scalars = try header_scalars(scalars)
     assert(returned_scalars.count == scalars.count && returned_scalars.flags == scalars.flags)
     assert(returned_scalars.byte == 255 && returned_scalars.history == scalars.history)
     scalars.history = [0, 2147483648]
-    branch c_header_scalars(scalars) { Result.Ok(_) -> panic("long array overflow reached C") Result.Error(_) -> () }
-    assert((try c_header_calls()) == scalar_before + 7)
-    assert(C_MASK == 35 && C_MASK_ALIAS == 35)
-    assert(C_MODE_NEGATIVE == -3 && C_MODE_NEXT == -2 && C_MODE_ALIAS == 128)
-    assert(C_FRACTION == 0.25 && C_WIDE_BITS == -1 && C_CHANGED == 42)
-    assert(C_MINIMUM() == -9223372036854775807 - 1)
-    assert(C_VERSION == "6.0\nquoted \"value\"")
-    assert(C_UNICODE_TEXT == "\"́\\́")
-    assert(C_CONTROL_TEXT.bytes.hex() == "01080c")
-    let red = C_RED()
+    branch header_scalars(scalars) { Result.Ok(_) -> panic("long array overflow reached C") Result.Error(_) -> () }
+    assert((try header_calls()) == scalar_before + 7)
+    assert(MASK == 35 && MASK_ALIAS == 35)
+    assert(MODE_NEGATIVE == -3 && MODE_NEXT == -2 && MODE_ALIAS == 128)
+    assert(FRACTION == 0.25 && WIDE_BITS == -1 && CHANGED == 42)
+    assert(mINIMUM() == -9223372036854775807 - 1)
+    assert(VERSION == "6.0\nquoted \"value\"")
+    assert(UNICODE_TEXT == "\"́\\́")
+    assert(CONTROL_TEXT.bytes.hex() == "01080c")
+    let red = rED()
     assert(red.r == 230 && red.g == 41 && red.b == 55 && red.a == 255)
-    let before = try c_header_calls()
-    let array = C_ARRAY_VALUE()
+    let before = try header_calls()
+    let array = aRRAY_VALUE()
     let copied_array = array.copy()
-    let array_result = try c_header_array(array)
+    let array_result = try header_array(array)
     assert(array_result.data == [1,2,3,14])
     assert(array_result.grid[1][0] == 3.5 && array_result.points[1].x == 5.0)
     assert(array_result.name == [97,0,98,255])
-    assert(array_result.mode == -3 && array_result.flags == C_FLAG_HIGH)
+    assert(array_result.mode == -3 && array_result.flags == FLAG_HIGH)
     assert(copied_array.data[3] == 4 && copied_array.grid[1][0] == 3.0)
-    let mode = C_MODE_NEGATIVE
-    assert((try c_header_mode(mode)) == -3)
+    let mode = MODE_NEGATIVE
+    assert((try header_mode(mode)) == -3)
     array.data = [1,2,3]
-    branch c_header_array(array) { Result.Ok(_) -> panic("short array reached C") Result.Error(_) -> () }
+    branch header_array(array) { Result.Ok(_) -> panic("short array reached C") Result.Error(_) -> () }
     array.data = [1,2,3,4,5]
-    branch c_header_array(array) { Result.Ok(_) -> panic("long array reached C") Result.Error(_) -> () }
+    branch header_array(array) { Result.Ok(_) -> panic("long array reached C") Result.Error(_) -> () }
     array.data = [1,2,3,4]
     array.grid = [[1.0,2.0],[3.0]]
-    branch c_header_array(array) { Result.Ok(_) -> panic("short nested array reached C") Result.Error(_) -> () }
+    branch header_array(array) { Result.Ok(_) -> panic("short nested array reached C") Result.Error(_) -> () }
     array.grid = [[1.0,2.0],[3.0,4.0]]
     array.name = [0,1,2,256]
-    branch c_header_array(array) { Result.Ok(_) -> panic("invalid char byte reached C") Result.Error(_) -> () }
+    branch header_array(array) { Result.Ok(_) -> panic("invalid char byte reached C") Result.Error(_) -> () }
     array.name = [0,1,2,3]
     array.flags = 4294967296
-    branch c_header_array(array) { Result.Ok(_) -> panic("enum overflow reached C") Result.Error(_) -> () }
-    let packet = CPacket {
-        point: CVec { x: 1.25, y: -2.5 }
-        tint: CColor { r: 255, g: 0, b: 128, a: 255 }
-        bounds: CRectangle { width: 10.0, height: 20.0 }
+    branch header_array(array) { Result.Ok(_) -> panic("enum overflow reached C") Result.Error(_) -> () }
+    let packet = Packet {
+        point: Vec { x: 1.25, y: -2.5 }
+        tint: Color { r: 255, g: 0, b: 128, a: 255 }
+        bounds: Rectangle { width: 10.0, height: 20.0 }
         enabled: true
         delta: -123
         bits: -1
-        c_type: 1
-        c_c_type: 2
-        c_copy: 3
+        type_: 1
+        c_type: 2
+        copy_: 3
     }
-    let changed = try c_header_roundtrip(packet)
+    let changed = try header_roundtrip(packet)
     assert(changed.point.x == 3.25 && changed.point.y == -2.5)
     assert(changed.tint.r == 255 && changed.tint.g == 42 && changed.tint.b == 128)
     assert(changed.bounds.width == 11.5 && changed.bounds.height == 20.0)
     assert(changed.enabled && changed.delta == -123 && changed.bits == -1)
-    assert(changed.c_type == 1 && changed.c_c_type == 2 && changed.c_copy == 3)
+    assert(changed.type_ == 1 && changed.c_type == 2 && changed.copy_ == 3)
     assert(packet.point.x == 1.25 && packet.tint.g == 0)
     let copied = changed.copy()
     assert(copied.point.x == 3.25)
     packet.tint.r = 256
-    branch c_header_roundtrip(packet) {
+    branch header_roundtrip(packet) {
         Result.Ok(_) -> panic("out of range struct field reached C")
         Result.Error(_) -> ()
     }
-    assert((try c_header_calls()) == before + 2)
-    let packed = try c_header_packed(CPacked { tag: 7, amount: 10.25 })
+    assert((try header_calls()) == before + 2)
+    let packed = try header_packed(Packed { tag: 7, amount: 10.25 })
     assert(packed.tag == 7 && packed.amount == 20.5)
-    c_header_add(20, 22)
+    header_add(20, 22)
 }
 "#,
     );
@@ -446,7 +446,7 @@ enum { FIRST = -4, SECOND };
         String::from_utf8_lossy(&built.stderr)
     );
     let mut source = fs::read_to_string(constants_output.with_extension("fos")).unwrap();
-    source.push_str("\nfunc main() -> Int {\nassert(C_SECOND == -3)\nassert(C_BINARY.bytes.length == 3 && C_BINARY.bytes[1].int == 0)\nassert(C_UNICODE == \"café\")\nC_ANSWER\n}\n");
+    source.push_str("\nfunc main() -> Int {\nassert(SECOND == -3)\nassert(BINARY.bytes.length == 3 && BINARY.bytes[1].int == 0)\nassert(UNICODE == \"café\")\nANSWER\n}\n");
     let compilation = foster::compile(&source).unwrap();
     assert_eq!(foster::vm::run(&compilation).unwrap().to_string(), "42");
 }

@@ -1,20 +1,41 @@
 import core.drop
+import core.drop.Drop
 
-type Resource = & Drop & { id: Int }
+type Resource = & Drop & {
+    id: Int
+}
 impl Resource {
-    func deinit(self) -> () { println(self.id) }
+    func deinit(self) -> () {
+        println(self.id)
+    }
 }
 
-type Pair = & Drop & { first: Resource, second: Resource, number: Int }
+type Pair = & Drop & {
+    first: Resource, second: Resource, number: Int
+}
 impl Pair {
-    func deinit(self) -> () { println(self.number) }
+    func deinit(self) -> () {
+        println(self.number)
+    }
 }
 
 func complete(flag: Bool) -> Pair {
-    let pair = Pair { first: Resource { id: 1 }, second: ??, number: ?? }
+    let pair = Pair {
+        first: Resource {
+            id: 1
+        }, second: ??, number: ??
+    }
     branch {
-        flag -> { pair.second = Resource { id: 1 } }
-        _ -> { pair.second = Resource { id: 3 } }
+        flag -> {
+            pair.second = Resource {
+                id: 1
+            }
+        }
+        _ -> {
+            pair.second = Resource {
+                id: 3
+            }
+        }
     }
     pair.number = 10
     pair
@@ -22,11 +43,21 @@ func complete(flag: Bool) -> Pair {
 
 func main() -> Int {
     :scalar_missing {
-        let pair = Pair { first: Resource { id: 9 }, second: Resource { id: 9 }, number: ?? }
+        let pair = Pair {
+            first: Resource {
+                id: 9
+            }, second: Resource {
+                id: 9
+            }, number: ??
+        }
         ()
     }
     :abandoned {
-        let pair = Pair { first: Resource { id: 4 }, second: ??, number: ?? }
+        let pair = Pair {
+            first: Resource {
+                id: 4
+            }, second: ??, number: ??
+        }
         ()
     }
     :finished {
@@ -35,8 +66,18 @@ func main() -> Int {
         ()
     }
     :overwritten {
-        let pair = Pair { first: ??, second: Resource { id: 5 }, number: ?? }
-        pair = Pair { first: Resource { id: 6 }, second: Resource { id: 6 }, number: 20 }
+        let pair = Pair {
+            first: ??, second: Resource {
+                id: 5
+            }, number: ??
+        }
+        pair = Pair {
+            first: Resource {
+                id: 6
+            }, second: Resource {
+                id: 6
+            }, number: 20
+        }
         ()
     }
     42

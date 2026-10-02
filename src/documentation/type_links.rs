@@ -93,49 +93,17 @@ impl<'a> TypeLinks<'a> {
             return escape(&label);
         }
         let hir = &self.compilation.hir;
-        let module = &hir.modules[self.module];
-        if let Some((prefix, member)) = name.rsplit_once('.') {
-            let target = module
-                .imports
-                .get(prefix)
-                .copied()
-                .or_else(|| {
-                    let (first, rest) = prefix.split_once('.')?;
-                    let imported = module.imports.get(first)?;
-                    hir.module_named(&format!("{}.{}", hir.modules[*imported].name, rest))
-                })
-                .or_else(|| hir.module_named(prefix));
-            return target
-                .and_then(|id| self.declared(id, member, &label))
+        let candidates = hir.visible_types(self.module, name);
+        if let [ty] = candidates.as_slice() {
+            let (module, actual) = hir.type_location(*ty);
+            return self
+                .declared(module, actual, &label)
                 .unwrap_or_else(|| escape(&label));
-        }
-        if let Some(value) = self.declared(self.module, name, &label) {
-            return value;
-        }
-        let mut candidates = module
-            .imports
-            .values()
-            .filter_map(|id| {
-                let definitions = &hir.modules[*id];
-                let public = definitions
-                    .records
-                    .get(name)
-                    .is_some_and(|id| hir.records[*id].public)
-                    || definitions
-                        .variant_types
-                        .get(name)
-                        .is_some_and(|id| hir.variant_types[*id].public);
-                public.then_some(*id)
-            })
-            .collect::<Vec<_>>();
-        candidates.sort();
-        candidates.dedup();
-        if candidates.len() == 1 {
-            return self.declared(candidates[0], name, &label).unwrap();
         }
         if !candidates.is_empty() {
             return escape(&label);
         }
+
         self.builtin(name)
     }
 

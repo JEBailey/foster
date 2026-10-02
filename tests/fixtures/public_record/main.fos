@@ -1,7 +1,11 @@
 import geometry
+import geometry.*
+import static geometry.*
 
 func origin() -> geometry::Point {
-    geometry::Point { x: 0, y: 0 }
+    geometry::Point {
+        x: 0, y: 0
+    }
 }
 
 func main() -> Int {

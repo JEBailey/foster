@@ -5,8 +5,10 @@
 //! constructors return `CivilError` for invalid fields. Use std.time.zone to
 //! resolve local civil values to exact instants.
 
-import core.ordering
-import core.result
+import core.ordering.Ordering
+import core.ordering.Ordered
+
+import core.result.Result
 
 /// Describes an invalid civil date, time, or calendar operation.
 pub type CivilError = {

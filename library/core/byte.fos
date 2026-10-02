@@ -5,8 +5,9 @@
 //!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
-import core.result
-import core.bytes
+import core.result.Result
+
+import core.bytes.Bytes
 
 impl Byte {
     /// Reads `.bytes`: a one-byte immutable sequence, leaving `self` unchanged.

@@ -4,7 +4,7 @@
 //! `map` and `and_then` invoke their callback only for `Some`. `unwrap_or` receives an
 //! already evaluated fallback; `unwrap_or_else` computes one only for `None`.
 
-import core.functions
+import core.functions.Supplier
 
 /// A value that is either present as `Some(T)` or absent as `None`.
 pub enum Option<T> = Some(T)

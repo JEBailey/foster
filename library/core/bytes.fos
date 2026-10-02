@@ -4,15 +4,22 @@
 //! octets; use `String.from_utf8` to validate and decode text. Slices are checked,
 //! half-open ranges and materialize a new byte value. Hex decoding returns `HexError`.
 
-import core.copy
-import core.ordering
-import std.collections
+import core.copy.Copy
+import static core.copy.*
+import core.ordering.Equality
+import core.ordering.Hashing
+
+import std.collections.Collection
 
 import std.iter
+
 import core.byte
-import core.list
-import core.result
-import core.string
+
+import core.list.List
+
+import core.result.Result
+
+import core.string.String
 
 /// Private host-backed compact byte storage.
 intrinsic type RawBytes

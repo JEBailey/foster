@@ -1,4 +1,10 @@
 import left
+import left.*
+import static left.*
 import right
+import right.*
+import static right.*
 
-func main() -> Int { map(1) }
+func main() -> Int {
+    map(1)
+}

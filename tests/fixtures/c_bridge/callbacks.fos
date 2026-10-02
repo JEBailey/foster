@@ -1,7 +1,11 @@
-pub type Counter = { count: Int, seen: List<Int> }
+pub type Counter = {
+    count: Int, seen: List<Int>
+}
 impl Counter {
     pub func visit(self, value: Int) -> Int [mut self.count, reshape self.seen] {
-        let active = branch c_live() { Result.Ok(value) -> value Result.Error(error) -> panic(error.message) }
+        let active = branch live() {
+            Result.Ok(value) -> value Result.Error(error) -> panic(error.message)
+        }
         assert(active >= 0, "nested C call")
         self.seen.push(value)
         assert(self.seen[0] == 2, "retained managed state")
@@ -9,7 +13,9 @@ impl Counter {
         self.count
     }
     func deinit(self) -> () {
-        branch c_note_drop(self.count) { Result.Ok(_) -> () Result.Error(error) -> panic(error.message) }
+        branch note_drop(self.count) {
+            Result.Ok(_) -> () Result.Error(error) -> panic(error.message)
+        }
     }
     pub func event(self, value: Int) -> () [mut self.count, reshape self.seen] {
         self.seen.push(value)
@@ -19,63 +25,85 @@ impl Counter {
     }
 }
 pub type Broken = {}
-impl Broken { pub func visit(self, value: Int) -> Int { panic("callback failure") } }
+impl Broken {
+    pub func visit(self, value: Int) -> Int {
+        panic("callback failure")
+    }
+}
 pub type TooLarge = {}
-impl TooLarge { pub func visit(self, value: Int) -> Int { 2147483648 } }
+impl TooLarge {
+    pub func visit(self, value: Int) -> Int {
+        2147483648
+    }
+}
 func main() -> Result<Int, CError> {
-    let handler = Counter { count: 10, seen: [] }
-    assert(try c_visit(handler, 2) == 12, "sync result")
+    let handler = Counter {
+        count: 10, seen: []
+    }
+    assert(try visit(handler, 2) == 12, "sync result")
     assert(handler.count == 12, "sync mutation")
-    assert(try c_visit_packet(CPacket { arguments: 0 }, handler) == 12, "record before callback")
+    assert(try visit_packet(Packet {
+        arguments: 0
+    }, handler) == 12, "record before callback")
     let borrowed = [ref handler] (payload: String) -> {
         handler.count = 99
         "00"
     }
     branch bridge().subscribe(1, CArguments.empty(), CArguments.empty(), move borrowed, "1", false) {
-        Result.Error(error) -> { assert(error.message.contains?("retained callbacks"), "retained borrow rejected") }
+        Result.Error(error) -> {
+            assert(error.message.contains?("retained callbacks"), "retained borrow rejected")
+        }
         Result.Ok(_) -> panic("borrowed handler escaped into registration")
     }
     assert(handler.count == 12, "rejected adapter was not invoked")
-    branch c_visit(Broken {}, 0) {
-        Result.Error(error) -> { assert(error.message.contains?("callback failure"), "callback error") }
+    branch visit(Broken {}, 0) {
+        Result.Error(error) -> {
+            assert(error.message.contains?("callback failure"), "callback error")
+        }
         Result.Ok(_) -> panic("callback panic escaped containment")
     }
-    branch c_visit(TooLarge {}, 0) {
+    branch visit(TooLarge {}, 0) {
         Result.Error(_) -> ()
         Result.Ok(_) -> panic("callback result overflow accepted")
     }
     :registration {
-        let resource = try c_subscribe(move handler)
-        assert(try c_emit(resource, 10) == 22, "first retained invocation")
-        assert(try c_emit(resource, 20) == 42, "retained mutation")
-        branch c_background(resource, 1) {
+        let resource = try subscribe(move handler)
+        assert(try emit(resource, 10) == 22, "first retained invocation")
+        assert(try emit(resource, 20) == 42, "retained mutation")
+        branch background(resource, 1) {
             Result.Error(_) -> ()
             Result.Ok(_) -> panic("foreign thread invoked direct handler")
         }
     }
-    assert(try c_live() == 0, "scope unregisters")
-    assert(try c_dropped() == 1, "retained handler dropped once")
-    let rejected = Counter { count: 0, seen: [] }
-    branch c_subscribe_fail(move rejected) {
+    assert(try live() == 0, "scope unregisters")
+    assert(try dropped() == 1, "retained handler dropped once")
+    let rejected = Counter {
+        count: 0, seen: []
+    }
+    branch subscribe_fail(move rejected) {
         Result.Error(_) -> ()
         Result.Ok(_) -> panic("null registration accepted")
     }
-    assert(try c_dropped() == 2, "failed registration drops handler")
-    let queued = Counter { count: 0, seen: [] }
-    let registration = try c_subscribe_events(move queued)
-    try c_background(registration, 20)
-    try c_background(registration, 22)
+    assert(try dropped() == 2, "failed registration drops handler")
+    let queued = Counter {
+        count: 0, seen: []
+    }
+    let registration = try subscribe_events(move queued)
+    try background(registration, 20)
+    try background(registration, 22)
     try registration.poll_callbacks()
     try registration.close()
     try registration.close()
-    assert(try c_live() == 0, "explicit close")
-    assert(try c_dropped() == 3, "explicit close drops handler once")
+    assert(try live() == 0, "explicit close")
+    assert(try dropped() == 3, "explicit close drops handler once")
     let failing = Broken {}
-    let closing = try c_subscribe_close(move failing)
+    let closing = try subscribe_close(move failing)
     branch closing.close() {
-        Result.Error(error) -> { assert(error.message.contains?("callback failure"), "close callback error") }
+        Result.Error(error) -> {
+            assert(error.message.contains?("callback failure"), "close callback error")
+        }
         Result.Ok(_) -> panic("close callback failure was lost")
     }
-    assert(try c_live() == 0, "callback failure does not leak closing registration")
+    assert(try live() == 0, "callback failure does not leak closing registration")
     Result.Ok(42)
 }

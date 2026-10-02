@@ -1,6 +1,8 @@
-import core.result
-import core.int
-import core.string
+import core.result.Result
+
+import core.int.Int
+
+import core.string.String
 
 func read_port(configured: Bool) -> Result<Int, String> {
     branch configured {

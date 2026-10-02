@@ -16,6 +16,8 @@ fn moving_a_local_does_not_consume_a_same_named_caller_parameter() {
     let compilation = foster::compile(
         r#"
 import core.string
+import core.string.*
+import static core.string.*
 func count(value: String) -> Int [consume value] { value.length }
 func inspect(value: String) -> Int [read value] {
     let owned = "test"

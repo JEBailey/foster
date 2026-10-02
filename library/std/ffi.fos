@@ -7,11 +7,16 @@
 //! have one owner, close on scope exit, and cannot cross a remote boundary.
 
 import core.byte
-import core.bytes
-import core.int
+
+import core.bytes.Bytes
+
+import core.int.Int
+
 import core.list
-import core.result
-import core.string
+
+import core.result.Result
+
+import core.string.String
 
 /// Private access to the shared VM/native bridge runtime.
 type CHost = {}
@@ -259,6 +264,15 @@ pub type CResource = {
     token: Int, callback: Int
 }
 impl CResource {
+    /// Appends this live owner's token. The bridge checks its kind, module,
+    /// thread, and call lease before resolving it to a native pointer.
+    pub func argument(self, arguments: CArguments) -> Result<(), CError> [read self.token, mut arguments.payload] {
+        return Result.Error(CError {
+            message: "C resource is closed", status: 0
+        }) if self.token == 0
+        arguments.integer(self.token)
+        Result.Ok(())
+    }
     /// Delivers queued notifications on the registering thread. Processes only
     /// the events pending at entry and returns the first handler/queue failure.
     pub func poll_callbacks(self) -> Result<(), CError> [mut self.callback] {

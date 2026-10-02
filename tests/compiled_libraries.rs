@@ -73,6 +73,8 @@ fn receiver_borrows_survive_library_and_bytecode_round_trip() {
     workspace.library(
         r#"
 import core.option
+import core.option.*
+import static core.option.*
 pub type Box = { pub value: Int }
 impl Box {
     pub func borrow(self: Box) -> Option<ref[self] Int> [read self] {
@@ -89,7 +91,11 @@ impl Box {
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 import core.option
+import core.option.*
+import static core.option.*
 func main() -> Int {
     let owner = Box { value: 1 }
     branch owner.borrow() {
@@ -107,7 +113,11 @@ func main() -> Int {
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 import core.option
+import core.option.*
+import static core.option.*
 func main() -> Int {
     let owner = Box { value: 1 }
     let borrowed = owner.borrow()
@@ -127,6 +137,8 @@ fn implementation_constraints_survive_library_round_trip() {
     let mut compiled = workspace.library(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 pub type Box<T> = { pub value: T }
 impl Box<T & Copy> {
     pub func copied(self) -> T [read self] { self.value.copy() }
@@ -169,6 +181,8 @@ pub func invoke<T, U>(receiver: Contract, value: A<T> & B<U>, marker: T) -> Int 
     );
     let client = r#"
 import api
+import api.*
+import static api.*
 type Item = { pub first: Int, pub second: Bool }
 type Implementation = & Contract & {}
 impl Implementation {
@@ -256,6 +270,8 @@ pub func wrap(keep: func() -> Int, discard: func() -> Int) -> func() -> Int {
     );
     let source = r#"
 import api
+import api.*
+import static api.*
 func main() -> Int {
     let left = [42]
     let right = [99]
@@ -300,6 +316,8 @@ impl Sized {
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 pub type Local = & Sized & { count: Int }
 impl Local { pub func length(self) -> Int { self.count } }
 func main() -> Int { Local { count: 40 }.score() }
@@ -339,6 +357,8 @@ impl Other { pub func score(self) -> Int { 21 } }
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 pub type Local = & Sized & { count: Int }
 impl Local { pub func length(self) -> Int { self.count } }
 pub type Ordered = & Sized & Other & {}
@@ -399,6 +419,8 @@ func main() -> Int {
         w.0.join("src/main.fos"),
         r#"
 import api
+import api.*
+import static api.*
 type Final = & Generic<Int> & {}
 func main() -> Int { Final {}.echo(42) }
 "#,
@@ -444,6 +466,8 @@ pub func evaluate(value: Scored) -> Int { value.score(40) }
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 type Local = { pub func score(self, value: Int) -> Int }
 impl Local { func score(self: Local, value: Int) -> Int { value + 2 } }
 func main() -> Int { evaluate(Local {}) }
@@ -471,6 +495,8 @@ pub func inspect<T>(value: T) -> Int [read value] {
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 pub type Local = { value: Int }
 impl Local { pub func number(self) -> Int [read self] { self.value } }
 func main() -> Int { inspect(Local { value: 42 }) }
@@ -519,6 +545,8 @@ impl Provider { pub func take(self, value: String) -> String [consume value] { v
         .consumer(
             r#"
 import api
+import api.*
+import static api.*
 type Local = & Provider & {}
 func main() -> String { let text = "owned"
     Local {}.take(text)
@@ -672,10 +700,10 @@ fn imported_code_builds_as_native() {
 fn core_byte_encodings_survive_library_imports() {
     let w = Workspace::new();
     w.library(
-        "import core.int\nimport core.float\nimport core.bytes\npub func integer(value: Int) -> Bytes { value.bytes }\npub func vertex(value: Float) -> Bytes { value.to_f32_le_bytes() }",
+        "import core.int.*\nimport core.float.*\nimport core.bytes.*\npub func integer(value: Int) -> Bytes { value.bytes }\npub func vertex(value: Float) -> Bytes { value.to_f32_le_bytes() }",
     );
     let app = w.consumer(
-        "import api\nimport core.bytes\nfunc main() -> Int { assert(integer(42).hex() == \"2a00000000000000\")\nassert(vertex(1.0).hex() == \"0000803f\")\n42 }",
+        "import api\nimport core.bytes.*\nfunc main() -> Int { assert(integer(42).hex() == \"2a00000000000000\")\nassert(vertex(1.0).hex() == \"0000803f\")\n42 }",
     ).unwrap();
     assert_eq!(run(&app), Value::Integer(42));
     foster::native::prepare(&app).unwrap();
@@ -750,7 +778,9 @@ fn nested_modules_and_constants_survive_rebasing() {
 #[test]
 fn embedded_dependencies_are_linked_with_checked_descriptors() {
     let w = Workspace::new();
-    w.library("import std.fs\npub func answer() -> Int { 42 }");
+    w.library(
+        "import std.fs\nimport std.fs.*\nimport static std.fs.*\npub func answer() -> Int { 42 }",
+    );
     let app = w
         .consumer("import api\nfunc main() -> Int { answer() }")
         .unwrap();
@@ -786,6 +816,8 @@ fn materialized_methods_keep_cross_module_receiver_types() {
         root.join("src/base.fos"),
         r#"
 import tokens
+import tokens.*
+import static tokens.*
 pub type Base = { pub value: Int, pub func score(self) -> Int }
 impl Base {
     pub func score(self: Base) -> Int { self.value }

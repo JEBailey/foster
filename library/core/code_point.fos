@@ -12,11 +12,17 @@
 //!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
-import core.option
-import core.int
-import core.bytes
-import core.string
+import core.option.Option
+
+import core.int.Int
+
+import core.bytes.Bytes
+
+import core.string.String
+
 import core.unicode as unicode
+
+import static core.unicode.*
 
 /// Unicode 17.0.0 General_Category values.
 pub enum GeneralCategory = Unassigned

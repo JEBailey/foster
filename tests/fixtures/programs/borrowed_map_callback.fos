@@ -1,4 +1,5 @@
 import core.list
+
 import std.iter.map
 
 func main() -> Int {

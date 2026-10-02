@@ -1,8 +1,16 @@
 import core.string
+import core.string.StringCursor
+
 import core.option
+import core.option.Option
+
 import core.bytes
+
 import core.byte
+
 import std.cursor
+import std.cursor.ListCursor
+import std.cursor.BytesCursor
 
 func main() -> Int {
     let text = StringCursor.from("Aλ€🙂Z")

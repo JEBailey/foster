@@ -1,19 +1,42 @@
 import core.byte
+
 import core.bytes
+
 import core.int
+import core.int.Int
+
 import core.list
+
 import core.result
+import core.result.Result
+
 import core.string
+import core.string.String
+
 import std.time
+import std.time.Instant
+
 import std.time.civil
+import std.time.civil.DateTime
+
 import std.time.zone
+import std.time.zone.ZoneError
+import std.time.zone.LocalResolution
+import std.time.zone.TimeZone
+import std.time.zone.TimeZoneDatabase
+import std.time.zone.FixedOffsetZone
+
 import tzdata
+import tzdata.*
+import static tzdata.*
 
 func require(outcome: Result<TimeZone, ZoneError>) -> TimeZone [consume outcome] {
     branch move outcome {
         Result.Ok(value) -> value
-        Result.Error(error) -> { assert(false, error.zone + ": " + error.message)
-            FixedOffsetZone.utc() }
+        Result.Error(error) -> {
+            assert(false, error.zone + ": " + error.message)
+            FixedOffsetZone.utc()
+        }
     }
 }
 
@@ -31,7 +54,9 @@ func overlap(database: TimeZoneDatabase, name: String, wall: Int, early: Int, la
             assert(values.earlier().nanosecond() == 123456789, "overlap nanoseconds")
             assert(values.later().nanosecond() == 123456789, "overlap nanoseconds")
         }
-        _ -> { assert(false, name + " expected overlap") }
+        _ -> {
+            assert(false, name + " expected overlap")
+        }
     }
 }
 
@@ -44,7 +69,9 @@ func gap(database: TimeZoneDatabase, name: String, wall: Int, edge: Int) -> () {
             assert(values.after().epoch_seconds() == edge, name + " gap after")
             assert(values.after().nanosecond() == 0, name + " gap after nanoseconds")
         }
-        _ -> { assert(false, name + " expected gap") }
+        _ -> {
+            assert(false, name + " expected gap")
+        }
     }
 }
 
@@ -83,7 +110,9 @@ func main() -> Int {
         LocalResolution.Unique(value) -> {
             assert(value.epoch_seconds() == -1 && value.nanosecond() == 999999999, "unique nanoseconds")
         }
-        _ -> { assert(false, "UTC must resolve uniquely") }
+        _ -> {
+            assert(false, "UTC must resolve uniquely")
+        }
     }
     42
 }

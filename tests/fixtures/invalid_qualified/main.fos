@@ -1,4 +1,6 @@
 import json.parser as parser
+import json.parser.*
+import static json.parser.*
 
 func main() {
     parser::missing("value")

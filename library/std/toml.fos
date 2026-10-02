@@ -5,15 +5,22 @@
 //! TOML from the value model; it is not a source-preserving editor for comments
 //! and original formatting.
 
-import core.copy
+import core.copy.Copy
+import static core.copy.*
 
 import core.code_point
+
 import core.float
-import core.int
-import core.list
-import core.option
-import core.result
-import core.string
+
+import core.int.Int
+
+import core.list.List
+
+import core.option.Option
+
+import core.result.Result
+
+import core.string.String
 
 /// A complete TOML document whose root is a table.
 pub type TomlDocument = {

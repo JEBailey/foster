@@ -33,7 +33,7 @@ fn numeric_conversions_checks_argument_types_and_counts() {
         "1.0.truncate(true)",
     ] {
         let source =
-            format!("import core.float\nimport core.int\nfunc main() -> () {{ {expression} }}");
+            format!("import core.float.*\nimport core.int.*\nfunc main() -> () {{ {expression} }}");
         assert!(foster_compiler::compile(&source).is_err(), "{expression}");
     }
 }

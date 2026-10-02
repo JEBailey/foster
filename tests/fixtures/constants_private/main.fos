@@ -1,4 +1,6 @@
 import values
+import values.*
+import static values.*
 
 func main() -> Int {
     HIDDEN

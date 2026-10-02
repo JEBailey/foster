@@ -13,6 +13,18 @@ mod tests {
     use super::format;
 
     #[test]
+    fn multiline_comma_lists_format_and_keep_their_behavior() {
+        let source = "func sum(\na: Int\n, b: Int\n) -> Int { a + b }\nfunc main() -> Int {\nlet values = [\n20\n, 22\n]\nsum(\nvalues[0]\n, values[1]\n)\n}\n";
+        let formatted = format(source).unwrap();
+        crate::parse(&formatted).unwrap();
+        assert_eq!(format(&formatted).unwrap(), formatted);
+        assert_eq!(
+            crate::run(&formatted).unwrap(),
+            crate::vm::Value::Integer(42)
+        );
+    }
+
+    #[test]
     fn formats_indentation_and_preserves_comments_and_literals() {
         let source = "// { retained\r\nfunc main() -> String {  \r\nlet value = \"}\"\r\nbranch {\r\ntrue -> value\r\n_ -> \"no\"\r\n}\r\n}\r\n";
         assert_eq!(
@@ -124,10 +136,10 @@ mod tests {
 
     #[test]
     fn formats_try_expressions() {
-        let source = "import core.result\nfunc checked() -> Result<Int, String> {\nlet value = try Result.Ok(42)\nResult.Ok(value)\n}\n";
+        let source = "import core.result.*\nfunc checked() -> Result<Int, String> {\nlet value = try Result.Ok(42)\nResult.Ok(value)\n}\n";
         assert_eq!(
             format(source).unwrap(),
-            "import core.result\nfunc checked() -> Result<Int, String> {\n    let value = try Result.Ok(42)\n    Result.Ok(value)\n}\n"
+            "import core.result.*\nfunc checked() -> Result<Int, String> {\n    let value = try Result.Ok(42)\n    Result.Ok(value)\n}\n"
         );
     }
 }

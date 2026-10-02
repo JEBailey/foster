@@ -1,8 +1,13 @@
-import std.iter
+import std.iter.Iterator
+import std.iter.Iterable
+
 import std.iter.filter as filtering
+
 import std.iter.map as mapping
+
 import std.iter.take as taking
-import core.option
+
+import core.option.Option
 
 type RangeIterator = & Iterator<Int> & {
     current: Int
@@ -27,7 +32,9 @@ type Range = & Iterable<Int> & {
 
 impl Range {
     func iterator(self) -> Iterator<Int> {
-        RangeIterator { current: self.start, end: self.end }
+        RangeIterator {
+            current: self.start, end: self.end
+        }
     }
 }
 
@@ -38,17 +45,27 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
     }
 }
 
-func double(value: Int) -> Int [consume value] { value * 2 }
+func double(value: Int) -> Int [consume value] {
+    value * 2
+}
 
-func greater_than_six?(value: Int) -> Bool { value > 6 }
+func greater_than_six?(value: Int) -> Bool {
+    value > 6
+}
 
-func add(total: Int, value: Int) -> Int { total + value }
+func add(total: Int, value: Int) -> Int {
+    total + value
+}
 
 func main() -> Int {
-    let values = Range { start: 3, end: 5 }.iterator()
+    let values = Range {
+        start: 3, end: 5
+    }.iterator()
     let first = value_or(values.next(), -1)
     let second = value_or(values.next(), -1)
     let exhausted = value_or(values.next(), -1)
-    let pipeline_total = Range { start: 1, end: 10 }.iterator().map(double).filter(greater_than_six?).take(2).fold(0, add)
+    let pipeline_total = Range {
+        start: 1, end: 10
+    }.iterator().map(double).filter(greater_than_six?).take(2).fold(0, add)
     first + second + exhausted + pipeline_total
 }

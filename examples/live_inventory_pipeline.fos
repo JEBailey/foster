@@ -4,8 +4,9 @@
 // The owner then restocks the inventory while a persistent remote read loan
 // observes the updated state. A report actor serializes the final aggregation.
 
-import core.result
-import core.remote_error
+import core.result.Result
+
+import core.remote_error.RemoteError
 
 type Inventory = {
     apples: Int
@@ -85,16 +86,26 @@ impl Report {
 }
 
 func main() -> Result<Int, RemoteError> {
-    let inventory = Inventory { apples: 2, bolts: 1, version: 1 }
-    let policy = Policy { minimum_apples: 5, minimum_bolts: 4 }
+    let inventory = Inventory {
+        apples: 2, bolts: 1, version: 1
+    }
+    let policy = Policy {
+        minimum_apples: 5, minimum_bolts: 4
+    }
 
     // `dashboard` holds a persistent read loan to the live inventory. The owner
     // may still mutate it; readers and the owner are coordinated by the VM.
     let dashboard = remote ref inventory
 
-    let auditor_a = remote Auditor { weight: 2 }
-    let auditor_b = remote Auditor { weight: 3 }
-    let report = remote Report { alerts: 0, healthy: 0, score: 0 }
+    let auditor_a = remote Auditor {
+        weight: 2
+    }
+    let auditor_b = remote Auditor {
+        weight: 3
+    }
+    let report = remote Report {
+        alerts: 0, healthy: 0, score: 0
+    }
 
     // Ordinary remote parameters borrow by default. Both calls can inspect the
     // same local values without copying or transferring ownership.

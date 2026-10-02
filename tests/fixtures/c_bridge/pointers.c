@@ -27,3 +27,9 @@ int32_t sum_pairs(const Pair *data, int32_t length) { int32_t sum=0; for(int32_t
 void mutate_pairs(Pair *data, int32_t length) { for(int32_t i=0;i<length;i++) data[i].x+=1; }
 void fill_pairs(Pair *data, int32_t capacity) { if(capacity) { data[0].x=20; data[0].y=22; } }
 void set_value(OwnedValue *value, int32_t number) { *value->data=number; }
+int32_t add_values(OwnedValue left, OwnedValue right) { return *left.data + *right.data; }
+HeldValue retain_value(OwnedValue value) { return (HeldValue){value, false}; }
+HeldValue take_value(OwnedValue value) { return (HeldValue){value, true}; }
+HeldValue take_held(HeldValue value) { return value; }
+void destroy_held(HeldValue held) { if (held.owns) destroy_value(held.value); }
+int32_t read_held(HeldValue held) { return read_value(held.value); }

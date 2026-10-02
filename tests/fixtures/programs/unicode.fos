@@ -1,4 +1,6 @@
 import core.code_point
+import core.code_point.GeneralCategory
+
 import core.string
 
 func main() -> Int {

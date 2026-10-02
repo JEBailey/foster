@@ -4,9 +4,12 @@
 //! The requested width must fit the source's advertised range. Use seeded generators
 //! for reproducibility and `SystemRandom` for operating-system entropy.
 
-import core.bytes
+import core.bytes.Bytes
+
 import std.random.secure as secure
-import core.result
+import std.random.secure.EntropySource
+
+import core.result.Result
 
 /// Describes invalid random requests or unavailable host entropy.
 pub type RandomError = {

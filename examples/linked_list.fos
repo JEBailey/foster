@@ -1,4 +1,4 @@
-import core.option
+import core.option.Option
 
 // `LinkedList<T>` owns the first link. Each Node case owns its value and the rest of the chain.
 enum Link<T> = End

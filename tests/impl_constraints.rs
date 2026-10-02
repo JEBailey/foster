@@ -63,6 +63,8 @@ fn constrained_bodies_keep_requirements_in_closures_and_reference_calls() {
     runs(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Box<T> = { value: T }
 impl Box<T & Copy> {
     func copied(self) -> T [read self] {
@@ -115,6 +117,8 @@ func main() -> Int { Pair { key: 0, value: Item { value: 42 } }.read() }
 fn structural_arguments_check_conditional_method_availability() {
     let source = r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Answer = { pub func answer(self) -> Int }
 pub type Box<T> = { value: T }
 impl Box<T & Copy> { pub func answer(self) -> Int { 42 } }
@@ -132,6 +136,8 @@ func main() -> Int { answer(Box { value: 1 }) }
 fn unconstrained_generic_cannot_forward_to_constrained_method() {
     let source = r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Box<T> = { value: T }
 impl Box<T & Copy> { func answer(self) -> Int { 42 } }
 func answer<T>(value: Box<T>) -> Int { value.answer() }
@@ -158,7 +164,7 @@ fn conditional_runtime_hooks_are_rejected() {
         "deinit(self) -> () { () }",
     ] {
         let source = format!(
-            "import core.copy\ntype Box<T> = {{ value: T }}\nimpl Box<T & Copy> {{ func {member} }}\nfunc main() -> Int {{ 42 }}"
+            "import core.copy\nimport core.copy.*\nimport static core.copy.*\ntype Box<T> = {{ value: T }}\nimpl Box<T & Copy> {{ func {member} }}\nfunc main() -> Int {{ 42 }}"
         );
         let error = foster::compile(&source).err().unwrap();
         assert!(
@@ -173,6 +179,8 @@ fn conditional_runtime_hooks_are_rejected() {
 fn overload_selection_filters_unsatisfied_constraints() {
     let source = r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Item = { value: Int }
 type Box<T> = { value: T }
 impl Box<T & Copy> { func answer(self, value: Int) -> Int { value } }
@@ -191,6 +199,8 @@ fn multiple_requirements_and_generic_forwarding() {
     runs(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Number = { pub func number(self) -> Int [read self] }
 pub type Item = { value: Int }
 impl Item {
@@ -212,6 +222,8 @@ func main() -> Int { Box { value: Item { value: 42 } }.number() }
 fn constrained_associated_function_value_is_checked() {
     let source = r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Box<T> = { value: T }
 impl Box<T & Copy> { func answer(value: T) -> Int { 42 } }
 type Item = { value: Int }
@@ -232,6 +244,8 @@ fn conditional_methods_do_not_discharge_unconditional_contracts() {
     let error = foster::compile(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 pub type Box<T> = { value: T, pub func answer(self) -> Int }
 impl Box<T & Copy> { pub func answer(self) -> Int { 42 } }
 func main() -> Int { 42 }
@@ -251,6 +265,8 @@ fn requirement_checks_result_and_effects() {
         let source = format!(
             r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 pub type Item = {{ value: Int }}
 impl Item {{ {implementation} }}
 type Box<T> = {{ value: T }}
@@ -268,6 +284,8 @@ fn runtime_conformance_cannot_erase_conditional_methods() {
     let error = foster::compile(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Answer = { pub func answer(self) -> Int }
 pub type Box<T> = { value: T }
 impl Box<T & Copy> { pub func answer(self) -> Int { 42 } }
@@ -301,7 +319,7 @@ fn constraints_do_not_create_ordered_specialization() {
         "impl Box<T & Copy> { func answer(self) -> Int { 42 } }\nimpl Box<T> { func answer(self) -> Int { 0 } }",
     ] {
         let source = format!(
-            "import core.copy\ntype Box<T> = {{ value: T }}\n{methods}\nfunc main() -> Int {{ 42 }}"
+            "import core.copy\nimport core.copy.*\nimport static core.copy.*\ntype Box<T> = {{ value: T }}\n{methods}\nfunc main() -> Int {{ 42 }}"
         );
         assert!(foster::compile(&source).is_err());
     }
@@ -312,6 +330,8 @@ fn copy_constraint_preserves_the_concrete_result_type() {
     let compilation = foster::compile(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type Box<T> = { value: T }
 impl Box<T & Copy> {
     func copied(self) -> T [read self] { self.value.copy() }
@@ -332,6 +352,8 @@ fn missing_copy_is_rejected_even_when_the_method_body_does_not_copy() {
     let error = foster::compile(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 type NoCopy = { value: Int }
 type Box<T> = { value: T }
 impl Box<T & Copy> { func answer(self) -> Int { 42 } }
@@ -348,6 +370,8 @@ fn structural_method_satisfies_copy_without_declaring_composition() {
     let compilation = foster::compile(
         r#"
 import core.copy
+import core.copy.*
+import static core.copy.*
 pub type Item = { value: Int }
 impl Item { pub func copy(self) -> self [read self] { Item { value: self.value } } }
 type Box<T> = { value: T }

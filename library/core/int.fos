@@ -6,13 +6,17 @@
 //!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
-import core.result as results
+import core.result.Result
 
-import core.ordering
-import core.copy
-import core.bytes
+import core.ordering.Ordering
+
+import core.copy.Copy
+import static core.copy.*
+import core.bytes.Bytes
+
 import core.byte
-import core.list
+
+import core.list.List
 
 /// Private signed 64-bit primitive storage.
 intrinsic type RawInt

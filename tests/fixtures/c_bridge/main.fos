@@ -1,9 +1,21 @@
 import core.bytes
+import core.bytes.Bytes
+
 import core.result
+import core.result.Result
+
 import core.string
+
 import core.list
+
 import std.ffi
+import std.ffi.CError
+import std.ffi.CArguments
+import std.ffi.CBridge
+import std.ffi.CResource
+
 import std.process
+import std.process.Arguments
 
 func create(bridge: CBridge, value: Int) -> Result<CResource, CError> {
     let parameters = CArguments.empty()

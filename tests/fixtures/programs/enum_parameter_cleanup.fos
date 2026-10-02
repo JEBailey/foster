@@ -1,4 +1,5 @@
 import core.drop
+import core.drop.Drop
 
 type Item = & Drop & {
     id: Int

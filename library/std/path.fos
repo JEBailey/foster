@@ -4,10 +4,13 @@
 //! host-platform path rules and do not require a path to exist. canonical performs
 //! filesystem I/O and returns `IoError` when resolution fails. A `Path` is not a URI.
 
-import core.option
-import core.result
-import std.io
-import std.resource
+import core.option.Option
+
+import core.result.Result
+
+import std.io.IoError
+
+import std.resource.ResourceIdentifier
 
 type PathHost = {}
 
@@ -52,13 +55,21 @@ pub type Path = & ResourceIdentifier & {
 
 impl Path {
     /// Wraps host path text without validating existence or accessing the filesystem.
-    pub func from(value: String) -> Path { Path { value } }
+    pub func from(value: String) -> Path {
+        Path {
+            value
+        }
+    }
 
     /// Returns the host path text.
-    pub func as_string(self) -> String { self.value.slice(0, self.value.length) }
+    pub func as_string(self) -> String {
+        self.value.slice(0, self.value.length)
+    }
 
     /// Returns the stable identifier supplied to the filesystem provider.
-    pub func resource_id(self) -> String { self.as_string() }
+    pub func resource_id(self) -> String {
+        self.as_string()
+    }
 
     /// Joins this path with another typed path.
     pub func join(self, right: Path) -> Path {
@@ -94,7 +105,9 @@ impl Path {
 }
 
 /// Joins two platform path components.
-pub func join(left: String, right: String) -> String { PathHost.join(left, right) }
+pub func join(left: String, right: String) -> String {
+    PathHost.join(left, right)
+}
 
 /// Joins a list of platform path components, returning an empty string for an empty list.
 pub func join_all(parts: List<String>) -> String {
@@ -113,11 +126,17 @@ func join_remaining(parts: List<String>, path: String) -> String {
 }
 
 /// Returns the parent path, or `None` when no parent component exists.
-pub func parent(path: String) -> Option<String> { optional_component(PathHost.parent(path)) }
+pub func parent(path: String) -> Option<String> {
+    optional_component(PathHost.parent(path))
+}
 /// Returns the final path component, or `None` when it is absent.
-pub func file_name(path: String) -> Option<String> { optional_component(PathHost.file_name(path)) }
+pub func file_name(path: String) -> Option<String> {
+    optional_component(PathHost.file_name(path))
+}
 /// Returns the final extension without its separator, or `None` when it is absent.
-pub func extension(path: String) -> Option<String> { optional_component(PathHost.extension(path)) }
+pub func extension(path: String) -> Option<String> {
+    optional_component(PathHost.extension(path))
+}
 
 /// Converts the host boundary's empty sentinel into an option.
 func optional_component(value: String) -> Option<String> {
@@ -142,7 +161,9 @@ func path_result(outcome: Result<String, IoError>) -> Result<Path, IoError> [con
 }
 
 /// Resolves `path` to an absolute canonical path.
-pub func canonicalize(path: String) -> Result<String, IoError> { PathHost.canonicalize(path) }
+pub func canonicalize(path: String) -> Result<String, IoError> {
+    PathHost.canonicalize(path)
+}
 
 test "typed paths preserve their resource identity" {
     let path = Path.from("relative/resource.txt")

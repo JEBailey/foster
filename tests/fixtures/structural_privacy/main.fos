@@ -1,4 +1,6 @@
 import secret
+import secret.*
+import static secret.*
 
 type Imitation = {
     pub value: String
@@ -9,5 +11,7 @@ func accept(value: Secret) -> () {
 }
 
 func main() -> () {
-    accept(Imitation { value: "not a Secret" })
+    accept(Imitation {
+        value: "not a Secret"
+    })
 }
