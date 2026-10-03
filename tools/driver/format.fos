@@ -1,12 +1,12 @@
 //! Formatting policy for already parser-validated Foster source.
-import core.code_point
+import core.byte
+import core.bytes.Bytes
 
 import core.list.List
 
 import core.result.Result
 
 import core.string.String
-import core.string.StringBuilder
 
 import std.process.Arguments
 
@@ -29,12 +29,12 @@ func close_literal(state: ScanState) -> () {
 }
 
 // Both formatting passes use the same literal boundaries, including nested expressions.
-func literal_step(points: List<CodePoint>, index: Int, state: ScanState) -> Int {
-    let c = points[index].as_int()
+func literal_step(points: Bytes, index: Int, state: ScanState) -> Int {
+    let c = points[index].int
     let next = branch {
-        index + 1 < points.length -> points[index + 1].as_int() _ -> 0
+        index + 1 < points.length -> points[index + 1].int _ -> 0
     }
-    let triple = c == 34 && next == 34 && index + 2 < points.length && points[index + 2].as_int() == 34
+    let triple = c == 34 && next == 34 && index + 2 < points.length && points[index + 2].int == 34
     if state.comment == -1 {
         if c == 10 state.comment = 0
         return 1
@@ -68,7 +68,7 @@ func literal_step(points: List<CodePoint>, index: Int, state: ScanState) -> Int 
             }
             if c == 37 {
                 let end = index + 1
-                while end < points.length && points[end].as_int() != 37 {
+                while end < points.length && points[end].int != 37 {
                     end = end + 1
                 }
                 return end - index + 1
@@ -134,8 +134,8 @@ func continues_type(lines: List<String>, start: Int) -> Bool {
 func closers(line: String, state: ScanState) -> Int {
     return 0 if state.depth != 0 || state.mode != 0
     let count = 0
-    for point in line.code_points() {
-        let value = point.as_int()
+    for point in line.bytes {
+        let value = point.int
         break if value != 125 && value != 41 && value != 93
         count = count + 1
     }
@@ -143,12 +143,12 @@ func closers(line: String, state: ScanState) -> Int {
 }
 
 func scan(line: String, indent: Int, state: ScanState) -> () {
-    let characters = line.code_points()
+    let characters = line.bytes
     let index = 0
     while index < characters.length {
-        let character = characters[index].as_int()
+        let character = characters[index].int
         let next = branch {
-            index + 1 < characters.length -> characters[index + 1].as_int() _ -> 0
+            index + 1 < characters.length -> characters[index + 1].int _ -> 0
         }
         if state.depth == 0 {
             let width = literal_step(characters, index, state)
@@ -201,8 +201,8 @@ func scan(line: String, indent: Int, state: ScanState) -> () {
 
 // Insert structural line breaks without interpreting braces inside literals or comments.
 func expand_braces(source: String) -> String {
-    let points = source.code_points()
-    let output = StringBuilder.empty()
+    let points = source.bytes
+    let output = []
     let literal = literal_state()
     let depth = 0
     let line_comment = false
@@ -210,19 +210,19 @@ func expand_braces(source: String) -> String {
     let line_start = true
     let index = 0
     while index < points.length {
-        let value = points[index].as_int()
+        let value = points[index].int
         let next = branch {
-            index + 1 < points.length -> points[index + 1].as_int() _ -> 0
+            index + 1 < points.length -> points[index + 1].int _ -> 0
         }
         if depth == 0 && !line_comment {
             let width = literal_step(points, index, literal)
             if width > 0 {
-                if pending output.append("\n")
+                if pending output.push(Byte.unchecked(10))
                 pending = false
                 let end = index + width
                 while index < end {
                     output.push(points[index])
-                    line_start = points[index].as_int() == 10
+                    line_start = points[index].int == 10
                     index = index + 1
                 }
                 continue
@@ -254,22 +254,22 @@ func expand_braces(source: String) -> String {
                     continue
                 }
                 if pending && value != 10 {
-                    output.append("\n")
+                    output.push(Byte.unchecked(10))
                     line_start = true
                 }
                 pending = false
-                if value == 125 && !line_start output.append("\n")
+                if value == 125 && !line_start output.push(Byte.unchecked(10))
                 output.push(points[index])
                 branch {
                     value == 123 -> {
                         let following = index + 1
                         while following < points.length {
-                            let code = points[following].as_int()
+                            let code = points[following].int
                             break if code != 32 && code != 9 && code != 10
                             following = following + 1
                         }
                         branch {
-                            following < points.length && points[following].as_int() == 125 -> {
+                            following < points.length && points[following].int == 125 -> {
                                 output.push(points[following])
                                 index = following
                             }
@@ -281,13 +281,13 @@ func expand_braces(source: String) -> String {
                     value == 125 -> {
                         let following = index + 1
                         while following < points.length {
-                            let code = points[following].as_int()
+                            let code = points[following].int
                             break if code != 32 && code != 9
                             following = following + 1
                         }
                         if following < points.length {
-                            let code = points[following].as_int()
-                            let guarded = following + 1 < points.length && points[following].as_int() == 105 && points[following + 1].as_int() == 102
+                            let code = points[following].int
+                            let guarded = following + 1 < points.length && points[following].int == 105 && points[following + 1].int == 102
                             pending = !guarded && code >= 65 && code <= 90 || !guarded && code >= 97 && code <= 122 || code == 95
                         }
                     }
@@ -312,12 +312,21 @@ func expand_braces(source: String) -> String {
         }
         index = index + 1
     }
-    (move output).finish()
+    branch String.from_utf8(Bytes.from(move output)) {
+        Result.Ok(text) -> text
+        Result.Error(_) -> {
+            panic("formatting must preserve UTF-8")
+            ""
+        }
+    }
 }
 
 func format(source: String) -> String {
     // Splitting and joining also handles a lone CR, without splitting Unicode scalars.
-    let normalized = source.copy().split("\r\n").join("\n").split("\r").join("\n")
+    let normalized = branch {
+        source.contains?("\r") -> source.copy().split("\r\n").join("\n").split("\r").join("\n")
+        _ -> source.copy()
+    }
     let lines = expand_braces(normalized).split("\n")
     let state = ScanState {
         depth: 0, mode: 0, escaped: false, comment: 0, parents: [], indents: []

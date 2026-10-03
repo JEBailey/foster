@@ -12,6 +12,7 @@ fn main() {
 }
 
 fn compile_tools() {
+    println!("cargo:rustc-check-cfg=cfg(foster_native_formatter)");
     println!("cargo:rerun-if-changed=tools/driver");
     println!("cargo:rerun-if-changed=library");
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo supplies OUT_DIR"));
@@ -26,5 +27,36 @@ fn compile_tools() {
             .unwrap_or_else(|error| panic!("{path}: {error}"));
         fs::write(output.join(format!("{name}.fbc")), bytes)
             .expect("embedded bytecode must be writable");
+        if name == "format" && env::var("HOST").ok() == env::var("TARGET").ok() {
+            // Compile the same formatting policy, with a consuming String entry boundary.
+            let start = source
+                .find("func main(arguments:")
+                .expect("formatter entry");
+            let end = source[start..]
+                .find("\ntest ")
+                .map(|end| start + end)
+                .unwrap_or(source.len());
+            let native_source = format!(
+                "{}func main(arguments: Arguments) -> String [consume arguments] {{\n    format(arguments.values[0])\n}}\n{}",
+                &source[..start],
+                &source[end..]
+            );
+            let compilation =
+                foster_compiler::compile(&native_source).expect("native formatter check");
+            let object = foster_compiler::native::compile_object(&compilation, Default::default())
+                .expect("native formatter compilation");
+            let path = output.join("format.obj");
+            fs::write(&path, &object.bytes).expect("native formatter object must be writable");
+            fs::write(
+                output.join("format_constants.rs"),
+                format!(
+                    "pub const CONSTANTS: &[&str] = &{:?};",
+                    object.runtime_strings()
+                ),
+            )
+            .expect("formatter constants must be writable");
+            cc::Build::new().object(path).compile("foster_formatter");
+            println!("cargo:rustc-cfg=foster_native_formatter");
+        }
     }
 }

@@ -13,20 +13,20 @@ fn main_source(
 ) -> String {
     let print = match result {
         NativeType::Unit => String::new(),
-        NativeType::Bool => "foster_rt_v4_write_bool(value); foster_rt_v4_write_newline();".into(),
-        NativeType::Int => "foster_rt_v4_write_int(value); foster_rt_v4_write_newline();".into(),
+        NativeType::Bool => "foster_rt_v5_write_bool(value); foster_rt_v5_write_newline();".into(),
+        NativeType::Int => "foster_rt_v5_write_int(value); foster_rt_v5_write_newline();".into(),
         NativeType::Float => {
-            "foster_rt_v4_write_float(value); foster_rt_v4_write_newline();".into()
+            "foster_rt_v5_write_float(value); foster_rt_v5_write_newline();".into()
         }
         NativeType::CodePoint => {
-            "foster_rt_v4_write_code_point(value); foster_rt_v4_write_newline();".into()
+            "foster_rt_v5_write_code_point(value); foster_rt_v5_write_newline();".into()
         }
-        NativeType::Byte => "foster_rt_v4_write_byte(value); foster_rt_v4_write_newline();".into(),
+        NativeType::Byte => "foster_rt_v5_write_byte(value); foster_rt_v5_write_newline();".into(),
         NativeType::String => {
-            "foster_rt_v4_write_string(value); foster_rt_v4_write_newline();".into()
+            "foster_rt_v5_write_string(value); foster_rt_v5_write_newline();".into()
         }
         NativeType::Opaque | NativeType::Object(_) => {
-            "foster_rt_v4_write_object(value); foster_rt_v4_write_newline();".into()
+            "foster_rt_v5_write_object(value); foster_rt_v5_write_newline();".into()
         }
     };
     let constants = runtime_strings
@@ -338,7 +338,7 @@ impl services::HostProvider for TestHost {
 fn main() {
     assert!(foster_runtime_install_host(services::HostContext::with_provider(".", std::sync::Arc::new(TestHost))).is_ok());
     assert!(foster_runtime_install_host(services::HostContext::new(".")).is_err());
-"#).replace("foster_rt_v4_write_int(value);", "assert_eq!(CLOSED.load(std::sync::atomic::Ordering::SeqCst), 1); foster_rt_v4_write_int(value);");
+"#).replace("foster_rt_v5_write_int(value);", "assert_eq!(CLOSED.load(std::sync::atomic::Ordering::SeqCst), 1); foster_rt_v5_write_int(value);");
             let source = track_allocations(source);
             let executable = temporary.path.join(format!(
                 "provider-{optimize}{}",
@@ -420,10 +420,10 @@ fn main() {"#)
                 artifact.releases_result,
             ));
             let source = source
-                .replace("extern \"C\" fn foster_rt_v4_failure_pending() -> u8 {",
-                    "extern \"C\" fn foster_rt_v4_failure_pending() -> u8 { QUERIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);")
-                .replace("extern \"C\" fn foster_rt_v4_cancellation_point() -> u8 {", r#"
-extern "C" fn foster_rt_v4_cancellation_point() -> u8 {
+                .replace("extern \"C\" fn foster_rt_v5_failure_pending() -> u8 {",
+                    "extern \"C\" fn foster_rt_v5_failure_pending() -> u8 { QUERIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);")
+                .replace("extern \"C\" fn foster_rt_v5_cancellation_point() -> u8 {", r#"
+extern "C" fn foster_rt_v5_cancellation_point() -> u8 {
     let poll = POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     if poll == 20 && std::env::var_os("FOSTER_TEST_POLL_FAILURE").is_some() {
         assert!(!LIVE.lock().unwrap().is_empty(), "expected a live record at failure");
@@ -786,7 +786,7 @@ unsafe extern "C" fn request(_: u64, arguments: usize, execute: u8) -> u64 {
     assert_eq!(kind, 1, "queued work ran after shutdown");
     *STARTED.0.lock().unwrap() = true;
     STARTED.1.notify_all();
-    while foster_rt_v4_cancellation_point() == 0 {}
+    while foster_rt_v5_cancellation_point() == 0 {}
     0
 }
 fn wait(signal: &(Mutex<bool>, std::sync::Condvar)) {
@@ -795,23 +795,23 @@ fn wait(signal: &(Mutex<bool>, std::sync::Condvar)) {
 }
 fn main() {
     foster_runtime_initialize(&[]);
-    let remote = foster_rt_v4_remote_spawn(0, release_state as *const () as usize, 0);
-    let invoke = |kind: u64, blocking| foster_rt_v4_remote_call(remote, request as *const () as usize, &kind as *const u64 as usize, 1, blocking, 0);
+    let remote = foster_rt_v5_remote_spawn(0, release_state as *const () as usize, 0);
+    let invoke = |kind: u64, blocking| foster_rt_v5_remote_call(remote, request as *const () as usize, &kind as *const u64 as usize, 1, blocking, 0);
     let completed = invoke(0, 1);
     let running = invoke(1, 0);
     wait(&STARTED);
     let queued = invoke(2, 0);
     let discarded = invoke(3, 0);
-    foster_rt_v4_future_release(discarded);
-    foster_rt_v4_remote_release(remote);
+    foster_rt_v5_future_release(discarded);
+    foster_rt_v5_remote_release(remote);
     for future in [running, queued] {
-        foster_rt_v4_future_await(future);
-        assert_eq!(foster_rt_v4_future_error(future), 1);
-        foster_rt_v4_future_release(future);
+        foster_rt_v5_future_await(future);
+        assert_eq!(foster_rt_v5_future_error(future), 1);
+        foster_rt_v5_future_release(future);
     }
-    assert_eq!(foster_rt_v4_future_await(completed), 7);
-    assert_eq!(foster_rt_v4_future_error(completed), 0);
-    foster_rt_v4_future_release(completed);
+    assert_eq!(foster_rt_v5_future_await(completed), 7);
+    assert_eq!(foster_rt_v5_future_error(completed), 0);
+    foster_rt_v5_future_release(completed);
     wait(&RELEASED);
     assert_eq!(QUEUED_CLEANUP.load(std::sync::atomic::Ordering::SeqCst), 2);
 }

@@ -45,9 +45,9 @@ func main() -> Result<Int, CError> {
     assert(try visit_packet(Packet {
         arguments: 0
     }, handler) == 12, "record before callback")
-    let borrowed = [ref handler] (payload: String) -> {
+    let borrowed = [ref handler] (payload: Bytes) -> {
         handler.count = 99
-        "00"
+        CArguments.empty().reply()
     }
     branch bridge().subscribe(1, CArguments.empty(), CArguments.empty(), move borrowed, "1", false) {
         Result.Error(error) -> {

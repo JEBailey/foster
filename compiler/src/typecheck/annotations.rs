@@ -218,6 +218,19 @@ impl Checker<'_> {
         if let Some(nominal) = self.hir.composition_types.get(name) {
             return Ok(*nominal);
         }
+        if self.hir.compiled_modules.contains(&current_module) {
+            for (offset, _) in name.rmatch_indices('.') {
+                if let Some(module) = self.hir.module_named(&name[..offset]) {
+                    let local = &name[offset + 1..];
+                    if let Some(record) = self.hir.record_named(module, local) {
+                        return Ok(NominalTypeId::Record(record));
+                    }
+                    if let Some(variant) = self.hir.variant_type_named(module, local) {
+                        return Ok(NominalTypeId::Variant(variant));
+                    }
+                }
+            }
+        }
         let imported = self.hir.visible_types(current_module, name);
         match imported.as_slice() {
             [found] => Ok(*found),

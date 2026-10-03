@@ -87,15 +87,23 @@ pub fn from_compilation(
             descriptor.fresh_result = ownership.result_provenance.fresh_owned;
         }
         let mut local_name = function.name.clone();
+        // Adapted defaults keep the donor's lexical scope, but their compiled
+        // definitions belong to the package that owns the new receiver.
+        let definition_module = compilation
+            .hir
+            .composition_owners
+            .get(&id)
+            .copied()
+            .unwrap_or(function.module);
         if local_name.contains('$') {
             let ordinal = synthetic_counts
-                .entry((function.module, local_name.clone()))
+                .entry((definition_module, local_name.clone()))
                 .or_insert(0_u32);
             local_name = format!("{local_name}${ordinal}");
             *ordinal += 1;
         }
         let name = Name {
-            module: context.module(function.module),
+            module: context.module(definition_module),
             name: local_name,
         };
         let symbol = Symbol {

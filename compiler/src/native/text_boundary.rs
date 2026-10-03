@@ -1,4 +1,4 @@
-//! Generated storage adapters at the host/text boundary. Rust never owns a Foster String.
+//! Generated adapters for managed String and Bytes storage at the host boundary.
 use super::*;
 
 pub(super) fn define(
@@ -24,6 +24,21 @@ pub(super) fn define(
         ));
     }
     for (name, parameters, result) in [
+        (
+            "foster_native_bytes",
+            vec![NativeType::Opaque, NativeType::Int],
+            NativeType::Opaque,
+        ),
+        (
+            "foster_native_bytes_data",
+            vec![NativeType::Opaque],
+            NativeType::Opaque,
+        ),
+        (
+            "foster_native_bytes_length",
+            vec![NativeType::Opaque],
+            NativeType::Int,
+        ),
         (
             "foster_native_string",
             vec![NativeType::Opaque, NativeType::Int],
@@ -56,7 +71,24 @@ pub(super) fn define(
         builder.append_block_params_for_function_params(entry);
         builder.switch_to_block(entry);
         let input = builder.block_params(entry).to_vec();
-        let value = if name == "foster_native_string" {
+        let value = if name == "foster_native_bytes" {
+            let (storage, data) =
+                allocate_native_bytes(&mut builder, module, objects, bytes, input[1])?;
+            copy_native_bytes(&mut builder, module, data, input[0], input[1])?;
+            storage
+        } else if name.starts_with("foster_native_bytes_") {
+            let word = module.target_config().pointer_type();
+            builder.ins().load(
+                word,
+                MemFlagsData::trusted(),
+                input[0],
+                if name == "foster_native_bytes_data" {
+                    data_offset
+                } else {
+                    length_offset
+                } as i32,
+            )
+        } else if name == "foster_native_string" {
             let (storage, data) =
                 allocate_native_bytes(&mut builder, module, objects, bytes, input[1])?;
             copy_native_bytes(&mut builder, module, data, input[0], input[1])?;

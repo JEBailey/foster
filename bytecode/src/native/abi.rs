@@ -8,88 +8,88 @@ mod runtime_version {
 }
 pub const VERSION: u16 = runtime_version::ABI_VERSION;
 
-pub const ALLOC: &str = "foster_rt_v4_alloc";
-pub const DEALLOC: &str = "foster_rt_v4_dealloc";
-pub const ASSERT: &str = "foster_rt_v4_assert";
-pub const CANCELLATION_POINT: &str = "foster_rt_v4_cancellation_point";
-pub const FAILURE_PENDING: &str = "foster_rt_v4_failure_pending";
-pub const BEGIN_CLEANUP: &str = "foster_rt_v4_begin_cleanup";
-pub const END_CLEANUP: &str = "foster_rt_v4_end_cleanup";
-pub const FAIL: &str = "foster_rt_v4_fail";
+pub const ALLOC: &str = "foster_rt_v5_alloc";
+pub const DEALLOC: &str = "foster_rt_v5_dealloc";
+pub const ASSERT: &str = "foster_rt_v5_assert";
+pub const CANCELLATION_POINT: &str = "foster_rt_v5_cancellation_point";
+pub const FAILURE_PENDING: &str = "foster_rt_v5_failure_pending";
+pub const BEGIN_CLEANUP: &str = "foster_rt_v5_begin_cleanup";
+pub const END_CLEANUP: &str = "foster_rt_v5_end_cleanup";
+pub const FAIL: &str = "foster_rt_v5_fail";
 
-pub const STRING_CONSTANT: &str = "foster_rt_v4_string_constant";
-pub const STRING_EMPTY: &str = "foster_rt_v4_string_empty";
-pub const STRING_WHITESPACE: &str = "foster_rt_v4_string_whitespace";
-pub const STRING_CONCAT: &str = "foster_rt_v4_string_concat";
-pub const STRING_GET: &str = "foster_rt_v4_string_get";
-pub const STRING_EQUAL: &str = "foster_rt_v4_string_equal";
-pub const OBJECT_EQUAL: &str = "foster_rt_v4_object_equal";
-pub const COPY_BYTES: &str = "foster_rt_v4_copy_bytes";
-pub const CODE_POINT_WHITESPACE: &str = "foster_rt_v4_code_point_whitespace";
-pub const CODE_POINT_STRING: &str = "foster_rt_v4_code_point_string";
-pub const PARSE_FLOAT: &str = "foster_rt_v4_parse_float";
-pub const FORMAT_FLOAT: &str = "foster_rt_v4_format_float";
-pub const FLOAT_BITS: &str = "foster_rt_v4_float_bits";
-pub const FLOAT_FROM_INT: &str = "foster_rt_v4_float_from_int";
-pub const INT_FROM_FLOAT: &str = "foster_rt_v4_int_from_float";
-pub const FLOAT_FLOOR: &str = "foster_rt_v4_float_floor";
-pub const FLOAT_CEIL: &str = "foster_rt_v4_float_ceil";
-pub const FLOAT_ROUND: &str = "foster_rt_v4_float_round";
-pub const FLOAT_TRUNCATE: &str = "foster_rt_v4_float_truncate";
-pub const FLOAT_SQRT: &str = "foster_rt_v4_float_sqrt";
-pub const FLOAT_SIN: &str = "foster_rt_v4_float_sin";
-pub const FLOAT_COS: &str = "foster_rt_v4_float_cos";
-pub const FLOAT_ATAN2: &str = "foster_rt_v4_float_atan2";
-pub const FLOAT32_BITS: &str = "foster_rt_v4_float32_bits";
-pub const C_EXCHANGE: &str = "foster_rt_v4_c_exchange";
-pub const C_CALLBACK_NEW: &str = "foster_rt_v4_c_callback_new";
-pub const C_CALLBACK_RELEASE: &str = "foster_rt_v4_c_callback_release";
-pub const C_CALLBACK_POLL: &str = "foster_rt_v4_c_callback_poll";
-pub const C_CALLBACK_ERROR: &str = "foster_rt_v4_c_callback_error";
-pub const PROCESS_EXCHANGE: &str = "foster_rt_v4_process_exchange";
-pub const PROCESS_RELEASE: &str = "foster_rt_v4_process_release";
-pub const PROCESS_WAIT: &str = "foster_rt_v4_process_wait";
-pub const PROCESS_RESERVE: &str = "foster_rt_v4_process_reserve";
-pub const C_CLOSE: &str = "foster_rt_v4_c_close";
-pub const C_RELEASE: &str = "foster_rt_v4_c_release";
-pub const C_ENCODE_INT: &str = "foster_rt_v4_c_encode_int";
-pub const C_ENCODE_FLOAT: &str = "foster_rt_v4_c_encode_float";
-pub const C_DECODE_INT: &str = "foster_rt_v4_c_decode_int";
-pub const C_DECODE_FLOAT: &str = "foster_rt_v4_c_decode_float";
+pub const STRING_CONSTANT: &str = "foster_rt_v5_string_constant";
+pub const STRING_EMPTY: &str = "foster_rt_v5_string_empty";
+pub const STRING_WHITESPACE: &str = "foster_rt_v5_string_whitespace";
+pub const STRING_CONCAT: &str = "foster_rt_v5_string_concat";
+pub const STRING_GET: &str = "foster_rt_v5_string_get";
+pub const STRING_EQUAL: &str = "foster_rt_v5_string_equal";
+pub const OBJECT_EQUAL: &str = "foster_rt_v5_object_equal";
+pub const COPY_BYTES: &str = "foster_rt_v5_copy_bytes";
+pub const CODE_POINT_WHITESPACE: &str = "foster_rt_v5_code_point_whitespace";
+pub const CODE_POINT_STRING: &str = "foster_rt_v5_code_point_string";
+pub const PARSE_FLOAT: &str = "foster_rt_v5_parse_float";
+pub const FORMAT_FLOAT: &str = "foster_rt_v5_format_float";
+pub const FLOAT_BITS: &str = "foster_rt_v5_float_bits";
+pub const FLOAT_FROM_INT: &str = "foster_rt_v5_float_from_int";
+pub const INT_FROM_FLOAT: &str = "foster_rt_v5_int_from_float";
+pub const FLOAT_FLOOR: &str = "foster_rt_v5_float_floor";
+pub const FLOAT_CEIL: &str = "foster_rt_v5_float_ceil";
+pub const FLOAT_ROUND: &str = "foster_rt_v5_float_round";
+pub const FLOAT_TRUNCATE: &str = "foster_rt_v5_float_truncate";
+pub const FLOAT_SQRT: &str = "foster_rt_v5_float_sqrt";
+pub const FLOAT_SIN: &str = "foster_rt_v5_float_sin";
+pub const FLOAT_COS: &str = "foster_rt_v5_float_cos";
+pub const FLOAT_ATAN2: &str = "foster_rt_v5_float_atan2";
+pub const FLOAT32_BITS: &str = "foster_rt_v5_float32_bits";
+pub const C_EXCHANGE: &str = "foster_rt_v5_c_exchange";
+pub const C_CALLBACK_NEW: &str = "foster_rt_v5_c_callback_new";
+pub const C_CALLBACK_RELEASE: &str = "foster_rt_v5_c_callback_release";
+pub const C_CALLBACK_POLL: &str = "foster_rt_v5_c_callback_poll";
+pub const C_CALLBACK_ERROR: &str = "foster_rt_v5_c_callback_error";
+pub const PROCESS_EXCHANGE: &str = "foster_rt_v5_process_exchange";
+pub const PROCESS_RELEASE: &str = "foster_rt_v5_process_release";
+pub const PROCESS_WAIT: &str = "foster_rt_v5_process_wait";
+pub const PROCESS_RESERVE: &str = "foster_rt_v5_process_reserve";
+pub const C_CLOSE: &str = "foster_rt_v5_c_close";
+pub const C_RELEASE: &str = "foster_rt_v5_c_release";
+pub const C_ENCODE_INT: &str = "foster_rt_v5_c_encode_int";
+pub const C_ENCODE_FLOAT: &str = "foster_rt_v5_c_encode_float";
+pub const C_DECODE_INT: &str = "foster_rt_v5_c_decode_int";
+pub const C_DECODE_FLOAT: &str = "foster_rt_v5_c_decode_float";
 
 // Platform services use a small family of argument-shape entry points. Every call returns an
 // opaque temporary response; generated code copies its contents into descriptor-backed Foster
 // values and then releases it.
-pub const HOST_CALL_NULLARY: &str = "foster_rt_v4_host_call_nullary";
-pub const HOST_CALL_STRING: &str = "foster_rt_v4_host_call_string";
-pub const HOST_CALL_STRINGS: &str = "foster_rt_v4_host_call_strings";
-pub const HOST_CALL_STRING_INTS: &str = "foster_rt_v4_host_call_string_ints";
-pub const HOST_CALL_INT: &str = "foster_rt_v4_host_call_int";
-pub const HOST_CALL_INTS: &str = "foster_rt_v4_host_call_ints";
-pub const HOST_CALL_STRING_BYTES: &str = "foster_rt_v4_host_call_string_bytes";
-pub const HOST_CALL_INT_BYTES: &str = "foster_rt_v4_host_call_int_bytes";
-pub const HOST_CALL_INT_STRING: &str = "foster_rt_v4_host_call_int_string";
-pub const HOST_REQUIRE_OK: &str = "foster_rt_v4_host_require_ok";
-pub const HOST_OK: &str = "foster_rt_v4_host_ok";
-pub const HOST_INTEGER: &str = "foster_rt_v4_host_integer";
-pub const HOST_ERROR_VALUE: &str = "foster_rt_v4_host_error_value";
-pub const HOST_STRING: &str = "foster_rt_v4_host_string";
-pub const HOST_BYTES_LENGTH: &str = "foster_rt_v4_host_bytes_length";
-pub const HOST_COPY_BYTES: &str = "foster_rt_v4_host_copy_bytes";
-pub const HOST_STRINGS_LENGTH: &str = "foster_rt_v4_host_strings_length";
-pub const HOST_RELEASE: &str = "foster_rt_v4_host_release";
+pub const HOST_CALL_NULLARY: &str = "foster_rt_v5_host_call_nullary";
+pub const HOST_CALL_STRING: &str = "foster_rt_v5_host_call_string";
+pub const HOST_CALL_STRINGS: &str = "foster_rt_v5_host_call_strings";
+pub const HOST_CALL_STRING_INTS: &str = "foster_rt_v5_host_call_string_ints";
+pub const HOST_CALL_INT: &str = "foster_rt_v5_host_call_int";
+pub const HOST_CALL_INTS: &str = "foster_rt_v5_host_call_ints";
+pub const HOST_CALL_STRING_BYTES: &str = "foster_rt_v5_host_call_string_bytes";
+pub const HOST_CALL_INT_BYTES: &str = "foster_rt_v5_host_call_int_bytes";
+pub const HOST_CALL_INT_STRING: &str = "foster_rt_v5_host_call_int_string";
+pub const HOST_REQUIRE_OK: &str = "foster_rt_v5_host_require_ok";
+pub const HOST_OK: &str = "foster_rt_v5_host_ok";
+pub const HOST_INTEGER: &str = "foster_rt_v5_host_integer";
+pub const HOST_ERROR_VALUE: &str = "foster_rt_v5_host_error_value";
+pub const HOST_STRING: &str = "foster_rt_v5_host_string";
+pub const HOST_BYTES_LENGTH: &str = "foster_rt_v5_host_bytes_length";
+pub const HOST_COPY_BYTES: &str = "foster_rt_v5_host_copy_bytes";
+pub const HOST_STRINGS_LENGTH: &str = "foster_rt_v5_host_strings_length";
+pub const HOST_RELEASE: &str = "foster_rt_v5_host_release";
 
 // Remote actors use fixed-width words so callback thunks have one signature for every Foster
 // scalar-or-pointer specialization. Futures own completed managed results until `await` transfers
 // the word back into generated code. FUTURE_AWAIT consumes the completion; FUTURE_ERROR then
 // returns 0 on success, 1 for Shutdown, or transfers an owned failure string. The Shutdown
 // sentinel is never dereferenced or released as a string when constructing the outer Result.
-pub const REMOTE_SPAWN: &str = "foster_rt_v4_remote_spawn";
-pub const REMOTE_CALL: &str = "foster_rt_v4_remote_call";
-pub const FUTURE_ERROR: &str = "foster_rt_v4_future_error";
-pub const FUTURE_AWAIT: &str = "foster_rt_v4_future_await";
-pub const REMOTE_RELEASE: &str = "foster_rt_v4_remote_release";
-pub const FUTURE_RELEASE: &str = "foster_rt_v4_future_release";
+pub const REMOTE_SPAWN: &str = "foster_rt_v5_remote_spawn";
+pub const REMOTE_CALL: &str = "foster_rt_v5_remote_call";
+pub const FUTURE_ERROR: &str = "foster_rt_v5_future_error";
+pub const FUTURE_AWAIT: &str = "foster_rt_v5_future_await";
+pub const REMOTE_RELEASE: &str = "foster_rt_v5_remote_release";
+pub const FUTURE_RELEASE: &str = "foster_rt_v5_future_release";
 
 /// String slots exposed by [`HOST_STRING`].
 pub mod host_string {
@@ -100,27 +100,27 @@ pub mod host_string {
     pub const LIST_VALUE: i64 = 4;
 }
 
-pub const REF_LOAD_I8: &str = "foster_rt_v4_ref_load_i8";
-pub const REF_LOAD_I32: &str = "foster_rt_v4_ref_load_i32";
-pub const REF_LOAD_I64: &str = "foster_rt_v4_ref_load_i64";
-pub const REF_LOAD_F64: &str = "foster_rt_v4_ref_load_f64";
-pub const REF_LOAD_PTR: &str = "foster_rt_v4_ref_load_ptr";
-pub const REF_STORE_I8: &str = "foster_rt_v4_ref_store_i8";
-pub const REF_STORE_I32: &str = "foster_rt_v4_ref_store_i32";
-pub const REF_STORE_I64: &str = "foster_rt_v4_ref_store_i64";
-pub const REF_STORE_F64: &str = "foster_rt_v4_ref_store_f64";
-pub const REF_STORE_PTR: &str = "foster_rt_v4_ref_store_ptr";
+pub const REF_LOAD_I8: &str = "foster_rt_v5_ref_load_i8";
+pub const REF_LOAD_I32: &str = "foster_rt_v5_ref_load_i32";
+pub const REF_LOAD_I64: &str = "foster_rt_v5_ref_load_i64";
+pub const REF_LOAD_F64: &str = "foster_rt_v5_ref_load_f64";
+pub const REF_LOAD_PTR: &str = "foster_rt_v5_ref_load_ptr";
+pub const REF_STORE_I8: &str = "foster_rt_v5_ref_store_i8";
+pub const REF_STORE_I32: &str = "foster_rt_v5_ref_store_i32";
+pub const REF_STORE_I64: &str = "foster_rt_v5_ref_store_i64";
+pub const REF_STORE_F64: &str = "foster_rt_v5_ref_store_f64";
+pub const REF_STORE_PTR: &str = "foster_rt_v5_ref_store_ptr";
 
-pub const WRITE_UNIT: &str = "foster_rt_v4_write_unit";
-pub const WRITE_BOOL: &str = "foster_rt_v4_write_bool";
-pub const WRITE_INT: &str = "foster_rt_v4_write_int";
-pub const WRITE_FLOAT: &str = "foster_rt_v4_write_float";
-pub const WRITE_CODE_POINT: &str = "foster_rt_v4_write_code_point";
-pub const WRITE_BYTE: &str = "foster_rt_v4_write_byte";
-pub const WRITE_STRING: &str = "foster_rt_v4_write_string";
-pub const WRITE_OBJECT: &str = "foster_rt_v4_write_object";
-pub const WRITE_SEPARATOR: &str = "foster_rt_v4_write_separator";
-pub const WRITE_NEWLINE: &str = "foster_rt_v4_write_newline";
+pub const WRITE_UNIT: &str = "foster_rt_v5_write_unit";
+pub const WRITE_BOOL: &str = "foster_rt_v5_write_bool";
+pub const WRITE_INT: &str = "foster_rt_v5_write_int";
+pub const WRITE_FLOAT: &str = "foster_rt_v5_write_float";
+pub const WRITE_CODE_POINT: &str = "foster_rt_v5_write_code_point";
+pub const WRITE_BYTE: &str = "foster_rt_v5_write_byte";
+pub const WRITE_STRING: &str = "foster_rt_v5_write_string";
+pub const WRITE_OBJECT: &str = "foster_rt_v5_write_object";
+pub const WRITE_SEPARATOR: &str = "foster_rt_v5_write_separator";
+pub const WRITE_NEWLINE: &str = "foster_rt_v5_write_newline";
 
 /// Stable error categories accepted by [`FAIL`].
 pub mod failure {
@@ -133,7 +133,7 @@ pub mod failure {
     pub const CONTRACT_DISPATCH: i64 = 7;
 }
 
-pub const HOST_INITIALIZE: &str = "foster_rt_v4_host_initialize";
+pub const HOST_INITIALIZE: &str = "foster_rt_v5_host_initialize";
 
 /// Exact Rust/C wire types. Signedness is retained for runtime compile-time checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

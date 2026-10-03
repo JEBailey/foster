@@ -2,10 +2,10 @@ use foster::foreign::Manifest;
 
 #[test]
 fn ffi_packet_validation_tests_run_in_library_context() {
-    let compilation = foster::compile(
-        "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nfunc main() {}\n",
-    )
-    .unwrap();
+    // Imported bundles omit library test declarations. Load the library sources
+    // in their package context so this check actually executes the packet tests.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("library");
+    let compilation = foster::check_package(root).unwrap();
     let program = foster::vm::compile(&compilation).unwrap();
     let machine = foster::vm::Machine::new(&program.clone().into_verified().unwrap());
     let mut count = 0;
@@ -16,7 +16,7 @@ fn ffi_packet_validation_tests_run_in_library_context() {
             count += 1;
         }
     }
-    assert_eq!(count, 2);
+    assert_eq!(count, 3);
 }
 
 #[test]

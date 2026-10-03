@@ -373,8 +373,8 @@ func main() -> Result<Int, CError> {
     }
     let path = output.to_str().unwrap();
     assert!(
-        foster::foreign::runtime::exchange(path, &manifest.identity(), 2, 0, false, "")
-            .starts_with("01")
+        foster::foreign::runtime::exchange(path, &manifest.identity(), 2, 0, false, &[])
+            .starts_with(&[1])
     );
     let missing = invoke(&["--function", "missing_function"]);
     assert!(!missing.status.success(), "misspelled selections must fail");

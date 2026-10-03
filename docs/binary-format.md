@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 40; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 41; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -186,7 +186,10 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 40 readers accept only version 40 with zero flags. Intrinsics include binary64
+Version 41 readers accept only version 41 with zero flags. C bridge packet intrinsics
+(tags 65, 66, 68 through 71, 76, 78, and 79) use `Bytes` for packet inputs and results;
+paths, schemas, and callback signature identifiers remain `String`. Rebuild older bytecode
+and compiled libraries with the current compiler. Intrinsics include binary64
 bit extraction and rounded binary32 bit extraction (tags 80 and 81), and binary64 square
 root, sine, cosine, and two-argument arctangent (tags 82 through 85). Tags 86 through 91
 provide integer-to-float conversion, range-prechecked float-to-integer conversion,

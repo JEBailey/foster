@@ -23,6 +23,7 @@ foster-compiler = { path = "compiler" }
 foster-bytecode = { path = "bytecode" }
 foster-vm = { path = "vm" }
 foster-host = { path = "host" }
+foster-native-runtime = { path = "runtime" }
 camino = "1.2"
 clap = "4.6.6"
 crossbeam-channel = "0.5"
@@ -39,6 +40,7 @@ criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [build-dependencies]
 foster-compiler = { path = "compiler" }
+cc = "1"
 
 [[bench]]
 name = "compiler"
@@ -49,6 +51,6 @@ name = "runtime"
 harness = false
 
 [workspace]
-members = ["runtime", "host", "bytecode", "vm", "compiler"]
+members = ["runtime", "host", "bytecode", "vm", "compiler", "compiler/bootstrap"]
 default-members = [".", "runtime", "host", "bytecode", "vm", "compiler"]
 resolver = "3"

@@ -1,0 +1,10 @@
+{
+  "file": "C:\\Users\\jason\\git\\foster-raylib\\src\\lib.fos",
+  "bytes": 352113,
+  "formattingMs": 10056.686899999999,
+  "edits": 1,
+  "cancellationMs": 0.8961999999992258,
+  "cancellation": {
+    "error": "Error: {\"code\":-32800,\"message\":\"request cancelled\"}"
+  }
+}

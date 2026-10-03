@@ -386,13 +386,14 @@ fn rejects_invalid_envelopes() {
 #[test]
 fn foster_toml_parser_survives_bytecode_round_trips() {
     let source = r#"
-import core.result
+import core.result.Result
 import std.toml
+import std.toml.TomlValue
 
 func main() -> Int {
-    branch parse("answer = 42\n") {
+    branch toml::parse("answer = 42\n") {
         Result.Error(_) -> 0
-        Result.Ok(document) -> branch document.entries.head.value {
+        Result.Ok(document) -> branch document.entries[0].value {
             TomlValue.Int(value) -> value
             _ -> 0
         }
@@ -409,9 +410,10 @@ func main() -> Int {
 fn time_clock_builtins_survive_bytecode_round_trips() {
     let source = r#"
 import std.time
+import std.time.ContinuousClock
 
 func main() -> Bool {
-    let wall = now()
+    let wall = time::now()
     let first = ContinuousClock.new().now()
     let second = ContinuousClock.new().now()
     wall.nanosecond() >= 0 && wall.nanosecond() < 1000000000 && first.until(second).total_nanoseconds() >= 0
@@ -428,8 +430,8 @@ func main() -> Bool {
 fn remote_outcomes_round_trip_with_nominal_metadata() {
     let compilation = foster_compiler::compile(
         r#"
-import core.result
-import core.remote_error
+import core.result.Result
+import core.remote_error.RemoteError
 type Worker = {}
 impl Worker {
     func fail(self) -> Int {

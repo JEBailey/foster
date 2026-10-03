@@ -518,6 +518,18 @@ impl Slot {
         &self,
         update: impl FnOnce(&mut Value) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
+        let mut update = Some(update);
+        self.update_storage(&mut |value| update.take().unwrap()(value))?;
+        self.generation.set(self.generation.get() + 1);
+        Ok(())
+    }
+
+    // Projected mutations invalidate their own path, not unrelated indexed places.
+    // Mutate local storage directly so a growing nested list is not cloned on each push.
+    fn update_storage(
+        &self,
+        update: &mut dyn FnMut(&mut Value) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         let place = match &*self.storage.borrow() {
             SlotStorage::Local(Value::Reference(place)) => Some(place.clone()),
             SlotStorage::Local(_) | SlotStorage::Shared(_) => None,
@@ -541,7 +553,6 @@ impl Slot {
             };
             update(value)?;
         }
-        self.generation.set(self.generation.get() + 1);
         Ok(())
     }
 
@@ -736,9 +747,10 @@ impl PlaceHandle {
         if self.projections.is_empty() {
             return origin.reshape(update);
         }
-        let mut current = origin.read()?;
-        update_projected(&mut current, &self.projections, &origin, update)?;
-        origin.write(current)?;
+        let mut update = Some(update);
+        origin.update_storage(&mut |current| {
+            update_projected(current, &self.projections, &origin, update.take().unwrap())
+        })?;
         origin.invalidate_projected(&projection_path(&self.projections));
         Ok(())
     }
@@ -1670,6 +1682,40 @@ mod tests {
         assert!(!original.shares_values_with(&cloned));
         assert_eq!(original.get("right"), Some(&Value::Integer(2)));
         assert_eq!(cloned.get("right"), Some(&Value::Integer(3)));
+    }
+
+    #[test]
+    fn projected_growth_reuses_unique_list_storage_and_preserves_snapshots() {
+        let mut values = Vec::with_capacity(32);
+        values.push(Value::Integer(1));
+        let pointer = values.as_ptr();
+        let origin = Slot::new(Value::Record {
+            record: None,
+            name: "Builder".into(),
+            fields: RecordFields::from_pairs([("items".into(), Value::list(values))]),
+        });
+        let items = PlaceHandle::field(origin.clone(), "items".into()).unwrap();
+        items
+            .reshape(|value| {
+                let values = value.list_value_mut().unwrap();
+                assert_eq!(values.as_ptr(), pointer, "projected growth copied the list");
+                values.push(Value::Integer(2));
+                Ok(())
+            })
+            .unwrap();
+
+        let snapshot = origin.read().unwrap();
+        items
+            .reshape(|value| {
+                value.list_value_mut().unwrap().push(Value::Integer(3));
+                Ok(())
+            })
+            .unwrap();
+        let Value::Record { fields, .. } = snapshot else {
+            panic!("record expected")
+        };
+        assert_eq!(fields.get("items").unwrap().list_value().unwrap().len(), 2);
+        assert_eq!(items.read().unwrap().list_value().unwrap().len(), 3);
     }
 
     #[test]

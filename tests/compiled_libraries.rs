@@ -68,6 +68,82 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn branching_owned_results_retain_type_evidence_when_linked() {
+    let workspace = Workspace::new();
+    workspace.library(
+        r#"
+pub func echo(values: List<Int>, remaining: Int) -> List<Int> [consume values] {
+    return values if remaining == 0
+    let next = branch remaining {
+        1 -> values
+        _ -> values
+    }
+    echo(move next, remaining - 1)
+}
+
+"#,
+    );
+    let compilation = workspace
+        .consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { api::echo([42], 2).head }")
+        .unwrap();
+    assert_eq!(run(&compilation), Value::Integer(42));
+    foster::native::prepare(&compilation).unwrap();
+}
+
+#[test]
+fn static_import_uses_each_compiled_overloads_receiver_descriptor() {
+    let workspace = Workspace::new();
+    workspace.library(
+        r#"
+pub type Counter = {}
+impl Counter {
+    pub func step(self) -> Int { 1 }
+    pub func step(amount: Int) -> Int { amount }
+}
+"#,
+    );
+    let compilation = workspace
+        .consumer("import static api.Counter.step\nfunc main() -> Int { step(42) }")
+        .unwrap();
+    assert_eq!(run(&compilation), Value::Integer(42));
+}
+
+#[test]
+fn embedded_defaults_materialized_in_a_library_belong_to_its_receiver_package() {
+    let workspace = Workspace::new();
+    let library = workspace.library(
+        r#"
+import core.option.Option
+import std.iter.Iterator
+type Counter = & Iterator<Int> & { remaining: Int }
+impl Counter {
+    func next(self) -> Option<Int> [mut self.remaining] {
+        return Option.None if self.remaining == 0
+        self.remaining = self.remaining - 1
+        Option.Some(42)
+    }
+}
+pub func values() -> Iterator<Int> { Counter { remaining: 2 } }
+"#,
+    );
+    let definition = library
+        .code
+        .metadata
+        .symbols
+        .modules
+        .iter()
+        .flat_map(|module| &module.definitions)
+        .find(|definition| definition.symbol.name.name == "Counter.all?")
+        .unwrap();
+    assert_eq!(definition.symbol.name.module.package, "example");
+    let compilation = workspace
+        .consumer("import api\nfunc main() -> Int { assert(api::values().all?((value: Int) -> value == 42))\n42 }")
+        .unwrap();
+    assert_eq!(run(&compilation), Value::Integer(42));
+    foster::native::prepare(&compilation).unwrap();
+}
+
+#[test]
 fn receiver_borrows_survive_library_and_bytecode_round_trip() {
     let workspace = Workspace::new();
     workspace.library(
@@ -146,11 +222,11 @@ impl Box<T & Copy> {
 "#,
     );
     let good = workspace
-        .consumer("import api\nfunc main() -> Int { Box { value: 42 }.copied() }")
+        .consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { Box { value: 42 }.copied() }")
         .unwrap();
     assert_eq!(run(&good), Value::Integer(42));
     foster::native::prepare(&good).unwrap();
-    let error = workspace.consumer("import api\ntype Item = { value: Int }\nfunc main() -> Int { Box { value: Item { value: 1 } }.copied().value }").err().unwrap();
+    let error = workspace.consumer("import api\nimport api.*\nimport static api.*\ntype Item = { value: Int }\nfunc main() -> Int { Box { value: Item { value: 1 } }.copied().value }").err().unwrap();
     assert!(error.message.contains("constraint"), "{}", error.message);
     let declaration = compiled
         .interface
@@ -234,7 +310,7 @@ fn discovered_library_runs_without_an_explicit_dependency() {
     .unwrap();
     fs::write(
         workspace.0.join("src/main.fos"),
-        "import example\nfunc main() -> Int { answer() }\n",
+        "import example\nimport static example.*\nfunc main() -> Int { answer() }\n",
     )
     .unwrap();
     let compilation =
@@ -449,7 +525,7 @@ pub func boxed(x: Int) -> Box<Int> { Box { value: x } }
             .flat_map(|m| &m.declarations.functions)
             .all(|f| f.body.is_empty())
     );
-    let app=w.consumer("import api\nfunc main() -> Int { let f = multiplier(2)\nlet b = identity(boxed(20))\nf(b.value) }").unwrap();
+    let app=w.consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { let f = multiplier(2)\nlet b = identity(boxed(20))\nf(b.value) }").unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
 
@@ -603,7 +679,7 @@ fn cli_builds_and_runs_after_library_source_is_removed() {
         String::from_utf8_lossy(&output.stderr)
     );
     fs::remove_file(&source).unwrap();
-    w.consumer("import api\nfunc main() -> Int { twice(21) }")
+    w.consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { twice(21) }")
         .unwrap();
     cli(&["check"], &w.0);
     assert_eq!(
@@ -642,14 +718,14 @@ pub func observe(value: ref[value] Int) -> Int { value }
 pub func append(values: List<Int>) -> () { values.push(30) }
 "#,
     );
-    let valid=w.consumer("import api\nfunc main() -> Int { let values = [42]\nlet selected = preserve(values[0])\nobserve(selected) }").unwrap();
+    let valid=w.consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { let values = [42]\nlet selected = preserve(values[0])\nobserve(selected) }").unwrap();
     assert_eq!(run(&valid), Value::Integer(42));
-    let invalid=w.consumer("import api\nfunc main() -> Int { let values = [42]\nlet selected = preserve(values[0])\nappend(values)\nobserve(selected) }");
+    let invalid=w.consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { let values = [42]\nlet selected = preserve(values[0])\nappend(values)\nobserve(selected) }");
     assert_eq!(
         invalid.unwrap_err().code.as_deref(),
         Some(foster::ownership::diagnostics::INVALIDATED_LOAN)
     );
-    let invalid=w.consumer("import api\nfunc pure(values: List<Int>) -> () [read values] { append(values) }\nfunc main() -> Int { 0 }");
+    let invalid=w.consumer("import api\nimport api.*\nimport static api.*\nfunc pure(values: List<Int>) -> () [read values] { append(values) }\nfunc main() -> Int { 0 }");
     assert!(invalid.unwrap_err().message.contains("undeclared effect"));
 }
 
@@ -657,7 +733,7 @@ pub func append(values: List<Int>) -> () { values.push(30) }
 fn enum_payloads_are_relocated() {
     let w = Workspace::new();
     w.library("pub enum Choice<T> = Value(T) | Empty\npub func boxed(x: Int) -> Choice<Int> { Choice.Value(x) }");
-    let app=w.consumer("import api\nenum Earlier = A | B\nfunc main() -> Int { branch boxed(42) { Choice.Value(v) -> v\nChoice.Empty -> 0 } }").unwrap();
+    let app=w.consumer("import api\nimport api.*\nimport static api.*\nenum Earlier = A | B\nfunc main() -> Int { branch boxed(42) { Choice.Value(v) -> v\nChoice.Empty -> 0 } }").unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
 
@@ -665,7 +741,7 @@ fn enum_payloads_are_relocated() {
 fn enum_parameters_are_relocated() {
     let w = Workspace::new();
     w.library("pub type Item = { pub value: Int }\npub enum Choice<T> = Value(T, Item) | Empty\npub func boxed(x: Int) -> Choice<Int> { Choice.Value(x, Item { value: 22 }) }");
-    let app = w.consumer("import api\nenum Earlier = A | B\nfunc main() -> Int { branch boxed(20) { Choice.Value(a, { value: b }) -> a + b\nChoice.Empty -> 0 } }").unwrap();
+    let app = w.consumer("import api\nimport api.*\nimport static api.*\nenum Earlier = A | B\nfunc main() -> Int { branch boxed(20) { Choice.Value(a, { value: b }) -> a + b\nChoice.Empty -> 0 } }").unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
 
@@ -673,7 +749,7 @@ fn enum_parameters_are_relocated() {
 fn list_constants_preserve_layouts_across_library_imports() {
     let w = Workspace::new();
     w.library("pub const ROWS = [\"abc\", \"def\"]\npub const GRID = [[20, 22], [1, 2]]");
-    let app = w.consumer("import api\nfunc main() -> Int { let length = 0\nfor row in ROWS { length = length + row.length }\nassert(length == 6)\nlet values = GRID[0]\nvalues[0] + values[1] }").unwrap();
+    let app = w.consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { let length = 0\nfor row in ROWS { length = length + row.length }\nassert(length == 6)\nlet values = GRID[0]\nvalues[0] + values[1] }").unwrap();
     assert_eq!(run(&app), Value::Integer(42));
     foster::native::prepare(&app).unwrap();
 }
@@ -682,7 +758,7 @@ fn list_constants_preserve_layouts_across_library_imports() {
 fn imported_code_builds_as_native() {
     let w = Workspace::new();
     w.library("func bump(x: Int) -> Int { x + 1 }\npub func identity<T>(x: T) -> T [consume x] { x }\npub func multiplier(factor: Int) -> func(Int) -> Int { (x: Int) -> factor * bump(x) }");
-    w.consumer("import api\nfunc main() -> Int { let f = multiplier(2)\nf(identity(20)) }")
+    w.consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { let f = multiplier(2)\nf(identity(20)) }")
         .unwrap();
     cli(&["build", "--native"], &w.0);
     let output = Command::new(w.0.join(if cfg!(windows) { "main.exe" } else { "main" }))
@@ -703,7 +779,7 @@ fn core_byte_encodings_survive_library_imports() {
         "import core.int.*\nimport core.float.*\nimport core.bytes.*\npub func integer(value: Int) -> Bytes { value.bytes }\npub func vertex(value: Float) -> Bytes { value.to_f32_le_bytes() }",
     );
     let app = w.consumer(
-        "import api\nimport core.bytes.*\nfunc main() -> Int { assert(integer(42).hex() == \"2a00000000000000\")\nassert(vertex(1.0).hex() == \"0000803f\")\n42 }",
+        "import api\nimport api.*\nimport static api.*\nimport core.bytes.*\nfunc main() -> Int { assert(integer(42).hex() == \"2a00000000000000\")\nassert(vertex(1.0).hex() == \"0000803f\")\n42 }",
     ).unwrap();
     assert_eq!(run(&app), Value::Integer(42));
     foster::native::prepare(&app).unwrap();
@@ -716,7 +792,7 @@ fn libraries_can_bundle_compiled_dependencies() {
         "pub type Box = { pub value: Int }\npub func boxed(x: Int) -> Box { Box { value: x } }",
     );
     let middle = w
-        .consumer("import api\npub func answer() -> api::Box { boxed(42) }")
+        .consumer("import api\nimport api.*\nimport static api.*\npub func answer() -> api::Box { boxed(42) }")
         .unwrap();
     let artifact = library::build(&middle).unwrap();
     fs::write(
@@ -732,7 +808,7 @@ fn libraries_can_bundle_compiled_dependencies() {
     .unwrap();
     fs::write(
         w.0.join("src/main.fos"),
-        "import api\nfunc main() -> Int { answer().value }",
+        "import api\nimport api.*\nimport static api.*\nfunc main() -> Int { answer().value }",
     )
     .unwrap();
     let app = foster::check_project(&foster::project::Project::load(&w.0).unwrap()).unwrap();
@@ -744,7 +820,7 @@ fn composition_materialized_inside_a_library_is_retained() {
     let w = Workspace::new();
     w.library("pub type Base = { pub value: Int, pub func score(self) -> Int }\nimpl Base { pub func score(self: Base) -> Int { self.value } }\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }");
     let app = w
-        .consumer("import api\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nNew { extra: 99, value: 42 }.score() }")
+        .consumer("import api\nimport api.*\nimport static api.*\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nNew { extra: 99, value: 42 }.score() }")
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
@@ -760,7 +836,7 @@ fn nested_modules_and_constants_survive_rebasing() {
         "pub const answer = 42\npub type Box = { pub value: Int }",
     )
     .unwrap();
-    fs::write(root.join("src/main.fos"),"import models.deep as forms\npub const answer = forms::answer\npub func boxed() -> forms::Box { Box { value: answer } }").unwrap();
+    fs::write(root.join("src/main.fos"),"import models.deep as forms\nimport models.deep.Box\npub const answer = forms::answer\npub func boxed() -> forms::Box { Box { value: answer } }").unwrap();
     let compilation =
         foster::check_project(&foster::project::Project::load(&root).unwrap()).unwrap();
     fs::write(
@@ -770,7 +846,9 @@ fn nested_modules_and_constants_survive_rebasing() {
     .unwrap();
     fs::remove_dir_all(&root).unwrap();
     let app = w
-        .consumer("import api\nfunc main() -> Int { boxed().value }")
+        .consumer(
+            "import api\nimport api.*\nimport static api.*\nfunc main() -> Int { boxed().value }",
+        )
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
@@ -782,7 +860,7 @@ fn embedded_dependencies_are_linked_with_checked_descriptors() {
         "import std.fs\nimport std.fs.*\nimport static std.fs.*\npub func answer() -> Int { 42 }",
     );
     let app = w
-        .consumer("import api\nfunc main() -> Int { answer() }")
+        .consumer("import api\nimport api.*\nimport static api.*\nfunc main() -> Int { answer() }")
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
@@ -792,12 +870,16 @@ fn private_helpers_are_not_importable() {
     let w = Workspace::new();
     w.library("func secret() -> Int { 42 }\npub func answer() -> Int { secret() }");
     assert!(
-        w.consumer("import api\nfunc main() -> Int { secret() }")
-            .is_err()
+        w.consumer(
+            "import api\nimport api.*\nimport static api.*\nfunc main() -> Int { secret() }"
+        )
+        .is_err()
     );
     assert!(
-        w.consumer("import api\nfunc main() -> Int { api::secret() }")
-            .is_err()
+        w.consumer(
+            "import api\nimport api.*\nimport static api.*\nfunc main() -> Int { api::secret() }"
+        )
+        .is_err()
     );
 }
 
@@ -829,7 +911,7 @@ impl Base {
 "#,
     )
     .unwrap();
-    fs::write(root.join("src/main.fos"),"import base\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }").unwrap();
+    fs::write(root.join("src/main.fos"),"import base\nimport base.Base\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }").unwrap();
     let compilation =
         foster::check_project(&foster::project::Project::load(&root).unwrap()).unwrap();
     fs::write(
@@ -839,7 +921,7 @@ impl Base {
     .unwrap();
     fs::remove_dir_all(&root).unwrap();
     let app = w
-        .consumer("import api\nimport api.tokens\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nlet value = New { extra: 99, value: 42 }\nassert(value.closure()(Token { value: 0 }) == 42)\nvalue.score() }")
+        .consumer("import api\nimport api.*\nimport static api.*\nimport api.tokens\nimport api.tokens.Token\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nlet value = New { extra: 99, value: 42 }\nassert(value.closure()(Token { value: 0 }) == 42)\nvalue.score() }")
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }

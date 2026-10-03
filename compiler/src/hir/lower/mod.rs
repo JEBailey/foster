@@ -30,6 +30,11 @@ impl PackageHir {
             });
             hir.modules_by_name.insert(name.clone(), id);
         }
+        hir.compiled_modules = package
+            .library_bindings
+            .keys()
+            .map(|(name, _)| hir.modules_by_name[name])
+            .collect();
 
         for (module_name, source_module) in &package.modules {
             let Some(program) = &source_module.program else {

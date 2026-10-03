@@ -1,0 +1,53 @@
+{
+  "executableSha256": "5daba518fea0da0338d744d0bf3252c5708b34ee8e433fac1f5514b9bd3e989c",
+  "beforeSha256": "9b72b96ce5872f651d6c20ec17ee6e01b99f056ac080c23355dbd800a836a6e3",
+  "before": [
+    {
+      "declarations": 100,
+      "ms": 717.4401
+    },
+    {
+      "declarations": 500,
+      "ms": 14847.9736
+    },
+    {
+      "declarations": 1000,
+      "timeoutMs": 15000
+    }
+  ],
+  "after": [
+    {
+      "declarations": 100,
+      "bytes": 2780,
+      "ms": 99.5223
+    },
+    {
+      "declarations": 500,
+      "bytes": 14780,
+      "ms": 468.37930000000006
+    },
+    {
+      "declarations": 1000,
+      "bytes": 29780,
+      "ms": 943.7081
+    }
+  ],
+  "raylibBefore": {
+    "file": "C:/Users/jason/git/foster-raylib/src/lib.fos",
+    "bytes": 352113,
+    "ms": 30015.7444,
+    "status": null,
+    "error": "ETIMEDOUT",
+    "stderr": ""
+  },
+  "raylibAfter": {
+    "file": "C:\\Users\\jason\\git\\foster-raylib\\src\\lib.fos",
+    "bytes": 352113,
+    "formattingMs": 10056.686899999999,
+    "edits": 1,
+    "cancellationMs": 0.8961999999992258,
+    "cancellation": {
+      "error": "Error: {\"code\":-32800,\"message\":\"request cancelled\"}"
+    }
+  }
+}

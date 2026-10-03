@@ -235,10 +235,9 @@ fn dispatch_core(
             } else {
                 crate::foreign::runtime::callbacks::take_error(*token)
             };
-            Ok(Value::string(
-                string_record,
-                crate::foreign::runtime::response(result.map(|()| vec![])),
-            ))
+            Ok(Value::bytes(crate::foreign::runtime::response(
+                result.map(|()| vec![]),
+            )))
         }
         (Builtin::ProcessReserve, []) => Ok(Value::Integer(crate::process::reserve())),
         (Builtin::ProcessWait, [Value::Integer(token)]) => {
@@ -286,42 +285,39 @@ fn dispatch_core(
             ],
         ) => {
             if may::coroutine::is_coroutine() {
-                return Ok(Value::string(
-                    string_record,
-                    crate::foreign::runtime::remote_error(),
-                ));
+                return Ok(Value::bytes(crate::foreign::runtime::remote_error()));
             }
-            Ok(Value::string(
-                string_record,
-                crate::foreign::runtime::exchange(
-                    &path.string_text()?,
-                    &schema.string_text()?,
-                    *operation,
-                    *token,
-                    *create,
-                    &payload.string_text()?,
-                ),
-            ))
+            Ok(Value::bytes(crate::foreign::runtime::exchange(
+                &path.string_text()?,
+                &schema.string_text()?,
+                *operation,
+                *token,
+                *create,
+                payload
+                    .bytes_value()
+                    .ok_or_else(|| RuntimeError::runtime("C payload requires Bytes"))?,
+            )))
         }
-        (Builtin::CClose, [Value::Integer(token)]) => Ok(Value::string(
-            string_record,
-            crate::foreign::runtime::close(*token),
-        )),
+        (Builtin::CClose, [Value::Integer(token)]) => {
+            Ok(Value::bytes(crate::foreign::runtime::close(*token)))
+        }
         (Builtin::CRelease, [Value::Integer(token)]) => {
             crate::foreign::runtime::release(*token).map_err(RuntimeError::runtime)?;
             Ok(Value::Unit)
         }
-        (Builtin::CEncodeInt, [Value::Integer(value)]) => Ok(Value::string(
-            string_record,
-            crate::foreign::runtime::encode(&value.to_le_bytes()),
-        )),
-        (Builtin::CEncodeFloat, [Value::Float(value)]) => Ok(Value::string(
-            string_record,
-            crate::foreign::runtime::encode(&value.to_le_bytes()),
-        )),
+        (Builtin::CEncodeInt, [Value::Integer(value)]) => {
+            Ok(Value::bytes(value.to_le_bytes().to_vec()))
+        }
+        (Builtin::CEncodeFloat, [Value::Float(value)]) => {
+            Ok(Value::bytes(value.to_le_bytes().to_vec()))
+        }
         (Builtin::CDecodeInt | Builtin::CDecodeFloat, [value]) => {
-            let bits = crate::foreign::runtime::int(&value.string_text()?)
-                .map_err(RuntimeError::runtime)?;
+            let bits = crate::foreign::runtime::int(
+                value
+                    .bytes_value()
+                    .ok_or_else(|| RuntimeError::runtime("C scalar requires Bytes"))?,
+            )
+            .map_err(RuntimeError::runtime)?;
             Ok(if builtin == Builtin::CDecodeInt {
                 Value::Integer(bits)
             } else {

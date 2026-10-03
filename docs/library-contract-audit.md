@@ -46,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **150 public type declarations**.
+The library exposes **151 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -64,6 +64,7 @@ The library exposes **150 public type declarations**.
 | [core.future.Future](../library/core/future.fos) | None; consuming, suspending completion contract |
 | [core.future.RemoteFuture](../library/core/future.fos) | `Future<T>` |
 | [core.int.Int](../library/core/int.fos) | `Copy` |
+| [core.int.IntConversionError](../library/core/int.fos) | None; reports nonfinite or out-of-range float conversion |
 | [core.list.List](../library/core/list.fos) | `Sequence<T>`, `Collection<T>` |
 | [core.list.ListReadError](../library/core/list.fos) | None |
 | [core.option.Option](../library/core/option.fos) | None |

@@ -580,12 +580,14 @@ name = "foster"
 version = "0.1.0"
 dependencies = [
  "camino",
+ "cc",
  "clap",
  "criterion",
  "crossbeam-channel",
  "foster-bytecode",
  "foster-compiler",
  "foster-host",
+ "foster-native-runtime",
  "foster-vm",
  "lsp-server",
  "lsp-types",
@@ -594,6 +596,26 @@ dependencies = [
  "serde_json",
  "walkdir",
  "zip",
+]
+
+[[package]]
+name = "foster-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "camino",
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-module",
+ "cranelift-native",
+ "cranelift-object",
+ "foster-bytecode",
+ "foster-host",
+ "foster-vm",
+ "la-arena",
+ "serde",
+ "serde_json",
+ "walkdir",
 ]
 
 [[package]]
@@ -618,6 +640,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
+ "foster-bootstrap",
  "foster-bytecode",
  "foster-host",
  "foster-vm",

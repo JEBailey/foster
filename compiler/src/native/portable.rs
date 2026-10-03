@@ -1006,6 +1006,12 @@ pub(super) fn lower_portable_native(
                     let NativeType::Object(layout) = function.value_type(arguments[0]) else {
                         return Err(native_error("callback requires a concrete closure"));
                     };
+                    let bytes = objects
+                        .layouts
+                        .logical
+                        .builtin(&crate::codegen::types::ExecutableType::Bytes)
+                        .ok_or_else(|| native_error("callback requires Bytes layout"))?;
+                    let packet_type = NativeType::Object(bytes);
                     let word = module.target_config().pointer_type();
                     let (code, environment, safe) = match &objects.layouts.logical.get(layout).kind
                     {
@@ -1019,11 +1025,11 @@ pub(super) fn lower_portable_native(
                                 substitutions: specialization.clone(),
                             }];
                             let target_signature = &backend.ir.function_types[&target];
-                            if target_signature.parameters[captures.len()..] != [NativeType::String]
-                                || target_signature.result != NativeType::String
+                            if target_signature.parameters[captures.len()..] != [packet_type]
+                                || target_signature.result != packet_type
                             {
                                 return Err(native_error(
-                                    "callback adapter must accept and return String packets",
+                                    "callback adapter must accept and return Bytes packets",
                                 ));
                             }
                             let safe = callback_environment_safe(
@@ -1060,11 +1066,9 @@ pub(super) fn lower_portable_native(
                                 result,
                                 None,
                             )?;
-                            if parameter_types != [NativeType::String]
-                                || result_type != NativeType::String
-                            {
+                            if parameter_types != [packet_type] || result_type != packet_type {
                                 return Err(native_error(
-                                    "callback adapter must accept and return String packets",
+                                    "callback adapter must accept and return Bytes packets",
                                 ));
                             }
                             let PhysicalKind::Callable {
@@ -1137,11 +1141,9 @@ pub(super) fn lower_portable_native(
                     let release =
                         module.declare_func_in_func(backend.release_thunks[&layout], builder.func);
                     let release = builder.ins().func_addr(word, release);
-                    let text_release = module.declare_func_in_func(
-                        backend.release_thunks[&objects.layouts.string_layout()],
-                        builder.func,
-                    );
-                    let text_release = builder.ins().func_addr(word, text_release);
+                    let packet_release =
+                        module.declare_func_in_func(backend.release_thunks[&bytes], builder.func);
+                    let packet_release = builder.ins().func_addr(word, packet_release);
                     runtime_call(
                         builder,
                         module,
@@ -1157,14 +1159,14 @@ pub(super) fn lower_portable_native(
                                 NativeType::Int,
                                 NativeType::Bool,
                             ],
-                            result: NativeType::String,
+                            result: packet_type,
                         },
                         &[
                             code,
                             environment,
                             lowered[0],
                             release,
-                            text_release,
+                            packet_release,
                             lowered[1],
                             lowered[2],
                             safe,

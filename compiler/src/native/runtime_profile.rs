@@ -14,8 +14,8 @@ fn instrument(mut source: String, census: bool) -> String {
     if census {
         source = replace_once(
             source,
-            "extern \"C\" fn foster_rt_v4_cancellation_point() -> u8 {",
-            "extern \"C\" fn foster_rt_v4_cancellation_point() -> u8 { PROFILE_POLLS.fetch_add(1, PROFILE_ORDER);",
+            "extern \"C\" fn foster_rt_v5_cancellation_point() -> u8 {",
+            "extern \"C\" fn foster_rt_v5_cancellation_point() -> u8 { PROFILE_POLLS.fetch_add(1, PROFILE_ORDER);",
         );
         source = replace_once(
             source,
@@ -129,10 +129,10 @@ fn profile_native_runtime() {
                 // workloads only. Never a supported runtime/optimization mode.
                 shim = replace_once(
                     shim,
-                    "extern \"C\" fn foster_rt_v4_cancellation_point() -> u8 {",
+                    "extern \"C\" fn foster_rt_v5_cancellation_point() -> u8 {",
                     "extern \"C\" fn foster_profile_original_cancellation_point() -> u8 {",
                 );
-                shim.push_str("\n#[unsafe(no_mangle)] extern \"C\" fn foster_rt_v4_cancellation_point() -> u8 { 0 }\n");
+                shim.push_str("\n#[unsafe(no_mangle)] extern \"C\" fn foster_rt_v5_cancellation_point() -> u8 { 0 }\n");
             }
             let executable =
                 output.join(format!("{name}-mode{mode}{}", std::env::consts::EXE_SUFFIX));

@@ -24,3 +24,6 @@ walkdir = "2.5"
 
 [dev-dependencies]
 foster-vm = { path = "../vm" }
+
+[build-dependencies]
+foster-bootstrap = { path = "bootstrap" }

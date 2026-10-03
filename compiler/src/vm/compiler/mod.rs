@@ -19,10 +19,12 @@ impl Default for CompileOptions {
 
 /// Compiled generic library bodies, sealed through SSA but not finalized with register drops.
 pub fn compile_library(compilation: &Compilation) -> Result<Program, FosterError> {
-    let construction = crate::codegen::construction::compile(compilation)?;
-    let shared = crate::codegen::sealing::seal_program(construction)
-        .map_err(|e| FosterError::runtime(e.to_string()))?;
-    let mut program = crate::codegen::vm::lower_shared_program(shared)
+    let mut program = crate::codegen::construction::compile(compilation)?;
+    // Validate through the mandatory shared-SSA boundary, but retain logical
+    // slots for linking. De-SSA bytecode can assign different branch values to
+    // one home; reconstructing type hints from that finalized register stream
+    // loses the original construction evidence when consumers seal it again.
+    crate::codegen::sealing::seal_program(program.clone())
         .map_err(|e| FosterError::runtime(e.to_string()))?;
     program.metadata.main = None;
     program.metadata.main_arguments = false;

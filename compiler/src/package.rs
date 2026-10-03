@@ -624,6 +624,33 @@ impl Package {
     }
 
     fn finish_loading(&mut self, cache: &mut Option<&mut ModuleCache>) -> Result<(), FosterError> {
+        #[cfg(not(foster_bootstrap))]
+        if !EMBEDDED_MODULES
+            .iter()
+            .all(|(name, _)| self.modules.contains_key(*name))
+        {
+            let full = self.modules.values().any(|module| {
+                module.program.as_ref().is_some_and(|program| {
+                    string_accessors::required(program)
+                        || program.imports.iter().any(|import| {
+                            import
+                                .path
+                                .first()
+                                .is_some_and(|name| matches!(name.as_str(), "core" | "std"))
+                        })
+                })
+            }) || self.libraries.iter().any(|library| {
+                library
+                    .interface
+                    .embedded
+                    .iter()
+                    .any(|name| name.starts_with("std."))
+            });
+            crate::library::mount_embedded(self, embedded_library(full)?)?;
+            return self
+                .validate()
+                .map_err(|error| self.locate_compiler_error(error));
+        }
         self.install_standard_modules_if_imported(cache)?;
         self.install_bootstrap(
             BootstrapModule::types_and_functions(
@@ -1337,7 +1364,59 @@ pub fn embedded_source_path(module: &str) -> Option<Utf8PathBuf> {
     bundled.is_file().then_some(bundled)
 }
 
-const EMBEDDED_NAMESPACE_OVERVIEWS: &[(&str, &str)] = &[
+/// Build-host entry point; ordinary compiler invocations load the resulting artifacts.
+#[cfg(foster_bootstrap)]
+pub fn build_embedded_library(full: bool) -> Result<crate::library::Library, FosterError> {
+    let program = crate::parse(if full { "import std" } else { "" })?;
+    let mut package = Package::from_program_with_core("bundle", program)?;
+    package.modules.remove("bundle");
+    for (name, module) in &mut package.modules {
+        module.origin = ModuleOrigin::Input;
+        if let Some(program) = &mut module.program {
+            program.tests.clear();
+        }
+        package
+            .symbol_modules
+            .insert(name.clone(), ("foster".into(), name.clone()));
+    }
+    let compilation = crate::compiler::check(package)?;
+    let mut library = crate::library::build(&compilation)?;
+    // Keep real declaration ranges for source navigation alongside checked stubs.
+    for module in &mut library.interface.modules {
+        for (declaration, binding) in module
+            .declarations
+            .functions
+            .iter_mut()
+            .zip(&module.functions)
+        {
+            let id = la_arena::Idx::from_raw(la_arena::RawIdx::from_u32(binding.function));
+            declaration.span = compilation.hir.functions[id].span.clone();
+        }
+    }
+    Ok(library)
+}
+
+#[cfg(not(foster_bootstrap))]
+fn embedded_library(full: bool) -> Result<std::sync::Arc<crate::library::Library>, FosterError> {
+    use std::sync::{Arc, OnceLock};
+    static BOOTSTRAP: OnceLock<Result<Arc<crate::library::Library>, FosterError>> = OnceLock::new();
+    static STANDARD: OnceLock<Result<Arc<crate::library::Library>, FosterError>> = OnceLock::new();
+    let (cell, bytes): (_, &[u8]) = if full {
+        (
+            &STANDARD,
+            include_bytes!(concat!(env!("OUT_DIR"), "/standard.flib")),
+        )
+    } else {
+        (
+            &BOOTSTRAP,
+            include_bytes!(concat!(env!("OUT_DIR"), "/bootstrap.flib")),
+        )
+    };
+    cell.get_or_init(|| crate::library::decode(bytes).map(Arc::new))
+        .clone()
+}
+
+pub(crate) const EMBEDDED_NAMESPACE_OVERVIEWS: &[(&str, &str)] = &[
     ("core", include_str!("../../library/core.fos")),
     ("std", include_str!("../../library/std.fos")),
 ];

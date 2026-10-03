@@ -17,12 +17,36 @@ include!("foreign.rs");
 
 static FOSTER_CONSTANTS: OnceLock<&'static [&'static str]> = OnceLock::new();
 
+thread_local! {
+    static EMBEDDING_CANCELLATION: std::cell::Cell<Option<fn() -> bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs an embedded native program with scoped cancellation and recoverable failures.
+pub fn embedded_execution<T>(probe: fn() -> bool, work: impl FnOnce() -> T) -> Result<T, String> {
+    struct Restore(Option<fn() -> bool>, Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            EMBEDDING_CANCELLATION.with(|slot| slot.set(self.0));
+            FOSTER_EXECUTION.with(|slot| *slot.borrow_mut() = self.1.take());
+        }
+    }
+    let _restore = Restore(
+        EMBEDDING_CANCELLATION.with(|slot| slot.replace(Some(probe))),
+        FOSTER_EXECUTION.with(|slot| slot.borrow_mut().take()),
+    );
+    let value = work();
+    match FOSTER_EXECUTION.with(|slot| slot.borrow_mut().take()) {
+        Some(error) => Err(error),
+        None => Ok(value),
+    }
+}
+
 #[inline(never)]
 pub fn foster_runtime_initialize(constants: &'static [&'static str]) {
     FOSTER_CONSTANTS
         .set(constants)
         .expect("runtime already initialized");
-    foster_rt_v4_host_initialize();
+    foster_rt_v5_host_initialize();
 }
 
 pub fn foster_runtime_check_execution() {
@@ -49,7 +73,7 @@ fn bounds_error(kind: &str, index: i64, length: usize) -> ! {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_alloc(size: i64, align: i64) -> usize {
+extern "C" fn foster_rt_v5_alloc(size: i64, align: i64) -> usize {
     let layout = Layout::from_size_align(size as usize, align as usize)
         .unwrap_or_else(|_| std::process::abort());
     let pointer = unsafe { alloc_zeroed(layout) };
@@ -60,7 +84,7 @@ extern "C" fn foster_rt_v4_alloc(size: i64, align: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_dealloc(pointer: usize, size: i64, align: i64) -> u8 {
+extern "C" fn foster_rt_v5_dealloc(pointer: usize, size: i64, align: i64) -> u8 {
     let layout = Layout::from_size_align(size as usize, align as usize)
         .unwrap_or_else(|_| std::process::abort());
     unsafe { dealloc(pointer as *mut u8, layout) };
@@ -68,7 +92,7 @@ extern "C" fn foster_rt_v4_dealloc(pointer: usize, size: i64, align: i64) -> u8 
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_assert(condition: u8, message: usize) -> u8 {
+extern "C" fn foster_rt_v5_assert(condition: u8, message: usize) -> u8 {
     if condition == 0 {
         let message = if message == 0 {
             "assertion failed".to_owned()
@@ -81,7 +105,7 @@ extern "C" fn foster_rt_v4_assert(condition: u8, message: usize) -> u8 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_fail(kind: i64, detail: i64, limit: i64) -> u8 {
+extern "C" fn foster_rt_v5_fail(kind: i64, detail: i64, limit: i64) -> u8 {
     foster_execution_failure(match kind {
         1 => "integer overflow".into(),
         2 => "invalid integer division".into(),
@@ -96,6 +120,9 @@ extern "C" fn foster_rt_v4_fail(kind: i64, detail: i64, limit: i64) -> u8 {
 }
 
 unsafe extern "C" {
+    fn foster_native_bytes(data: usize, length: i64) -> usize;
+    fn foster_native_bytes_data(value: usize) -> usize;
+    fn foster_native_bytes_length(value: usize) -> i64;
     fn foster_native_string(data: usize, length: i64) -> usize;
     fn foster_native_string_data(value: usize) -> usize;
     fn foster_native_string_length(value: usize) -> i64;
@@ -104,6 +131,16 @@ unsafe extern "C" {
 
 pub fn owned_string(text: &str) -> usize {
     unsafe { foster_native_string(text.as_ptr() as usize, text.len() as i64) }
+}
+
+fn owned_bytes(bytes: &[u8]) -> usize {
+    unsafe { foster_native_bytes(bytes.as_ptr() as usize, bytes.len() as i64) }
+}
+
+unsafe fn bytes_value<'a>(value: usize) -> &'a [u8] {
+    let data = unsafe { foster_native_bytes_data(value) };
+    let length = unsafe { foster_native_bytes_length(value) } as usize;
+    unsafe { std::slice::from_raw_parts(data as *const u8, length) }
 }
 
 unsafe fn string_value<'a>(value: usize) -> &'a str {
@@ -316,27 +353,27 @@ unsafe fn render_object(object: usize) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_unit() -> u8 {
+pub extern "C" fn foster_rt_v5_write_unit() -> u8 {
     print!("()");
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_bool(value: u8) -> u8 {
+pub extern "C" fn foster_rt_v5_write_bool(value: u8) -> u8 {
     print!("{}", value != 0);
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_int(value: i64) -> u8 {
+pub extern "C" fn foster_rt_v5_write_int(value: i64) -> u8 {
     print!("{value}");
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_float(value: f64) -> u8 {
+pub extern "C" fn foster_rt_v5_write_float(value: f64) -> u8 {
     print!("{value}");
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_code_point(value: u32) -> u8 {
+pub extern "C" fn foster_rt_v5_write_code_point(value: u32) -> u8 {
     print!(
         "{}",
         char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER)
@@ -344,33 +381,33 @@ pub extern "C" fn foster_rt_v4_write_code_point(value: u32) -> u8 {
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_byte(value: u8) -> u8 {
+pub extern "C" fn foster_rt_v5_write_byte(value: u8) -> u8 {
     print!("{value}");
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_string(value: usize) -> u8 {
+pub extern "C" fn foster_rt_v5_write_string(value: usize) -> u8 {
     print!("{}", unsafe { string_value(value) });
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_object(value: usize) -> u8 {
+pub extern "C" fn foster_rt_v5_write_object(value: usize) -> u8 {
     unsafe { render_object(value) };
     0
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_separator() -> u8 {
+extern "C" fn foster_rt_v5_write_separator() -> u8 {
     print!(" ");
     0
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn foster_rt_v4_write_newline() -> u8 {
+pub extern "C" fn foster_rt_v5_write_newline() -> u8 {
     println!();
     0
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_constant(index: i64) -> usize {
+extern "C" fn foster_rt_v5_string_constant(index: i64) -> usize {
     let index = usize::try_from(index)
         .unwrap_or_else(|_| bounds_error("constant", index, constants().len()));
     constants()
@@ -380,17 +417,17 @@ extern "C" fn foster_rt_v4_string_constant(index: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_empty(value: usize) -> u8 {
+extern "C" fn foster_rt_v5_string_empty(value: usize) -> u8 {
     u8::from(unsafe { string_value(value).is_empty() })
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_whitespace(value: usize) -> u8 {
+extern "C" fn foster_rt_v5_string_whitespace(value: usize) -> u8 {
     u8::from(unsafe { string_value(value).chars().all(char::is_whitespace) })
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_concat(left: usize, right: usize) -> usize {
+extern "C" fn foster_rt_v5_string_concat(left: usize, right: usize) -> usize {
     let left_length = unsafe { foster_native_string_length(left) } as usize;
     let right_length = unsafe { foster_native_string_length(right) } as usize;
     // A no-op concatenation shares the other operand's managed storage instead
@@ -407,25 +444,25 @@ extern "C" fn foster_rt_v4_string_concat(left: usize, right: usize) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_copy_bytes(destination: usize, source: usize, length: i64) -> u8 {
+extern "C" fn foster_rt_v5_copy_bytes(destination: usize, source: usize, length: i64) -> u8 {
     let length = usize::try_from(length).unwrap_or_else(|_| std::process::abort());
     unsafe { std::ptr::copy_nonoverlapping(source as *const u8, destination as *mut u8, length) };
     0
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_code_point_whitespace(value: u32) -> u8 {
+extern "C" fn foster_rt_v5_code_point_whitespace(value: u32) -> u8 {
     u8::from(char::from_u32(value).is_some_and(char::is_whitespace))
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_code_point_string(value: u32) -> usize {
+extern "C" fn foster_rt_v5_code_point_string(value: u32) -> usize {
     let value = char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER);
     owned_string(&value.to_string())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_get(value: usize, index: i64) -> u32 {
+extern "C" fn foster_rt_v5_string_get(value: usize, index: i64) -> u32 {
     let text = unsafe { string_value(value) };
     usize::try_from(index)
         .ok()
@@ -441,12 +478,12 @@ extern "C" fn foster_rt_v4_string_get(value: usize, index: i64) -> u32 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_equal(left: usize, right: usize) -> u8 {
+extern "C" fn foster_rt_v5_string_equal(left: usize, right: usize) -> u8 {
     u8::from(unsafe { string_value(left) == string_value(right) })
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_parse_float(value: usize) -> f64 {
+extern "C" fn foster_rt_v5_parse_float(value: usize) -> f64 {
     unsafe { string_value(value) }
         .parse::<f64>()
         .unwrap_or_else(|_| {
@@ -456,67 +493,67 @@ extern "C" fn foster_rt_v4_parse_float(value: usize) -> f64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_format_float(value: f64) -> usize {
+extern "C" fn foster_rt_v5_format_float(value: f64) -> usize {
     owned_string(&value.to_string())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_bits(value: f64) -> i64 {
+extern "C" fn foster_rt_v5_float_bits(value: f64) -> i64 {
     value.to_bits() as i64
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_from_int(value: i64) -> f64 {
+extern "C" fn foster_rt_v5_float_from_int(value: i64) -> f64 {
     value as f64
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_int_from_float(value: f64) -> i64 {
+extern "C" fn foster_rt_v5_int_from_float(value: f64) -> i64 {
     value as i64
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_floor(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_floor(value: f64) -> f64 {
     value.floor()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_ceil(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_ceil(value: f64) -> f64 {
     value.ceil()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_round(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_round(value: f64) -> f64 {
     value.round_ties_even()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_truncate(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_truncate(value: f64) -> f64 {
     value.trunc()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_sqrt(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_sqrt(value: f64) -> f64 {
     value.sqrt()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_sin(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_sin(value: f64) -> f64 {
     value.sin()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_cos(value: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_cos(value: f64) -> f64 {
     value.cos()
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float_atan2(y: f64, x: f64) -> f64 {
+extern "C" fn foster_rt_v5_float_atan2(y: f64, x: f64) -> f64 {
     y.atan2(x)
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_float32_bits(value: f64) -> i64 {
+extern "C" fn foster_rt_v5_float32_bits(value: f64) -> i64 {
     // Narrow with IEEE round-to-nearest, ties-to-even; stabilize NaN encoding.
     if value.is_nan() {
         0x7fc0_0000
@@ -526,48 +563,48 @@ extern "C" fn foster_rt_v4_float32_bits(value: f64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_load_i8(reference: usize) -> u8 {
+extern "C" fn foster_rt_v5_ref_load_i8(reference: usize) -> u8 {
     unsafe { *(reference as *const u8) }
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_load_i32(reference: usize) -> u32 {
+extern "C" fn foster_rt_v5_ref_load_i32(reference: usize) -> u32 {
     unsafe { *(reference as *const u32) }
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_load_i64(reference: usize) -> i64 {
+extern "C" fn foster_rt_v5_ref_load_i64(reference: usize) -> i64 {
     unsafe { *(reference as *const i64) }
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_load_f64(reference: usize) -> f64 {
+extern "C" fn foster_rt_v5_ref_load_f64(reference: usize) -> f64 {
     unsafe { *(reference as *const f64) }
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_load_ptr(reference: usize) -> usize {
+extern "C" fn foster_rt_v5_ref_load_ptr(reference: usize) -> usize {
     unsafe { *(reference as *const usize) }
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_store_i8(reference: usize, value: u8) -> u8 {
+extern "C" fn foster_rt_v5_ref_store_i8(reference: usize, value: u8) -> u8 {
     unsafe { *(reference as *mut u8) = value };
     0
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_store_i32(reference: usize, value: u32) -> u8 {
+extern "C" fn foster_rt_v5_ref_store_i32(reference: usize, value: u32) -> u8 {
     unsafe { *(reference as *mut u32) = value };
     0
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_store_i64(reference: usize, value: i64) -> u8 {
+extern "C" fn foster_rt_v5_ref_store_i64(reference: usize, value: i64) -> u8 {
     unsafe { *(reference as *mut i64) = value };
     0
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_store_f64(reference: usize, value: f64) -> u8 {
+extern "C" fn foster_rt_v5_ref_store_f64(reference: usize, value: f64) -> u8 {
     unsafe { *(reference as *mut f64) = value };
     0
 }
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_ref_store_ptr(reference: usize, value: usize) -> u8 {
+extern "C" fn foster_rt_v5_ref_store_ptr(reference: usize, value: usize) -> u8 {
     unsafe { *(reference as *mut usize) = value };
     0
 }

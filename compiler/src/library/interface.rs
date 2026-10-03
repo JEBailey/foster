@@ -78,12 +78,15 @@ pub(super) fn build(
             );
         }
         let mut functions = Vec::new();
-        for (id, function) in compilation
-            .hir
-            .functions
-            .iter()
-            .filter(|(_, f)| f.module == module_id)
-        {
+        for (id, function) in compilation.hir.functions.iter().filter(|(id, f)| {
+            compilation
+                .hir
+                .composition_owners
+                .get(id)
+                .copied()
+                .unwrap_or(f.module)
+                == module_id
+        }) {
             let binding = definitions
                 .get(&id.into_raw().into_u32())
                 .ok_or_else(|| error("function missing from compiled symbols"))?;
@@ -91,6 +94,11 @@ pub(super) fn build(
             contexts.insert(
                 binding.function,
                 FunctionContext {
+                    parameter_names: function
+                        .parameters
+                        .iter()
+                        .map(|parameter| compilation.hir.locals[parameter.local].name.clone())
+                        .collect(),
                     default_template: compilation
                         .hir
                         .external_functions
@@ -360,6 +368,23 @@ pub(crate) fn mount(
     library: Arc<Library>,
 ) -> Result<(), FosterError> {
     library.validate()?;
+    mount_impl(package, Some(alias), library)
+}
+
+#[cfg(not(foster_bootstrap))]
+pub(crate) fn mount_embedded(
+    package: &mut Package,
+    library: Arc<Library>,
+) -> Result<(), FosterError> {
+    // The immutable bundled artifact was validated when decoded into its OnceLock.
+    mount_impl(package, None, library)
+}
+
+fn mount_impl(
+    package: &mut Package,
+    alias: Option<&str>,
+    library: Arc<Library>,
+) -> Result<(), FosterError> {
     let index = package.libraries.len();
     let names = library
         .interface
@@ -368,10 +393,10 @@ pub(crate) fn mount(
         .map(|m| {
             (
                 m.path.clone(),
-                if m.path == "main" {
-                    alias.to_owned()
-                } else {
-                    format!("{alias}.{}", m.path)
+                match alias {
+                    None => m.path.clone(),
+                    Some(alias) if m.path == "main" => alias.to_owned(),
+                    Some(alias) => format!("{alias}.{}", m.path),
                 },
             )
         })
@@ -394,11 +419,8 @@ pub(crate) fn mount(
             return Err(error(format!("module `{mounted}` already exists")));
         }
         let mut declarations = module.declarations.clone();
-        rewrite(&mut declarations, &names);
-        for function in &mut declarations.functions {
-            if function.receiver {
-                restore_receiver_group(function);
-            }
+        if alias.is_some() {
+            rewrite(&mut declarations, &names);
         }
         for (position, binding) in module.functions.iter().enumerate() {
             let mut context = library
@@ -407,7 +429,13 @@ pub(crate) fn mount(
                 .get(&binding.function)
                 .cloned()
                 .unwrap_or_default();
-            if let Some(template) = &mut context.default_template {
+            restore_parameter_groups(
+                &mut declarations.functions[position],
+                &context.parameter_names,
+            );
+            if let Some(template) = &mut context.default_template
+                && alias.is_some()
+            {
                 let mut carrier = module.declarations.clone();
                 carrier.functions = vec![template.clone()];
                 rewrite(&mut carrier, &names);
@@ -439,10 +467,25 @@ pub(crate) fn mount(
             mounted.clone(),
             crate::package::Module {
                 name: mounted.clone(),
-                source_path: None,
-                source: None,
+                source_path: alias
+                    .is_none()
+                    .then(|| crate::package::embedded_source_path(mounted))
+                    .flatten(),
+                source: if alias.is_none() {
+                    crate::package::EMBEDDED_MODULES
+                        .iter()
+                        .chain(crate::package::EMBEDDED_NAMESPACE_OVERVIEWS)
+                        .find(|(name, _)| *name == mounted)
+                        .map(|(_, source)| (*source).to_owned())
+                } else {
+                    None
+                },
                 program: Some(declarations),
-                origin: ModuleOrigin::Dependency,
+                origin: if alias.is_none() {
+                    ModuleOrigin::Embedded
+                } else {
+                    ModuleOrigin::Dependency
+                },
             },
         );
         let parts = mounted.split('.').collect::<Vec<_>>();
@@ -464,27 +507,32 @@ pub(crate) fn mount(
     Ok(())
 }
 
-/// Symbol descriptors use positional parameter roots; source method contracts
-/// expose the first parameter's group as `self`.
-fn restore_receiver_group(function: &mut ast::Function) {
-    fn effects(effects: &mut [ast::Effect]) {
+/// Symbol descriptors use positional roots; structural contracts and editor
+/// signatures retain the original parameter names, including the receiver.
+fn restore_parameter_groups(function: &mut ast::Function, parameter_names: &[String]) {
+    let names = parameter_names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (format!("p{index}"), name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    fn effects(effects: &mut [ast::Effect], names: &BTreeMap<String, String>) {
         for effect in effects {
-            if effect.target.root == "p0" {
-                effect.target.root = "self".into();
+            if let Some(name) = names.get(&effect.target.root) {
+                effect.target.root = name.clone();
             }
         }
     }
-    fn ty(value: &mut ast::TypeExpr) {
+    fn ty(value: &mut ast::TypeExpr, names: &BTreeMap<String, String>) {
         match value {
             ast::TypeExpr::Reference { group, value } => {
-                if group == "p0" {
-                    *group = "self".into();
+                if let Some(name) = names.get(group) {
+                    *group = name.clone();
                 }
-                ty(value);
+                ty(value, names);
             }
             ast::TypeExpr::Named(_, arguments) | ast::TypeExpr::Intersection(arguments) => {
                 for argument in arguments {
-                    ty(argument);
+                    ty(argument, names);
                 }
             }
             ast::TypeExpr::Function {
@@ -494,26 +542,24 @@ fn restore_receiver_group(function: &mut ast::Function) {
                 ..
             } => {
                 for parameter in parameters {
-                    ty(parameter);
+                    ty(parameter, names);
                 }
-                ty(result);
-                effects(declared);
+                ty(result, names);
+                effects(declared, names);
             }
             ast::TypeExpr::Unit => {}
         }
     }
-    if let Some(receiver) = function.parameters.first_mut() {
-        receiver.name = "self".into();
-    }
-    for parameter in &mut function.parameters {
+    for (parameter, name) in function.parameters.iter_mut().zip(parameter_names) {
+        parameter.name = name.clone();
         if let Some(annotation) = &mut parameter.ty {
-            ty(annotation);
+            ty(annotation, &names);
         }
     }
     if let Some(result) = &mut function.return_type {
-        ty(result);
+        ty(result, &names);
     }
-    effects(&mut function.effects);
+    effects(&mut function.effects, &names);
 }
 
 fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {

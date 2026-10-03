@@ -159,7 +159,7 @@ fn projects_compile_and_run_transitive_path_dependencies() {
     .unwrap();
     fs::write(
         app.join("src/main.fos"),
-        "import middle\nfunc main() -> Int { answer() }\n",
+        "import middle\nfunc main() -> Int { middle::answer() }\n",
     )
     .unwrap();
     fs::write(
@@ -169,7 +169,7 @@ fn projects_compile_and_run_transitive_path_dependencies() {
     .unwrap();
     fs::write(
         middle.join("src/lib.fos"),
-        "import helper\nimport leaf\npub func answer() -> Int { base() + increment() }\n",
+        "import helper\nimport leaf\npub func answer() -> Int { leaf::base() + helper::increment() }\n",
     )
     .unwrap();
     fs::write(
@@ -271,7 +271,7 @@ fn explicit_package_entry_controls_execution_and_diagnostics() {
     let entry = root.join("src/start.fos");
     fs::write(
         &entry,
-        "import helper\npub func base() -> Int { 40 }\nfunc main() -> Int { answer() }\n",
+        "import helper\npub func base() -> Int { 40 }\nfunc main() -> Int { helper::answer() }\n",
     )
     .unwrap();
     fs::write(
@@ -430,7 +430,7 @@ fn git_source_dependency(tag: bool) {
     .unwrap();
     fs::write(
         app.join("src/main.fos"),
-        "import graphics\nfunc main() -> () { println(answer()) }\n",
+        "import graphics\nfunc main() -> () { println(graphics::answer()) }\n",
     )
     .unwrap();
     let run = foster().arg("run").current_dir(&app).output().unwrap();

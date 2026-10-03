@@ -284,6 +284,26 @@ with later bypass timings.
 
 ## Language server latency
 
+### Bundled library comparison
+
+The [October 2026 comparison](../benchmarks/results/bundled-library.md) records
+the source-based baseline, bundled implementation, raw samples, and compiler/LSP profiles.
+
+```text
+node benchmarks/bundled_library.cjs path/to/foster.exe target/bundled-library/results.json 7
+```
+
+Run the same harness against saved before/after release executables. It measures process startup,
+fresh-process `check` and optimized bytecode `build`, initial LSP diagnostics, cached semantic hover,
+body edits, a deliberate type error, and error repair. The fixtures cover a no-import program,
+hash collections, JSON, and Unicode. Each command and LSP fixture receives an untimed warmup;
+each LSP sample starts a fresh server. LSP initialization is excluded from diagnostic latency,
+while the editor debounce remains included. Edits use unsaved overlays. Assertions validate
+diagnostics and hover payloads, and separate LSP profiling runs avoid instrumenting timed samples.
+Reports record machine information, executable size/hash, source hashes, raw samples, and median
+and range. Run measurements without concurrent builds or tests. This warms the filesystem cache;
+it does not claim cold-disk performance or isolate operating-system process-launch overhead.
+
 ```text
 python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos
 python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --outline
@@ -339,3 +359,11 @@ Process initialization and the one-time library build are excluded from editor l
 Raw samples, per-process medians, ranges, library size/build time, and machine information
 are saved in `results.json`. Separate profiling runs capture frontend phases without adding
 profiling overhead to the timed samples.
+
+### Formatter latency and cancellation
+
+Run `node benchmarks/formatter.cjs <foster-executable> <source.fos> <results.json>`
+to measure document formatting and cancellation through a real LSP connection.
+Use a large file for the cancellation measurement. The server uses an editor
+overlay and the source file is not changed. See the
+[formatter comparison](../benchmarks/results/formatter.md) for the recorded results.

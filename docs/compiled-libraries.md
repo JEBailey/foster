@@ -83,6 +83,8 @@ library, language, ownership-model, or bytecode format version changes. This for
 promise compatibility across arbitrary compiler releases or a stable C/native ABI.
 
 Methods materialized by composition *inside* a library retain their compiled implementations.
+Their exported symbol belongs to the receiver's package, including when the default comes
+from the embedded standard library. Body checking still uses the donor's lexical scope.
 A new consumer-defined composition can inherit defaults through the artifact's adaptation
 templates. These preserve the donor's lexical module, private helper calls, generic parameters,
 and nested closures. Explicit effects remain checked; inferred effects are recomputed for the new
@@ -90,25 +92,45 @@ receiver. Local overrides and rightmost compatible defaults retain the source-co
 Private representation methods are not exported as adaptable defaults. Structural calls from
 libraries into consumer-defined implementations are supported.
 
-## Container version 2
+## Bundled core and standard library
+
+Building the Rust toolchain checks and compiles the Foster library into two embedded `.flib`
+artifacts: the minimal bootstrap surface used without library imports, and the complete
+`core`/`std` surface. A build-host crate compiles the same compiler sources to generate these
+artifacts without depending on the bundle it is producing. Compiler and library source changes
+regenerate them; no installed library files or writable runtime cache are required.
+
+Ordinary compilation and LSP analysis decode and validate each artifact once per process, share
+its immutable code, and mount checked declaration interfaces. Ordinary library bodies are not
+parsed or checked again. Public adaptation templates remain available for new consumer-defined
+compositions. Source text, documentation, parameter names, and declaration ranges remain available
+for diagnostics and editor navigation. Checking or testing the entire `library` source directory
+uses its source declarations, so library tests still exercise the current implementation.
+
+Library artifacts retain logical slots after shared-SSA validation. Consumers perform linking,
+specialization, lifetime lowering, optimization, and final backend emission in their own type
+environment. Embedded library test bodies are excluded from the shipped artifacts.
+
+## Container format
 
 All integers are little endian. The file contains:
 
 | Field | Representation |
 | --- | --- |
 | Magic | 8 bytes, `FOSTERLB` |
-| Library format version | `u16`, currently 4 |
+| Library format version | `u16`, currently 5 |
 | Interface length | `u32` |
 | Interface | UTF-8 JSON declaration and symbolic metadata |
 | Code length | `u32` |
-| Code | Bytecode version 40, without inserted drops |
+| Code | Bytecode version 41, without inserted drops |
 
 Each section is limited to 256 MiB. Unsupported versions, truncated sections, trailing bytes,
 incomplete bindings, inconsistent function declarations/descriptors, and invalid bytecode are
 rejected. The interface records the Foster language and ownership-model versions. Constants are
 stored as evaluated literal values; declaration stubs and ordinary compiled functions contain no
 source bodies. Adaptable defaults have separate syntax-tree bodies in their function contexts;
-test bodies are absent. Version 1 libraries must be rebuilt to use this format. Structural
+test bodies are absent. Function contexts preserve source parameter names, while symbolic
+descriptors use positional roots. Libraries from other format versions must be rebuilt. Structural
 conformance and effect summaries remain checked-compiler facts, not proofs of arbitrary
 untrusted implementations.
 

@@ -23,9 +23,12 @@ explicitly instead, use `[dependencies]` with `tzdata = { path = "vendor/tzdata.
 
 ```foster
 import core.result
+import core.result.Result
 import std.time
+import std.time.Instant
 import std.time.zone
 import tzdata
+import tzdata.IanaDatabase
 
 func main() -> Int {
     let database = IanaDatabase.new()

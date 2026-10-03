@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::ThreadId;
 
-type Handler = dyn Fn(&str) -> Result<String, String>;
+type Handler = dyn Fn(&[u8]) -> Result<Vec<u8>, String>;
 struct Entry {
     handler: Box<Handler>,
     active: Cell<bool>,
@@ -93,11 +93,13 @@ fn call(entry: &Entry, payload: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
     let _active = Active(&entry.active);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        (entry.handler)(&super::encode(payload))
-    }))
-    .map_err(|_| "callback panicked at the native boundary".to_owned())??;
-    let bytes = super::decode(&result)?;
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (entry.handler)(payload)))
+            .map_err(|_| "callback panicked at the native boundary".to_owned())??;
+    if result.len() > super::LIMIT + 1 {
+        return Err("invalid callback response length".into());
+    }
+    let bytes = result;
     match bytes.split_first() {
         Some((0, payload)) => Ok(payload.to_vec()),
         Some((1, error)) => Err(String::from_utf8_lossy(error).into_owned()),
@@ -220,7 +222,7 @@ pub unsafe extern "C" fn invoke(
 mod tests {
     use super::*;
     fn dispatch(token: i64, signature: u64, bytes: &[u8]) -> (i32, Vec<u8>) {
-        let mut output = [0; 16];
+        let mut output = [0; 256];
         let mut written = 0;
         let status = unsafe {
             invoke(
@@ -236,6 +238,20 @@ mod tests {
         (status, output[..written as usize].to_vec())
     }
     #[test]
+    fn binary_callback_packets_preserve_every_octet() {
+        let token = register(
+            "1",
+            false,
+            Box::new(|packet| Ok(super::super::response(Ok(packet.to_vec())))),
+        )
+        .unwrap();
+        let bytes: Vec<u8> = (0..=255).collect();
+        assert_eq!(dispatch(token, 1, &bytes), (0, bytes));
+        assert_eq!(dispatch(token, 1, &[]), (0, vec![]));
+        release(token).unwrap();
+    }
+
+    #[test]
     fn direct_failures_and_stale_tokens_are_contained() {
         let calls = Rc::new(Cell::new(0));
         let captured = calls.clone();
@@ -244,7 +260,7 @@ mod tests {
             false,
             Box::new(move |packet| {
                 captured.set(captured.get() + 1);
-                Ok(format!("00{packet}"))
+                Ok(super::super::response(Ok(packet.to_vec())))
             }),
         )
         .unwrap();
@@ -271,9 +287,9 @@ mod tests {
             "1",
             true,
             Box::new(move |packet| {
-                assert_eq!(packet, "07");
+                assert_eq!(packet, &[7]);
                 captured.set(captured.get() + 1);
-                Ok("00".into())
+                Ok(vec![0])
             }),
         )
         .unwrap();
@@ -305,7 +321,7 @@ mod tests {
             Box::new(move |_| {
                 assert!(release(captured.get()).is_err());
                 assert_eq!(dispatch(captured.get(), 1, &[]).0, 1);
-                Ok("00".into())
+                Ok(vec![0])
             }),
         )
         .unwrap();

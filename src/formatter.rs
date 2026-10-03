@@ -1,16 +1,102 @@
-use crate::{error::FosterError, tooling};
+use crate::error::FosterError;
+#[cfg(any(not(foster_native_formatter), test))]
+use crate::tooling;
 
 /// Validates source with the compiler, then applies Foster-written formatting policy.
 pub fn format(source: &str) -> Result<String, FosterError> {
+    crate::compiler::cancellation::check()?;
     crate::parse(source)?;
-    static TOOL: tooling::Tool =
-        tooling::Tool::new(include_bytes!(concat!(env!("OUT_DIR"), "/format.fbc")));
-    tooling::string(&TOOL.run(vec![source.to_owned()])?)
+    #[cfg(foster_native_formatter)]
+    return native::format(source);
+    #[cfg(not(foster_native_formatter))]
+    {
+        static TOOL: tooling::Tool =
+            tooling::Tool::new(include_bytes!(concat!(env!("OUT_DIR"), "/format.fbc")));
+        tooling::string(&TOOL.run(vec![source.to_owned()])?)
+    }
+}
+
+#[cfg(foster_native_formatter)]
+mod native {
+    use super::FosterError;
+    use foster_native_runtime as runtime;
+    use std::sync::Once;
+    include!(concat!(env!("OUT_DIR"), "/format_constants.rs"));
+    unsafe extern "C" {
+        fn foster_native_arguments(executable: usize, values: usize, length: i64) -> usize;
+        fn foster_native_entry(arguments: usize) -> usize;
+        fn foster_native_string_data(value: usize) -> usize;
+        fn foster_native_string_length(value: usize) -> i64;
+        fn foster_native_release_result(value: usize) -> u8;
+    }
+    pub(super) fn format(source: &str) -> Result<String, FosterError> {
+        static INITIALIZE: Once = Once::new();
+        INITIALIZE.call_once(|| runtime::foster_runtime_initialize(CONSTANTS));
+        let result =
+            runtime::embedded_execution(crate::compiler::cancellation::is_cancelled, || {
+                // The generated importer transfers these owned strings into Arguments;
+                // the consuming entry releases that record and its fields on every exit.
+                let executable = runtime::owned_string("foster");
+                let values = [runtime::owned_string(source)];
+                unsafe {
+                    let arguments =
+                        foster_native_arguments(executable, values.as_ptr() as usize, 1);
+                    let value = foster_native_entry(arguments);
+                    if value == 0 {
+                        return Err(FosterError::runtime("native formatter returned no text"));
+                    }
+                    let bytes = std::slice::from_raw_parts(
+                        foster_native_string_data(value) as *const u8,
+                        foster_native_string_length(value) as usize,
+                    );
+                    let text = String::from_utf8(bytes.to_vec()).map_err(|_| {
+                        FosterError::runtime("native formatter returned invalid UTF-8")
+                    });
+                    foster_native_release_result(value);
+                    text
+                }
+            });
+        crate::compiler::cancellation::check()?;
+        result.map_err(FosterError::runtime)?
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::format;
+
+    #[cfg(foster_native_formatter)]
+    #[test]
+    fn native_and_bytecode_formatters_agree() {
+        static TOOL: super::tooling::Tool =
+            super::tooling::Tool::new(include_bytes!(concat!(env!("OUT_DIR"), "/format.fbc")));
+        let source = "// λ🙂 and literal braces { }\r\nfunc value() -> String {\r\nlet text = \"\"\"\r\n  %{branch { true -> \"{λ}\" _ -> \"}%\" }}%\r\n\"\"\"\r\ntext\r\n}\r\n";
+        let interpreted = super::tooling::string(&TOOL.run(vec![source.into()]).unwrap()).unwrap();
+        for _ in 0..5 {
+            assert_eq!(format(source).unwrap(), interpreted);
+        }
+    }
+
+    #[test]
+    fn formatting_honors_cancellation_during_execution() {
+        use std::{cell::Cell, rc::Rc};
+        let polls = Rc::new(Cell::new(0));
+        let probe = Rc::clone(&polls);
+        let source = "func main() -> Int { 42 }\n".repeat(100);
+        let error = crate::compiler::cancellation::scope(
+            move || {
+                probe.set(probe.get() + 1);
+                probe.get() > 2
+            },
+            || format(&source),
+        )
+        .unwrap_err();
+        assert!(crate::compiler::cancellation::is_cancellation(&error));
+        assert_eq!(
+            format("func main() -> Int { 42 }\n").unwrap(),
+            "func main() -> Int {\n    42\n}\n"
+        );
+    }
 
     #[test]
     fn multiline_comma_lists_format_and_keep_their_behavior() {

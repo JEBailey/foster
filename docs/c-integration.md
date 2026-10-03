@@ -197,10 +197,10 @@ contain JSON arrays matching the declared dimensions.
 The [foster-raylib](../../foster-raylib) repository (sibling of this one) exercises these bindings in a
 graphics UI with a click counter, color slider, and animated rectangle.
 
-Foster's private runtime intrinsics transport these packets as hexadecimal text
-using the existing managed-string ABI. The C-facing ABI uses byte pointers and
-lengths. This prioritizes one verified implementation for both backends over
-marshalling speed. Error responses carry copied UTF-8 messages. Close responses
+Foster's private runtime intrinsics transport these packets as immutable `Bytes`
+in both the VM and native backend. `CArguments` builds packets with `ByteBuffer`;
+callbacks also accept and return binary packets. The C-facing ABI uses byte pointers
+and lengths, with no hexadecimal conversion. Error responses carry copied UTF-8 messages. Close responses
 also carry an explicit consumed flag and signed status; ownership never depends
 on guessing from the sign of an error code.
 

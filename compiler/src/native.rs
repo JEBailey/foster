@@ -144,6 +144,13 @@ pub struct ObjectArtifact {
     releases_result: bool,
 }
 
+impl ObjectArtifact {
+    /// Text constants required when embedding this object in its host executable.
+    pub fn runtime_strings(&self) -> &[String] {
+        &self.runtime_strings
+    }
+}
+
 /// Immutable inputs for specialization and representation legalization.
 #[derive(Clone, Copy)]
 struct NativeIrEnvironment<'a> {

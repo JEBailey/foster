@@ -18,7 +18,7 @@ mod interface;
 mod linking;
 
 const MAGIC: &[u8; 8] = b"FOSTERLB";
-pub const FORMAT_VERSION: u16 = 4;
+pub const FORMAT_VERSION: u16 = 5;
 const MAX_SECTION: usize = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -42,6 +42,8 @@ pub struct Interface {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionContext {
+    /// Source parameter names used by structural method requirements and editor signatures.
+    pub parameter_names: Vec<String>,
     /// Receiver-adaptable body for a public default; ordinary calls use compiled code.
     pub default_template: Option<ast::Function>,
     pub composition_owner: Option<String>,
@@ -234,6 +236,17 @@ impl Library {
         }
         for (function, context) in &self.interface.contexts {
             if !bindings.contains(function)
+                || context.parameter_names.len()
+                    != definitions[function].descriptor.parameters.len()
+                || context.parameter_names.iter().any(String::is_empty)
+                || context
+                    .parameter_names
+                    .iter()
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    != context.parameter_names.len()
+                || (definitions[function].descriptor.receiver
+                    && context.parameter_names.first().map(String::as_str) != Some("self"))
                 || context
                     .composition_owner
                     .as_ref()
@@ -317,4 +330,6 @@ pub fn read(path: impl AsRef<Path>) -> Result<Library, FosterError> {
 }
 
 pub(crate) use interface::mount;
+#[cfg(not(foster_bootstrap))]
+pub(crate) use interface::mount_embedded;
 pub(crate) use linking::link;

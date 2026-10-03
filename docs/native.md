@@ -422,7 +422,8 @@ Temporary object and shim files are removed after linking; the resulting executa
 contain or invoke the Foster VM.
 
 The platform boundary is a stable, explicitly versioned C ABI. Imported symbols use the
-`foster_rt_v4_*` namespace, so an incompatible runtime fails at link time. Checked integer
+`foster_rt_v5_*` namespace, so an incompatible runtime fails at link time. Version 5
+changes C bridge and callback packets from managed strings to managed `Bytes`. Checked integer
 arithmetic, invalid shifts and conversions, division errors, and bounds failures call that ABI and
 produce friendly diagnostics rather than machine traps.
 
@@ -430,7 +431,10 @@ produce friendly diagnostics rather than machine traps.
 Runtime imports are checked against it and Cranelift signatures are built from its wire types.
 Every linked Rust shim also contains compile-time function-pointer checks for all registered
 exports, catching drift on either side of the ABI. Text-producing helpers return managed owned
-values; callback-governed payloads retain their explicit transfer contracts.
+values. Binary C bridge helpers use program-generated `Bytes` import and read adapters,
+so the Rust runtime does not assume a Foster object layout. Callback packet arguments
+transfer one owned reference into the generated entry point; returned packets are copied
+and released using their `Bytes` cleanup thunk.
 These checks establish signature compatibility; they do not by themselves prove runtime ownership
 behavior; the cleanup guarantees and limits are described below.
 

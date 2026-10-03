@@ -409,13 +409,13 @@ builtin_descriptors! {
     Float32Bits = 81, source: None, intrinsic: Some("float.f32_bits") => Some("core.float"),
         execution: Direct, signature: [Read Float] -> Integer;
     CCallbackNew = 76, source: None, intrinsic: Some("c.callback_new") => Some("std.ffi"),
-        execution: ConsumeFirst, signature: [Consume Any, Read String, Read Integer] -> String;
+        execution: ConsumeFirst, signature: [Consume Any, Read String, Read Integer] -> Bytes;
     CCallbackRelease = 77, source: None, intrinsic: Some("c.callback_release") => Some("std.ffi"),
         execution: Direct, signature: [Read Integer] -> Unit;
     CCallbackPoll = 78, source: None, intrinsic: Some("c.callback_poll") => Some("std.ffi"),
-        execution: Direct, signature: [Read Integer] -> String;
+        execution: Direct, signature: [Read Integer] -> Bytes;
     CCallbackError = 79, source: None, intrinsic: Some("c.callback_error") => Some("std.ffi"),
-        execution: Direct, signature: [Read Integer] -> String;
+        execution: Direct, signature: [Read Integer] -> Bytes;
     ProcessReserve = 75, source: None, intrinsic: Some("process.reserve") => Some("std.process"),
         execution: Direct, signature: [] -> Integer;
     ProcessExchange = 72, source: None, intrinsic: Some("process.exchange") => Some("std.process"),
@@ -425,19 +425,19 @@ builtin_descriptors! {
     ProcessWait = 74, source: None, intrinsic: Some("process.wait") => Some("std.process"),
         execution: Direct, signature: [Read Integer] -> String;
     CExchange = 65, source: None, intrinsic: Some("c.exchange") => Some("std.ffi"),
-        execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read String] -> String;
+        execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read Bytes] -> Bytes;
     CClose = 66, source: None, intrinsic: Some("c.close") => Some("std.ffi"),
-        execution: Direct, signature: [Read Integer] -> String;
+        execution: Direct, signature: [Read Integer] -> Bytes;
     CRelease = 67, source: None, intrinsic: Some("c.release") => Some("std.ffi"),
         execution: Direct, signature: [Read Integer] -> Unit;
     CEncodeInt = 68, source: None, intrinsic: Some("c.encode_int") => Some("std.ffi"),
-        execution: Direct, signature: [Read Integer] -> String;
+        execution: Direct, signature: [Read Integer] -> Bytes;
     CEncodeFloat = 69, source: None, intrinsic: Some("c.encode_float") => Some("std.ffi"),
-        execution: Direct, signature: [Read Float] -> String;
+        execution: Direct, signature: [Read Float] -> Bytes;
     CDecodeInt = 70, source: None, intrinsic: Some("c.decode_int") => Some("std.ffi"),
-        execution: Direct, signature: [Read String] -> Integer;
+        execution: Direct, signature: [Read Bytes] -> Integer;
     CDecodeFloat = 71, source: None, intrinsic: Some("c.decode_float") => Some("std.ffi"),
-        execution: Direct, signature: [Read String] -> Float;
+        execution: Direct, signature: [Read Bytes] -> Float;
     Print = 0, source: Some("print"), intrinsic: None => None,
         execution: Direct, signature: (variadic Read Any) -> Unit;
     Println = 1, source: Some("println"), intrinsic: None => None,

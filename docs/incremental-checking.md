@@ -82,7 +82,9 @@ are kept for open documents and at most eight recently requested documents. The 
 set supports navigation into files that are not open. Closing a document evicts it and any
 snapshot containing its editor overlay, so other files cannot fall back to that closed overlay.
 Package body caches and disk-backed parse entries are pruned to the retained snapshots and
-documents; embedded library parses remain reusable. Disk source reads and validated
+documents. Bundled core/standard-library interfaces and code are decoded and validated once
+per process and shared across package rebuilds; they do not require library source parsing.
+Disk source reads and validated
 compiled-library artifacts are cached by path, modification time, and size. Editor
 overlays are kept separate from disk text. Metadata is checked before and after
 reading; failed reads and validations do not create cache entries. The artifact

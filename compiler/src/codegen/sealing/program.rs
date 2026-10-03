@@ -89,10 +89,13 @@ fn seal_construction(construction: &storage::Program) -> Result<SealedFunctions,
         .iter()
         .map(|(id, function)| (*id, function.signature.clone()))
         .collect::<HashMap<_, _>>();
-    for function in functions.values() {
-        function
-            .verify(&signatures)
-            .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
+    for (id, function) in &functions {
+        function.verify(&signatures).map_err(|error| {
+            LowerError(format!(
+                "invalid shared IR in `{}`: {error}",
+                construction.functions[id].name
+            ))
+        })?;
     }
     for (id, shared) in &functions {
         let analyzed = crate::compiler::profile::measure("shared.flow", || {

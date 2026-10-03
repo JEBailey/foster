@@ -14,7 +14,9 @@ wire types, and owning resource wrappers on Windows x86-64.
 
 The `.fos` files here are the authoritative implementation and API documentation.
 Their Markdown comments appear in generated pages and LSP hovers. Installed
-compilers embed the library, so consumers do not need a checkout.
+compilers embed checked declarations and compiled generic code, plus source text for
+diagnostics and navigation, so consumers do not need a checkout. The bundles are rebuilt
+with the toolchain when compiler or library source changes.
 
 ## Getting started
 

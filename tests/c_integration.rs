@@ -37,8 +37,8 @@ fn bridge_dependencies_resolve_beside_forward_slash_paths() {
     let schema = Manifest::parse(contract).unwrap().identity();
     let forward = library.to_str().unwrap().replace('\\', "/");
     assert_eq!(
-        runtime::exchange(&forward, &schema, 0, 0, false, ""),
-        format!("00{}", runtime::encode(&42i64.to_le_bytes()))
+        runtime::exchange(&forward, &schema, 0, 0, false, &[]),
+        runtime::response(Ok(42i64.to_le_bytes().to_vec()))
     );
 }
 
@@ -63,17 +63,14 @@ fn c_resources_are_private_and_cannot_cross_remote_boundaries() {
 
 #[test]
 fn c_wire_rejects_malformed_and_preserves_exact_scalar_bits() {
-    for text in ["0", "zz", "AA", "λ"] {
-        assert!(runtime::decode(text).is_err());
+    for bytes in [vec![], vec![0], vec![0; 7], vec![0; 9]] {
+        assert!(runtime::int(&bytes).is_err());
     }
     for value in [i64::MIN, -1, 0, i64::MAX] {
-        assert_eq!(
-            runtime::int(&runtime::encode(&value.to_le_bytes())).unwrap(),
-            value
-        );
+        assert_eq!(runtime::int(&value.to_le_bytes()).unwrap(), value);
     }
-    assert!(runtime::int("00").is_err());
-    assert!(runtime::exchange("relative.dll", "", 0, 0, false, "").starts_with("01"));
+    assert!(runtime::int(&[0]).is_err());
+    assert!(runtime::exchange("relative.dll", "", 0, 0, false, &[]).starts_with(&[1]));
 }
 
 #[cfg(all(windows, target_arch = "x86_64"))]
@@ -97,42 +94,24 @@ fn generated_c_bridge_runs_on_vm_and_native_with_exact_cleanup() {
     .unwrap();
     let path = library.to_str().unwrap();
     let schema = manifest.identity();
-    assert!(runtime::exchange(path, "stale", 0, 0, false, "").starts_with("01"));
-    assert!(runtime::exchange(path, &schema, 9999, 0, false, "").starts_with("01"));
-    let oversized =
-        runtime::encode(&i64::MAX.to_le_bytes()) + &runtime::encode(&1i64.to_le_bytes());
-    assert!(runtime::exchange(path, &schema, 0, 0, false, &oversized).starts_with("01"));
+    assert!(runtime::exchange(path, "stale", 0, 0, false, &[]).starts_with(&[1]));
+    assert!(runtime::exchange(path, &schema, 9999, 0, false, &[]).starts_with(&[1]));
+    let oversized = [i64::MAX.to_le_bytes(), 1i64.to_le_bytes()].concat();
+    assert!(runtime::exchange(path, &schema, 0, 0, false, &oversized).starts_with(&[1]));
     // Constructors cannot be invoked as scalar calls to extract their tokens.
+    assert!(runtime::exchange(path, &schema, 1, 0, false, &42i64.to_le_bytes()).starts_with(&[1]));
+    let adopted = runtime::exchange(path, &schema, 1, 0, true, &42i64.to_le_bytes());
+    assert!(adopted.starts_with(&[0]));
+    let token = runtime::int(&adopted[1..]).unwrap();
     assert!(
-        runtime::exchange(
-            path,
-            &schema,
-            1,
-            0,
-            false,
-            &runtime::encode(&42i64.to_le_bytes())
-        )
-        .starts_with("01")
-    );
-    let adopted = runtime::exchange(
-        path,
-        &schema,
-        1,
-        0,
-        true,
-        &runtime::encode(&42i64.to_le_bytes()),
-    );
-    assert!(adopted.starts_with("00"));
-    let token = runtime::int(&adopted[2..]).unwrap();
-    assert!(
-        std::thread::spawn(move || runtime::exchange("", "", 2, token, false, ""))
+        std::thread::spawn(move || runtime::exchange("", "", 2, token, false, &[]))
             .join()
             .unwrap()
-            .starts_with("01")
+            .starts_with(&[1])
     );
     runtime::release(token).unwrap();
     assert!(runtime::release(token).is_err());
-    assert!(runtime::exchange("", "", 2, token, false, "").starts_with("01"));
+    assert!(runtime::exchange("", "", 2, token, false, &[]).starts_with(&[1]));
     let compilation = foster::compile(include_str!("fixtures/c_bridge/main.fos")).unwrap();
     let arguments = foster::entry::CommandArguments::new("fixture", [path, &schema]);
     for optimize in [false, true] {
@@ -174,8 +153,8 @@ fn generated_c_bridge_runs_on_vm_and_native_with_exact_cleanup() {
         "Result.Ok(42)"
     );
     assert_eq!(
-        runtime::exchange(path, &schema, 4, 0, false, ""),
-        "000000000000000000"
+        runtime::exchange(path, &schema, 4, 0, false, &[]),
+        vec![0; 9]
     );
     // An assertion still runs resource cleanup. An earlier local audit runs
     // after the resource's deinit and observes the C allocation counter at zero.
@@ -197,8 +176,8 @@ func main(arguments: Arguments) -> Result<(), CError> {
     let failure = foster::compile(&failure_source).unwrap();
     assert!(foster::vm::run_with_arguments(&failure, Default::default(), &arguments).is_err());
     assert_eq!(
-        runtime::exchange(path, &schema, 4, 0, false, ""),
-        "000000000000000000"
+        runtime::exchange(path, &schema, 4, 0, false, &[]),
+        vec![0; 9]
     );
     let executable = temporary.join("failure.exe");
     foster::native::build_executable(&failure, &executable, Default::default()).unwrap();
@@ -230,8 +209,8 @@ func main(arguments: Arguments) -> Result<(), CError> {
         .to_string();
     assert!(error.contains("C resources cannot cross"), "{error}");
     assert_eq!(
-        runtime::exchange(path, &schema, 4, 0, false, ""),
-        "000000000000000000"
+        runtime::exchange(path, &schema, 4, 0, false, &[]),
+        vec![0; 9]
     );
     let error = foster::native::compile_object(&generic, Default::default())
         .err()

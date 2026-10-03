@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-Language version 19, ownership-model version 5.
+Language version 20, ownership-model version 5.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from

@@ -235,61 +235,23 @@ thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
 // Tokens are never reused, even between threads or successive VM executions.
 static NEXT_TOKEN: AtomicI64 = AtomicI64::new(1);
 
-pub fn encode(bytes: &[u8]) -> String {
-    encode_prefixed("", bytes)
-}
-
-fn encode_prefixed(prefix: &str, bytes: &[u8]) -> String {
-    const HEX: &[u8] = b"0123456789abcdef";
-    let mut result = String::with_capacity(prefix.len() + bytes.len() * 2);
-    result.push_str(prefix);
-    for &byte in bytes {
-        result.push(HEX[(byte >> 4) as usize] as char);
-        result.push(HEX[(byte & 15) as usize] as char);
-    }
-    result
-}
-pub fn decode(text: &str) -> Result<Vec<u8>, String> {
-    decoded_bytes(text)?.collect()
-}
-
-fn decoded_bytes(text: &str) -> Result<impl Iterator<Item = Result<u8, String>> + '_, String> {
-    if text.len() > LIMIT * 2 || text.len() % 2 != 0 {
-        return Err("invalid C wire payload length".into());
-    }
-    fn digit(x: u8) -> Result<u8, String> {
-        match x {
-            b'0'..=b'9' => Ok(x - b'0'),
-            b'a'..=b'f' => Ok(x - b'a' + 10),
-            _ => Err("invalid C wire hexadecimal digit".into()),
-        }
-    }
-    Ok(text
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|c| Ok(digit(c[0])? * 16 + digit(c[1])?)))
-}
-pub fn int(text: &str) -> Result<i64, String> {
-    let mut bytes = [0; 8];
-    // Validate every digit even on a wrong-sized scalar, preserving wire errors.
-    for (index, byte) in decoded_bytes(text)?.enumerate() {
-        let byte = byte?;
-        if let Some(destination) = bytes.get_mut(index) {
-            *destination = byte;
-        }
-    }
-    if text.len() != 16 {
-        return Err("C scalar must contain exactly eight bytes".into());
-    }
+pub fn int(bytes: &[u8]) -> Result<i64, String> {
+    let bytes: [u8; 8] = bytes
+        .try_into()
+        .map_err(|_| "C scalar must contain exactly eight bytes")?;
     Ok(i64::from_le_bytes(bytes))
 }
-pub fn response(result: Result<Vec<u8>, String>) -> String {
-    match result {
-        Ok(bytes) => encode_prefixed("00", &bytes),
-        Err(error) => encode_prefixed("01", error.as_bytes()),
-    }
+pub fn response(result: Result<Vec<u8>, String>) -> Vec<u8> {
+    let (status, payload) = match result {
+        Ok(bytes) => (0, bytes),
+        Err(error) => (1, error.into_bytes()),
+    };
+    let mut packet = Vec::with_capacity(1 + payload.len());
+    packet.push(status);
+    packet.extend_from_slice(&payload);
+    packet
 }
-pub fn remote_error() -> String {
+pub fn remote_error() -> Vec<u8> {
     response(Err(
         "C bridge calls are not supported inside remote tasks".into()
     ))
@@ -307,10 +269,13 @@ pub fn exchange(
     operation: i64,
     token: i64,
     create: bool,
-    payload: &str,
-) -> String {
+    payload: &[u8],
+) -> Vec<u8> {
     response((|| {
-        let input = decode(payload)?;
+        if payload.len() > LIMIT {
+            return Err("invalid C wire payload length".into());
+        }
+        let input = payload;
         let operation = u32::try_from(operation).map_err(|_| "C operation is outside u32")?;
         let (library, resource) = STATE.with(|state| {
             let mut state = state
@@ -433,7 +398,7 @@ pub fn exchange(
 
 /// Returns [consumed byte, signed little-endian status]. A failed close may
 /// retain ownership; the descriptor's close contract decides this, not its sign.
-pub fn close(token: i64) -> String {
+pub fn close(token: i64) -> Vec<u8> {
     response((|| {
         let resource = STATE
             .with(|state| state.borrow().resources.get(&token).cloned())
@@ -713,32 +678,20 @@ mod tests {
     }
 
     #[test]
-    fn scalar_decoder_preserves_wire_validation_and_exact_bits() {
+    fn scalar_decoder_preserves_exact_bits_and_rejects_wrong_lengths() {
         for value in [i64::MIN, -1, 0, 1, i64::MAX] {
-            assert_eq!(int(&encode(&value.to_le_bytes())).unwrap(), value);
+            assert_eq!(int(&value.to_le_bytes()).unwrap(), value);
         }
-        for text in ["", "00", "000000000000000000"] {
+        for bytes in [vec![], vec![0], vec![0; 7], vec![0; 9]] {
             assert_eq!(
-                int(text).unwrap_err(),
+                int(&bytes).unwrap_err(),
                 "C scalar must contain exactly eight bytes"
             );
         }
-        for text in ["0", "000"] {
-            assert_eq!(int(text).unwrap_err(), "invalid C wire payload length");
-        }
-        // Invalid digits take precedence over the scalar size check, including
-        // invalid bytes beyond the eight-byte destination.
-        for text in ["zz", "AA", "λ", "0000000000000000zz"] {
-            assert_eq!(int(text).unwrap_err(), "invalid C wire hexadecimal digit");
-        }
-        let oversized = "0".repeat(LIMIT * 2 + 2);
+        let oversized = vec![0; LIMIT + 1];
         assert_eq!(
-            int(&oversized).unwrap_err(),
-            "invalid C wire payload length"
-        );
-        assert_eq!(
-            decode(&oversized).unwrap_err(),
-            "invalid C wire payload length"
+            exchange("unused", "", 0, 0, false, &oversized),
+            response(Err("invalid C wire payload length".into()))
         );
     }
 
@@ -810,12 +763,11 @@ mod tests {
     #[test]
     fn response_envelopes_preserve_all_bytes_and_utf8_errors() {
         let bytes = (0..=255).collect::<Vec<u8>>();
-        assert_eq!(decode(&encode(&bytes)).unwrap(), bytes);
-        let packet = decode(&response(Ok(bytes.clone()))).unwrap();
+        let packet = response(Ok(bytes.clone()));
         assert_eq!(packet[0], 0);
         assert_eq!(&packet[1..], bytes);
-        assert_eq!(response(Ok(vec![])), "00");
-        let packet = decode(&response(Err("failure: λ".into()))).unwrap();
+        assert_eq!(response(Ok(vec![])), vec![0]);
+        let packet = response(Err("failure: λ".into()));
         assert_eq!(packet[0], 1);
         assert_eq!(&packet[1..], "failure: λ".as_bytes());
     }

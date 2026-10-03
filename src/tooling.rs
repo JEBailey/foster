@@ -27,7 +27,10 @@ impl Tool {
                 FosterError::runtime(format!("cannot initialize Foster tool: {error}"))
             })?;
         let value = vm::Machine::new(program)
-            .run_main_with_arguments(&CommandArguments::new("foster", arguments))?;
+            .with_cancellation_probe(crate::compiler::cancellation::is_cancelled)
+            .run_main_with_arguments(&CommandArguments::new("foster", arguments));
+        crate::compiler::cancellation::check()?;
+        let value = value?;
         match value {
             vm::Value::Variant {
                 alternative,

@@ -121,6 +121,6 @@ unsafe fn equal_object(left: usize, right: usize) -> bool {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_object_equal(left: usize, right: usize) -> u8 {
+extern "C" fn foster_rt_v5_object_equal(left: usize, right: usize) -> u8 {
     u8::from(unsafe { equal_object(left, right) })
 }

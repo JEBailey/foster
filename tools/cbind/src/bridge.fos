@@ -1468,7 +1468,7 @@ impl Contract {
             index = index + 1
         }
         let callback_result = self.ty(self.member(node, "result"))
-        let output = "/// Handler for copied C callback values.\npub type " + name + "Handler = {\n    /// Handles one event on the registering Foster thread.\n    pub func " + method + "(" + parameters.join(", ") + ") -> " + foster_type(callback_result) + " [reshape self]\n}\nfunc callback_" + name + "<H & " + name + "Handler>(handler: H, payload: String) -> Result<String, CError> [reshape handler, read payload] {\n    let value = try CValue.callback_packet(payload)\n    try value.check_slots(" + width.as_string() + ")\n" + statements.join("")
+        let output = "/// Handler for copied C callback values.\npub type " + name + "Handler = {\n    /// Handles one event on the registering Foster thread.\n    pub func " + method + "(" + parameters.join(", ") + ") -> " + foster_type(callback_result) + " [reshape self]\n}\nfunc callback_" + name + "<H & " + name + "Handler>(handler: H, payload: Bytes) -> Result<Bytes, CError> [reshape handler, read payload] {\n    let value = try CValue.callback_packet(payload)\n    try value.check_slots(" + width.as_string() + ")\n" + statements.join("")
         output = output + "    let returned = handler." + method + "(" + arguments.join(", ") + ")\n    let arguments = CArguments.empty()\n"
         if callback_result != "void" output = output + self.foster_argument(callback_result, "returned")
         output + "    Result.Ok(arguments.reply())\n}\n\n"
@@ -1561,7 +1561,7 @@ impl Contract {
                     arguments = "    let arguments = CArguments.empty()\n"
                     adapter = "    let adapter = [" + branch {
                         retained -> "move " _ -> "ref "
-                    } + place + "] (payload: String) -> {\n        branch callback_" + callback_name + "(" + place + ", payload) {\n            Result.Ok(reply) -> move reply\n            Result.Error(error) -> error.callback_reply()\n        }\n    }\n"
+                    } + place + "] (payload: Bytes) -> {\n        branch callback_" + callback_name + "(" + place + ", payload) {\n            Result.Ok(reply) -> move reply\n            Result.Error(error) -> error.callback_reply()\n        }\n    }\n"
                     callback_call = "bridge()." + branch {
                         retained -> "subscribe" _ -> "call_with"
                     } + "(" + id.as_string() + ", before, arguments, move adapter, " + quoted(identity(self.json(callback))) + branch {

@@ -27,6 +27,8 @@ pub type ExprId = Idx<Expr>;
 #[derive(Debug, Default)]
 pub struct PackageHir {
     pub external_functions: HashMap<FunctionId, crate::library::ExternalFunction>,
+    /// Declaration interfaces use canonical type paths, independent of source imports.
+    pub compiled_modules: std::collections::HashSet<ModuleId>,
     /// Internal type identities used when specializing a default in its lexical module.
     pub composition_types: HashMap<String, crate::types::NominalTypeId>,
     /// Earlier and later implementations whose contracts must remain compatible.

@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-03T13:20:50.388Z",
+  "platform": "win32",
+  "arch": "x64",
+  "repeats": 3,
+  "before": {
+    "path": "C:\\Users\\jason\\git\\foster\\target\\binary-buffer-performance\\compiler-before.exe",
+    "sha256": "5daba518fea0da0338d744d0bf3252c5708b34ee8e433fac1f5514b9bd3e989c"
+  },
+  "after": {
+    "path": "C:\\Users\\jason\\git\\foster\\target\\binary-buffer-performance\\compiler-after.exe",
+    "sha256": "15e54bacb0666c625fb95d7e1ad0c2451b9b580cf55ef1d36b272803ef143b30"
+  },
+  "note": "Optimized native executables; identical sources and C DLL; each sample includes process startup, packet construction, calls, validation, and cleanup. Build times are single observations with compiler caches already populated, not cold build measurements.",
+  "cases": [
+    {
+      "name": "scalar",
+      "calls": 100000,
+      "bytesPerCall": 16,
+      "before": {
+        "buildMs": 3953.4315999999963,
+        "executableSha256": "c7a835df71fc032b2e13949c12c60726227f99c1affe63bff178e992919ed6d3",
+        "samplesMs": [
+          5429.500700000004,
+          5980.960299999992,
+          6234.727500000008
+        ],
+        "medianMs": 5980.960299999992
+      },
+      "after": {
+        "buildMs": 3906.5334000000003,
+        "executableSha256": "9f38ecf398f7d358ca366ce09109f820586ad94af30550e0b0f076d08a5952e2",
+        "samplesMs": [
+          1983.7970999999961,
+          1901.4621000000043,
+          1996.089399999997
+        ],
+        "medianMs": 1983.7970999999961
+      },
+      "speedup": 3.0149052541714085
+    },
+    {
+      "name": "buffer",
+      "calls": 10,
+      "bytesPerCall": 65536,
+      "before": {
+        "buildMs": 4003.0985999999975,
+        "executableSha256": "8497bedb64aaee48716e15f8ac2085e6bfc09b272d56c94b7bc5bd9886cb3018",
+        "samplesMs": [
+          3463.3629000000074,
+          3518.169500000018,
+          3508.7498000000196
+        ],
+        "medianMs": 3508.7498000000196
+      },
+      "after": {
+        "buildMs": 3364.190899999987,
+        "executableSha256": "81e0b4d0f27c397d2b8d4dcef924f9679f9e74f56c2efb44b9df0db7447d01e0",
+        "samplesMs": [
+          534.1050000000105,
+          559.7335000000021,
+          589.3697000000102
+        ],
+        "medianMs": 559.7335000000021
+      },
+      "speedup": 6.2686078285469895
+    }
+  ]
+}

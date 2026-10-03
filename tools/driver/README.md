@@ -1,6 +1,6 @@
 # Foster-written driver tools
 
-The Rust build compiles these Foster sources and embeds their bytecode in `foster`:
+The Rust build compiles these Foster sources and bundles them in `foster`:
 
 - `init.fos` creates projects, validates names, and writes starter files.
 - `project.fos` loads and validates manifests, selects discovered projects,
@@ -9,8 +9,11 @@ The Rust build compiles these Foster sources and embeds their bytecode in `foste
 - `documentation.fos` builds documentation pages, type summaries, navigation,
   and the module index, and writes the static site.
 
-The Rust driver decodes and verifies each embedded tool once per process and
-executes it in the VM. Tools use the normal Foster filesystem, path, string, and TOML APIs.
+The formatter is compiled to native code and linked into host builds, so editor
+formatting does not interpret the formatting policy on every request. Cross builds
+use its embedded bytecode. The other tools are decoded and verified once per
+process and execute in the VM. Both paths stop cooperatively on editor cancellation.
+Tools use the normal Foster filesystem, path, string, and TOML APIs.
 They do not launch another `foster` process or require source files beside the
 installed executable. The build script uses the compiler's standalone source API,
 so loading the project tool does not recursively load a project manifest.

@@ -10,7 +10,7 @@ unsafe extern "C" fn release_actor(_: usize) -> u8 {
 }
 
 fn call(actor: usize, argument: u64, blocking: u8) -> usize {
-    foster_rt_v4_remote_call(
+    foster_rt_v5_remote_call(
         actor,
         request as *const () as usize,
         &argument as *const u64 as usize,
@@ -21,9 +21,9 @@ fn call(actor: usize, argument: u64, blocking: u8) -> usize {
 }
 
 fn value(future: usize) -> u64 {
-    let result = foster_rt_v4_future_await(future);
-    assert_eq!(foster_rt_v4_future_error(future), 0);
-    foster_rt_v4_future_release(future);
+    let result = foster_rt_v5_future_await(future);
+    assert_eq!(foster_rt_v5_future_error(future), 0);
+    foster_rt_v5_future_release(future);
     result
 }
 
@@ -43,39 +43,39 @@ unsafe extern "C" fn request(state: u64, arguments: usize, execute: u8) -> u64 {
             while !GO.load(std::sync::atomic::Ordering::SeqCst) {
                 may::coroutine::sleep(std::time::Duration::from_millis(1));
             }
-            assert_eq!(foster_rt_v4_failure_pending(), 0);
+            assert_eq!(foster_rt_v5_failure_pending(), 0);
             argument
         }
         1 => {
             // Await and borrowed dispatch preserve a nested native stack.
-            let child = foster_rt_v4_remote_spawn(0, release_actor as *const () as usize, 0);
+            let child = foster_rt_v5_remote_spawn(0, release_actor as *const () as usize, 0);
             let result = value(call(child, argument, 0)) + value(call(child, 1, 1));
-            foster_rt_v4_remote_release(child);
+            foster_rt_v5_remote_release(child);
             result
         }
         2 => {
             // A pending error and a cleanup frame must stay local across yield.
             foster_execution_failure("isolated failure".into());
-            foster_rt_v4_begin_cleanup();
+            foster_rt_v5_begin_cleanup();
             may::coroutine::sleep(std::time::Duration::from_millis(30));
-            assert_eq!(foster_rt_v4_failure_pending(), 0);
-            foster_rt_v4_end_cleanup();
-            assert_eq!(foster_rt_v4_failure_pending(), 1);
+            assert_eq!(foster_rt_v5_failure_pending(), 0);
+            foster_rt_v5_end_cleanup();
+            assert_eq!(foster_rt_v5_failure_pending(), 1);
             0
         }
         3 => {
             STARTED.store(true, std::sync::atomic::Ordering::SeqCst);
-            while foster_rt_v4_cancellation_point() == 0 {}
+            while foster_rt_v5_cancellation_point() == 0 {}
             0
         }
         4 => {
             // A blocking host call must let a second actor produce its input.
             let listener = argument as i64;
             STARTED.store(true, std::sync::atomic::Ordering::SeqCst);
-            let response = foster_rt_v4_host_call_int(48, listener);
-            assert_eq!(foster_rt_v4_host_ok(response), 1);
-            let connection = foster_rt_v4_host_integer(response, 0);
-            foster_rt_v4_host_release(response);
+            let response = foster_rt_v5_host_call_int(48, listener);
+            assert_eq!(foster_rt_v5_host_ok(response), 1);
+            let connection = foster_rt_v5_host_integer(response, 0);
+            foster_rt_v5_host_release(response);
             foster_network_close_connection(connection).unwrap();
             42
         }
@@ -104,7 +104,7 @@ fn main() {
     }
     assert_eq!(unsafe { foster_native_entry() }, 42);
     foster_runtime_check_execution();
-    let spawn = |state| foster_rt_v4_remote_spawn(state, release_actor as *const () as usize, 0);
+    let spawn = |state| foster_rt_v5_remote_spawn(state, release_actor as *const () as usize, 0);
     let actors: Vec<_> = (0..128).map(|_| spawn(0)).collect();
     let futures: Vec<_> = actors
         .iter()
@@ -122,7 +122,7 @@ fn main() {
     let failing = spawn(2);
     let failed = call(failing, 0, 0);
     assert_eq!(value(call(nested, 41, 0)), 42);
-    foster_rt_v4_future_await(failed);
+    foster_rt_v5_future_await(failed);
     let error = unsafe { &*(failed as *const FosterFuture) }
         .error
         .lock()
@@ -134,18 +134,18 @@ fn main() {
             "isolated failure".into()
         ))
     );
-    foster_rt_v4_future_release(failed);
-    assert_eq!(foster_rt_v4_failure_pending(), 0);
+    foster_rt_v5_future_release(failed);
+    assert_eq!(foster_rt_v5_failure_pending(), 0);
     let busy = spawn(3);
     let pending = call(busy, 0, 0);
     while !STARTED.load(std::sync::atomic::Ordering::SeqCst) {
         std::thread::yield_now();
     }
     assert_eq!(value(call(nested, 41, 0)), 42);
-    foster_rt_v4_remote_release(busy);
-    foster_rt_v4_future_await(pending);
-    assert_eq!(foster_rt_v4_future_error(pending), 1);
-    foster_rt_v4_future_release(pending);
+    foster_rt_v5_remote_release(busy);
+    foster_rt_v5_future_await(pending);
+    assert_eq!(foster_rt_v5_future_error(pending), 1);
+    foster_rt_v5_future_release(pending);
 
     // Allocate an ephemeral listening socket through the shared host context.
     let (listener, port) = (0..32)
@@ -169,7 +169,7 @@ fn main() {
     assert_eq!(value(accepted), 42);
     foster_network_close_listener(listener).unwrap();
     for actor in actors.into_iter().chain([nested, failing, server, client]) {
-        foster_rt_v4_remote_release(actor);
+        foster_rt_v5_remote_release(actor);
     }
     while RELEASES.load(std::sync::atomic::Ordering::SeqCst) != 135 {
         std::thread::sleep(std::time::Duration::from_millis(1));

@@ -72,7 +72,9 @@ pub(super) fn materialize(
     for record in owners {
         // Compiled modules already contain their materialized implementations.
         let source = &package.modules[&hir.modules[record.module].name];
-        if source.origin == crate::package::ModuleOrigin::Dependency && source.source_path.is_none()
+        if hir.compiled_modules.contains(&record.module)
+            || (source.origin == crate::package::ModuleOrigin::Dependency
+                && source.source_path.is_none())
         {
             continue;
         }

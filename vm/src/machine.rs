@@ -248,6 +248,7 @@ struct SharedCommit {
 /// let machine = foster_vm::Machine::new(&raw);
 /// ```
 pub struct Machine {
+    interrupt: Option<fn() -> bool>,
     debugger: Option<Arc<dyn super::debug::Observer>>,
     cancellation: Option<Arc<crate::remote::Control>>,
     program: super::VerifiedProgram,
@@ -332,6 +333,7 @@ impl Cleanup {
             program: self.program,
             host: self.host,
             cancellation: None,
+            interrupt: None,
             debugger: None,
         };
         let original = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
@@ -392,8 +394,15 @@ impl Machine {
             program: program.clone(),
             host: host.into(),
             cancellation: None,
+            interrupt: None,
             debugger: None,
         }
+    }
+
+    /// Cooperatively interrupts this execution when the embedding application cancels it.
+    pub fn with_cancellation_probe(mut self, probe: fn() -> bool) -> Self {
+        self.interrupt = Some(probe);
+        self
     }
 
     pub fn with_debugger(mut self, debugger: Arc<dyn super::debug::Observer>) -> Self {
@@ -507,8 +516,18 @@ impl Machine {
             }
         }
         frames[0].argument_leases = argument_leases;
+        let mut interrupt_budget = 0u16;
 
         loop {
+            if let Some(probe) = self.interrupt {
+                if interrupt_budget == 0 {
+                    if probe() {
+                        return Err(RuntimeError::runtime("execution cancelled"));
+                    }
+                    interrupt_budget = 1024;
+                }
+                interrupt_budget -= 1;
+            }
             if let Some(error) = self
                 .cancellation
                 .as_ref()
@@ -985,12 +1004,9 @@ impl Machine {
                         write(
                             frame,
                             *destination,
-                            Value::string(
-                                self.program.metadata.string_record,
-                                crate::foreign::runtime::response(
-                                    result.map(|token| token.to_le_bytes().to_vec()),
-                                ),
-                            ),
+                            Value::bytes(crate::foreign::runtime::response(
+                                result.map(|token| token.to_le_bytes().to_vec()),
+                            )),
                         )?;
                         continue;
                     }
@@ -1376,6 +1392,7 @@ impl Machine {
                             program,
                             host,
                             cancellation: Some(worker_control.clone()),
+                            interrupt: None,
                             debugger: None,
                         };
                         let mut state = state;
@@ -1449,6 +1466,7 @@ impl Machine {
                             program,
                             host,
                             cancellation: Some(worker_control.clone()),
+                            interrupt: None,
                             debugger: None,
                         };
                         while let Ok(message) = inbox.recv() {
@@ -1700,16 +1718,14 @@ impl Machine {
             program: self.program.clone(),
             host: self.host.clone(),
             cancellation: None,
+            interrupt: None,
             debugger: None,
         };
         crate::foreign::runtime::callbacks::register(
             signature,
             mode == 2,
             Box::new(move |payload| {
-                let arguments = vec![Value::string(
-                    machine.program.metadata.string_record,
-                    payload,
-                )];
+                let arguments = vec![Value::bytes(payload.to_vec())];
                 let previous = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
                 let result = machine.execute_frames(
                     function,
@@ -1726,8 +1742,9 @@ impl Machine {
                 result
                     .map_err(|error| error.to_string())?
                     .0
-                    .string_text()
-                    .map(str::to_owned)
+                    .bytes_value()
+                    .map(<[u8]>::to_vec)
+                    .ok_or_else(|| RuntimeError::runtime("callback response requires Bytes"))
                     .map_err(|error| error.to_string())
             }),
         )
@@ -2103,18 +2120,35 @@ mod register_storage_tests {
     }
 
     #[test]
+    fn embedding_cancellation_stops_an_infinite_vm_loop() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static POLLS: AtomicUsize = AtomicUsize::new(0);
+        fn cancelled() -> bool {
+            POLLS.fetch_add(1, Ordering::Relaxed) > 0
+        }
+        let compilation = foster_compiler::compile("func main() -> Int { loop {}\n0 }").unwrap();
+        let program = foster_compiler::vm::compile(&compilation).unwrap();
+        let error = Machine::new(&program.into_verified().unwrap())
+            .with_cancellation_probe(cancelled)
+            .run_main()
+            .unwrap_err();
+        assert_eq!(error.message, "execution cancelled");
+        assert_eq!(POLLS.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
     fn owner_cancellation_stops_running_vm_code_and_runs_cleanup() {
         let compilation = foster_compiler::compile(
             r#"
-import core.drop
-import core.result
+import core.drop.Drop
+import core.result.Result
 import std.fs
 type Held = & Drop & {}
-impl Held { func deinit(self) -> () { write_text("released", "yes")
+impl Held { func deinit(self) -> () { fs::write_text("released", "yes")
 () } }
 func main() -> Int {
     let held = Held {}
-    assert(write_text("started", "yes").success?())
+    assert(fs::write_text("started", "yes").success?())
     loop {}
     0
 }

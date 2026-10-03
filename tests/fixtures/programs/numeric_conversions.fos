@@ -43,7 +43,6 @@ func propagated(value: Float) -> Result<Int, IntConversionError> {
 
 func main() -> Int {
     assert(Float.from(42) == 42.0)
-    assert(float::Float.from(42) == 42.0)
     assert(Float.from(-42) == -42.0)
     assert(Float.from(9007199254740993) == 9007199254740992.0)
     assert(Float.from(9007199254740995) == 9007199254740996.0)

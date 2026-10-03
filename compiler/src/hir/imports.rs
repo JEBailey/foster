@@ -161,9 +161,16 @@ impl PackageHir {
                         }
                         for id in ids {
                             let function = &self.functions[id];
-                            let receiver = target_program
-                                .and_then(|p| p.functions.iter().find(|f| f.span == function.span))
-                                .is_some_and(|f| f.receiver);
+                            let receiver = self.external_functions.get(&id).map_or_else(
+                                || {
+                                    target_program
+                                        .and_then(|p| {
+                                            p.functions.iter().find(|f| f.span == function.span)
+                                        })
+                                        .is_some_and(|f| f.receiver)
+                                },
+                                |external| external.definition.descriptor.receiver,
+                            );
                             if !function.public || receiver {
                                 continue;
                             }
