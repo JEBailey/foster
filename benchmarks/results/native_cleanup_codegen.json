@@ -1,0 +1,366 @@
+{
+  "compilerSha256": "dc9503d9ae2e99c4dfece7d2479844ea473f748fa01f466f5da5a57be80210fd",
+  "note": "Optimized preparation is used for both routes. Static machine counts include cold failure paths. The homes metric counts retained IR storage identities, not allocated stack homes.",
+  "cases": [
+    {
+      "name": "branch_counter_4x",
+      "route": "ssa",
+      "irSha256": "b19ee180cd60f5613115c4367bf78f48c0006c8d9f7a5c956d8322081aeb46ad",
+      "objectSha256": "e5bfa04a71645d160ef4ef1ad515ac45026e428b2b75d790aad59d924f0b1f92",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 10,
+          "polls": 10,
+          "moves": 0,
+          "homes": 20,
+          "blockParameters": 26
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 10,
+          "instructions": 235,
+          "stackReferences": 60,
+          "frameBytes": 64
+        }
+      ]
+    },
+    {
+      "name": "branch_counter_4x",
+      "route": "bytecode",
+      "irSha256": "7e6be0421cad4d3a048e3f3f85af2404b818842ade37c0c0247e0d083dbf6509",
+      "objectSha256": "e5bfa04a71645d160ef4ef1ad515ac45026e428b2b75d790aad59d924f0b1f92",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 10,
+          "polls": 10,
+          "moves": 0,
+          "homes": 5,
+          "blockParameters": 34
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 10,
+          "instructions": 235,
+          "stackReferences": 60,
+          "frameBytes": 64
+        }
+      ]
+    },
+    {
+      "name": "enum_dispatch_4x",
+      "route": "ssa",
+      "irSha256": "eedb8f17199a10e15e8a6ebbe48f2e00596337fa207c45a4b9d0b1eae7b3e3c8",
+      "objectSha256": "1ef01a23a8e4a32141a494f26f0da23029b9266ebd7deec95b8c4c77d556d70a",
+      "functions": [
+        {
+          "name": "inspect",
+          "blocks": 7,
+          "polls": 7,
+          "moves": 0,
+          "homes": 9,
+          "blockParameters": 9
+        },
+        {
+          "name": "main",
+          "blocks": 17,
+          "polls": 17,
+          "moves": 4,
+          "homes": 26,
+          "blockParameters": 50
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_fn_9",
+          "pollLoads": 7,
+          "instructions": 222,
+          "stackReferences": 48,
+          "frameBytes": 64
+        },
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 17,
+          "instructions": 643,
+          "stackReferences": 151,
+          "frameBytes": 80
+        }
+      ]
+    },
+    {
+      "name": "enum_dispatch_4x",
+      "route": "bytecode",
+      "irSha256": "9aef9c3b122c3b7605badf6c8697c16bf89c264f7d6a6836ffab522e160debfd",
+      "objectSha256": "225a79299f57cb0a84e7e051248a3cd7e9469b12ff548aa24cf15336c6415183",
+      "functions": [
+        {
+          "name": "inspect",
+          "blocks": 6,
+          "polls": 6,
+          "moves": 0,
+          "homes": 6,
+          "blockParameters": 5
+        },
+        {
+          "name": "main",
+          "blocks": 15,
+          "polls": 15,
+          "moves": 4,
+          "homes": 20,
+          "blockParameters": 44
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_fn_9",
+          "pollLoads": 6,
+          "instructions": 224,
+          "stackReferences": 55,
+          "frameBytes": 80
+        },
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 15,
+          "instructions": 617,
+          "stackReferences": 141,
+          "frameBytes": 80
+        }
+      ]
+    },
+    {
+      "name": "fibonacci_32",
+      "route": "ssa",
+      "irSha256": "8ef03fe21687a762e5be050b8daa1e817b2f07e5297f3738fdd7fce2c9ac9ebb",
+      "objectSha256": "2d730e45f2da42153785c501c14cc855a876fa8119942deb3333c9542b5a99aa",
+      "functions": [
+        {
+          "name": "fibonacci",
+          "blocks": 3,
+          "polls": 3,
+          "moves": 0,
+          "homes": 9,
+          "blockParameters": 3
+        },
+        {
+          "name": "main",
+          "blocks": 1,
+          "polls": 1,
+          "moves": 0,
+          "homes": 2,
+          "blockParameters": 0
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_fn_9",
+          "pollLoads": 3,
+          "instructions": 174,
+          "stackReferences": 40,
+          "frameBytes": 64
+        },
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 1,
+          "instructions": 33,
+          "stackReferences": 4,
+          "frameBytes": 48
+        }
+      ]
+    },
+    {
+      "name": "fibonacci_32",
+      "route": "bytecode",
+      "irSha256": "e895c60744b3c5c7e6a0e0b674c7f24ed3aaf2e19e20df5a371d9891c760b993",
+      "objectSha256": "2d730e45f2da42153785c501c14cc855a876fa8119942deb3333c9542b5a99aa",
+      "functions": [
+        {
+          "name": "fibonacci",
+          "blocks": 3,
+          "polls": 3,
+          "moves": 0,
+          "homes": 9,
+          "blockParameters": 4
+        },
+        {
+          "name": "main",
+          "blocks": 1,
+          "polls": 1,
+          "moves": 0,
+          "homes": 2,
+          "blockParameters": 0
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_fn_9",
+          "pollLoads": 3,
+          "instructions": 174,
+          "stackReferences": 40,
+          "frameBytes": 64
+        },
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 1,
+          "instructions": 33,
+          "stackReferences": 4,
+          "frameBytes": 48
+        }
+      ]
+    },
+    {
+      "name": "scalar_cse_8000000",
+      "route": "ssa",
+      "irSha256": "1ba4b57b80fd0b7d1d8435f83c57e0caa5c740bd556c0b4c01d9cb60dfce3a43",
+      "objectSha256": "a36c2ec3960a02a24fd57aea7661cb99a7078dc8329996edce993430cc9c6d3d",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 7,
+          "polls": 7,
+          "moves": 0,
+          "homes": 18,
+          "blockParameters": 12
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 7,
+          "instructions": 203,
+          "stackReferences": 42,
+          "frameBytes": 64
+        }
+      ]
+    },
+    {
+      "name": "scalar_cse_8000000",
+      "route": "bytecode",
+      "irSha256": "beff2537715190211dbec4302f937fe01e2c8e50b3eb45243fb3f5fabd347dd4",
+      "objectSha256": "a36c2ec3960a02a24fd57aea7661cb99a7078dc8329996edce993430cc9c6d3d",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 7,
+          "polls": 7,
+          "moves": 0,
+          "homes": 4,
+          "blockParameters": 12
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 7,
+          "instructions": 203,
+          "stackReferences": 42,
+          "frameBytes": 64
+        }
+      ]
+    },
+    {
+      "name": "scalar_4x",
+      "route": "ssa",
+      "irSha256": "96b2cde53e8b2090a57f6011c4ee0ef25e7aa8b79e294673584286c3196ee139",
+      "objectSha256": "bd9ffd6c7c5b7e486d8aaf4b82c1644f9ec3bf8ff10faeef39e0537339a68a8b",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 4,
+          "polls": 4,
+          "moves": 0,
+          "homes": 8,
+          "blockParameters": 5
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 4,
+          "instructions": 114,
+          "stackReferences": 25,
+          "frameBytes": 64
+        }
+      ]
+    },
+    {
+      "name": "scalar_4x",
+      "route": "bytecode",
+      "irSha256": "00fbef8d146b0213b62f9742468952bd5e9267ad05dba9ef42e2a57a156da3ac",
+      "objectSha256": "bd9ffd6c7c5b7e486d8aaf4b82c1644f9ec3bf8ff10faeef39e0537339a68a8b",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 4,
+          "polls": 4,
+          "moves": 0,
+          "homes": 3,
+          "blockParameters": 5
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 4,
+          "instructions": 114,
+          "stackReferences": 25,
+          "frameBytes": 64
+        }
+      ]
+    },
+    {
+      "name": "list_push_4x",
+      "route": "ssa",
+      "irSha256": "0be26e36d3cbb103cd3b6733a3a1af27d03d2a6a67e272fc54e222e09b4a49fd",
+      "objectSha256": "bfa602e7c07a2a301526e95097e4f3ec15d1762c9aec450061d1dafaf5672d4d",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 4,
+          "polls": 4,
+          "moves": 1,
+          "homes": 12,
+          "blockParameters": 5
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 4,
+          "instructions": 352,
+          "stackReferences": 78,
+          "frameBytes": 112
+        }
+      ]
+    },
+    {
+      "name": "list_push_4x",
+      "route": "bytecode",
+      "irSha256": "4a294c61c75e57cb394e9ab03c415196dbf398f7a95e5b3be3c58dd082dd757c",
+      "objectSha256": "bfa602e7c07a2a301526e95097e4f3ec15d1762c9aec450061d1dafaf5672d4d",
+      "functions": [
+        {
+          "name": "main",
+          "blocks": 4,
+          "polls": 4,
+          "moves": 1,
+          "homes": 10,
+          "blockParameters": 5
+        }
+      ],
+      "machine": [
+        {
+          "name": "foster_native_entry",
+          "pollLoads": 4,
+          "instructions": 352,
+          "stackReferences": 78,
+          "frameBytes": 112
+        }
+      ]
+    }
+  ]
+}

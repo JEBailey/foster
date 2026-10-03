@@ -87,10 +87,14 @@ pub(super) fn lower_native_ir(
         values.insert(*seed, value);
     }
     for value in function.parameters.iter().chain(&function.entry_seeds) {
-        if let Some(home) = function.values.hint(value.index()) {
+        if let Some(slot) = function
+            .values
+            .hint(value.index())
+            .and_then(|home| homes.get(&home).copied())
+        {
             builder
                 .ins()
-                .stack_store(pointer_type, values[value], homes[&home], 0);
+                .stack_store(pointer_type, values[value], slot, 0);
         }
     }
     let entry_arguments = function
@@ -111,10 +115,12 @@ pub(super) fn lower_native_ir(
             .zip(builder.block_params(lowered_block).to_vec())
         {
             values.insert(*parameter, lowered);
-            if let Some(home) = function.values.hint(parameter.index()) {
-                builder
-                    .ins()
-                    .stack_store(pointer_type, lowered, homes[&home], 0);
+            if let Some(slot) = function
+                .values
+                .hint(parameter.index())
+                .and_then(|home| homes.get(&home).copied())
+            {
+                builder.ins().stack_store(pointer_type, lowered, slot, 0);
             }
         }
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
@@ -210,10 +216,12 @@ pub(super) fn lower_native_ir(
                     // Pattern bindings can be address-taken too (for example a
                     // list payload passed to List.borrow). Initialize their
                     // homes before later instructions reload those operands.
-                    if let Some(home) = function.values.hint(binding.index()) {
-                        builder
-                            .ins()
-                            .stack_store(pointer_type, value, homes[&home], 0);
+                    if let Some(slot) = function
+                        .values
+                        .hint(binding.index())
+                        .and_then(|home| homes.get(&home).copied())
+                    {
+                        builder.ins().stack_store(pointer_type, value, slot, 0);
                     }
                 }
                 continue;
@@ -236,10 +244,14 @@ pub(super) fn lower_native_ir(
                     *destination,
                     result.expect("value-producing native instruction"),
                 );
-                if let Some(home) = function.values.hint(destination.index()) {
+                if let Some(slot) = function
+                    .values
+                    .hint(destination.index())
+                    .and_then(|home| homes.get(&home).copied())
+                {
                     builder
                         .ins()
-                        .stack_store(pointer_type, values[destination], homes[&home], 0);
+                        .stack_store(pointer_type, values[destination], slot, 0);
                 }
             }
         }

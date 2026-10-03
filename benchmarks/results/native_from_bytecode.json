@@ -1,0 +1,516 @@
+{
+  "date": "2026-10-03T14:02:37.845Z",
+  "cpu": "AMD Ryzen 5 4500 6-Core Processor              ",
+  "platform": "win32",
+  "arch": "x64",
+  "compilerSha256": "e2f7e7e45244b49b9e9f5deea14470f155e4000df438b73c26b0ca66e7c69217",
+  "repeats": 5,
+  "note": "Same optimized compiler and source for both routes. Runtime cache and each route are warmed before measurement. Three alternating build samples; alternating runtime samples include process startup and cleanup. Failed bytecode reconstructions are recorded without falling back to shared SSA. Source compilation is still required for native nominal/specialization metadata.",
+  "cases": [
+    {
+      "name": "scalar",
+      "fixture": "native_runtime/scalar.fos",
+      "sourceSha256": "aba2d3f5410403bb2028fd3f977a19be5a42c577dd37653e6ad7f40b19b1199b",
+      "iterations": 5000000,
+      "expected": "12499997500000",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 590.1894,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            349.94230000000016,
+            355.75970000000007,
+            375.93460000000005
+          ],
+          "runtimeMs": [
+            530.7824999999993,
+            516.6877999999997,
+            520.8065999999999,
+            517.783699999999,
+            524.1671999999999
+          ],
+          "executableBytes": 389632,
+          "executableSha256": "fa3ca10ce05633f9dabf7f635021d268acf1950f533331792f2ebd96a13239df",
+          "medianBuildMs": 355.75970000000007,
+          "medianRuntimeMs": 520.8065999999999,
+          "minRuntimeMs": 516.6877999999997,
+          "maxRuntimeMs": 530.7824999999993
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 358.92549999999983,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar-bytecode.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            353.9268000000002,
+            355.56410000000005,
+            365.4735999999998
+          ],
+          "runtimeMs": [
+            515.7155000000002,
+            513.0424999999996,
+            511.97440000000006,
+            512.2128000000002,
+            513.3546999999999
+          ],
+          "executableBytes": 389632,
+          "executableSha256": "bddcdf47eb8abd725a32d09e1bc1bba540a6f3a546b8a1411fd2eaaa77b42535",
+          "medianBuildMs": 355.56410000000005,
+          "medianRuntimeMs": 513.0424999999996,
+          "minRuntimeMs": 511.97440000000006,
+          "maxRuntimeMs": 515.7155000000002
+        }
+      },
+      "runtimeSpeedup": 1.0151334441103814,
+      "buildTimeRatio": 0.9994501906764593
+    },
+    {
+      "name": "scalar_cse",
+      "fixture": "scalar_cse.fos",
+      "sourceSha256": "6bfb31b4afbbcf01a332c06eae028ced1329d88255b5f3be51d08b8042ab57e9",
+      "iterations": 2000000,
+      "expected": "3900000",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 398.91629999999896,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            398.84469999999965,
+            360.7561000000005,
+            356.637999999999
+          ],
+          "runtimeMs": [
+            546.8760000000002,
+            555.9979999999996,
+            542.1144999999997,
+            545.3448000000026,
+            541.704899999997
+          ],
+          "executableBytes": 391680,
+          "executableSha256": "d82743136019b9525dc8d84831545b8ba80163ac8a6ed142fd86b43e75e96c5b",
+          "medianBuildMs": 360.7561000000005,
+          "medianRuntimeMs": 545.3448000000026,
+          "minRuntimeMs": 541.704899999997,
+          "maxRuntimeMs": 555.9979999999996
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 431.39010000000053,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\scalar_cse-bytecode.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            370.8019999999997,
+            361.928899999999,
+            358.22370000000046
+          ],
+          "runtimeMs": [
+            490.1944000000003,
+            467.8786,
+            466.76300000000083,
+            467.1212999999989,
+            464.83910000000105
+          ],
+          "executableBytes": 390656,
+          "executableSha256": "e0afe2f97bb97652e418e34a21dfcf781203a4b37ad7b48951b6ddd0aa8c8e26",
+          "medianBuildMs": 361.928899999999,
+          "medianRuntimeMs": 467.1212999999989,
+          "minRuntimeMs": 464.83910000000105,
+          "maxRuntimeMs": 490.1944000000003
+        }
+      },
+      "runtimeSpeedup": 1.1674586451099616,
+      "buildTimeRatio": 1.003250949879984
+    },
+    {
+      "name": "fibonacci",
+      "fixture": "fibonacci.fos",
+      "sourceSha256": "cdae300d8137ff43da47f125fff3ea14989c92d29dc0b541fb184ca33ceab45c",
+      "expected": "2178309",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 351.92169999999896,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            353.6300999999985,
+            361.3780999999981,
+            354.72979999999734
+          ],
+          "runtimeMs": [
+            1158.4667000000009,
+            1159.6421999999984,
+            1158.3964000000014,
+            1167.0525000000016,
+            1156.7782000000007
+          ],
+          "executableBytes": 390144,
+          "executableSha256": "9b8f3dbae6bd4ee6d144368850c16677bf79f6b5fa6aa5102965b9268b65a7fa",
+          "medianBuildMs": 354.72979999999734,
+          "medianRuntimeMs": 1158.4667000000009,
+          "minRuntimeMs": 1156.7782000000007,
+          "maxRuntimeMs": 1167.0525000000016
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 366.5626999999986,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\fibonacci-bytecode.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            360.84340000000157,
+            364.47999999999956,
+            359.1618000000017
+          ],
+          "runtimeMs": [
+            997.0322999999989,
+            964.6034999999974,
+            933.6857000000018,
+            942.4719000000005,
+            917.9463000000032
+          ],
+          "executableBytes": 390144,
+          "executableSha256": "2c6c8d4d46a451f801816b02c138c436a49c26f2118430e7babb0804e4a66def",
+          "medianBuildMs": 360.84340000000157,
+          "medianRuntimeMs": 942.4719000000005,
+          "minRuntimeMs": 917.9463000000032,
+          "maxRuntimeMs": 997.0322999999989
+        }
+      },
+      "runtimeSpeedup": 1.2291790344094082,
+      "buildTimeRatio": 1.017234526109744
+    },
+    {
+      "name": "record_fresh",
+      "fixture": "native_runtime/record_fresh.fos",
+      "sourceSha256": "0b70f1505fd1fc2b2f387090751e23c17ee4be5586e5af8b7d0636251a4d4050",
+      "iterations": 2000000,
+      "expected": "2000001000000",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 380.8506999999954,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            366.0433000000048,
+            389.9838000000018,
+            391.081299999998
+          ],
+          "runtimeMs": [
+            366.27610000000277,
+            366.6255999999994,
+            366.91270000000077,
+            362.60459999999875,
+            363.95590000000084
+          ],
+          "executableBytes": 390656,
+          "executableSha256": "0d9f46c43012eaa1a4595b1bf90b97c92b51bb9c96123992a9f3e259177190f8",
+          "medianBuildMs": 389.9838000000018,
+          "medianRuntimeMs": 366.27610000000277,
+          "minRuntimeMs": 362.60459999999875,
+          "maxRuntimeMs": 366.91270000000077
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_fresh-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 19.89820000000327,
+            "status": 1,
+            "stdout": "",
+            "stderr": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `main`: return value v15 has type Opaque/ptr, expected Int/i64"
+          },
+          "buildMs": [],
+          "runtimeMs": []
+        }
+      }
+    },
+    {
+      "name": "record_reuse",
+      "fixture": "native_runtime/record_reuse.fos",
+      "sourceSha256": "55d204c60ee7f2e170456210069649cf6a058fc6c3631da3ad73aae223772049",
+      "iterations": 2000000,
+      "expected": "2000001000000",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 353.8784999999989,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            358.8715000000011,
+            369.6252999999997,
+            373.31529999999475
+          ],
+          "runtimeMs": [
+            227.24029999999766,
+            221.4783000000025,
+            258.21429999999964,
+            320.5587000000014,
+            288.09070000000065
+          ],
+          "executableBytes": 391168,
+          "executableSha256": "c38ad1314bc3fc057b1099414320abf225616e83e7325f2a43e4cd53a5cb16fb",
+          "medianBuildMs": 369.6252999999997,
+          "medianRuntimeMs": 258.21429999999964,
+          "minRuntimeMs": 221.4783000000025,
+          "maxRuntimeMs": 320.5587000000014
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\record_reuse-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 20.229800000000978,
+            "status": 1,
+            "stdout": "",
+            "stderr": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `main`: return value v18 has type Opaque/ptr, expected Int/i64"
+          },
+          "buildMs": [],
+          "runtimeMs": []
+        }
+      }
+    },
+    {
+      "name": "list_fresh",
+      "fixture": "native_runtime/list_fresh.fos",
+      "sourceSha256": "d6adb5c893f94f20e28d46bdd3e0cc7a0f1b543c654e15b7924311e3ee895fbc",
+      "iterations": 500000,
+      "expected": "124999750000",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 368.75210000000516,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            374.9695999999967,
+            365.18709999999555,
+            372.5072
+          ],
+          "runtimeMs": [
+            122.70260000000417,
+            119.44610000000102,
+            121.1952999999994,
+            119.93340000000171,
+            119.53439999999682
+          ],
+          "executableBytes": 391680,
+          "executableSha256": "f283b5826bf9cc4baffd934cb0c2bbc6d3e4a10d3b669b4b0dc2c1bf29a9abcf",
+          "medianBuildMs": 372.5072,
+          "medianRuntimeMs": 119.93340000000171,
+          "minRuntimeMs": 119.44610000000102,
+          "maxRuntimeMs": 122.70260000000417
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 428.9423999999999,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_fresh-bytecode.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            379.2815999999948,
+            370.77100000000064,
+            366.56119999999646
+          ],
+          "runtimeMs": [
+            123.19610000000102,
+            120.795100000003,
+            120.42290000000503,
+            121.25380000000587,
+            120.48790000000008
+          ],
+          "executableBytes": 391680,
+          "executableSha256": "ad38f08c1d06f97ea05555b7d40727c696631dba2d685993562b17d3019f3529",
+          "medianBuildMs": 370.77100000000064,
+          "medianRuntimeMs": 120.795100000003,
+          "minRuntimeMs": 120.42290000000503,
+          "maxRuntimeMs": 123.19610000000102
+        }
+      },
+      "runtimeSpeedup": 0.9928664324960096,
+      "buildTimeRatio": 0.9953391504915895
+    },
+    {
+      "name": "list_push",
+      "fixture": "native_runtime/list_push.fos",
+      "sourceSha256": "039f6db9dc6b9a5cd909c714a7390aac8d7fc87fccbb196a20e7cbbb9ee65d61",
+      "iterations": 500000,
+      "expected": "500001",
+      "variants": {
+        "ssa": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push-ssa.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push-ssa.exe"
+          ],
+          "warmBuild": {
+            "ms": 3105.1218999999983,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push-ssa.exe",
+            "stderr": ""
+          },
+          "buildMs": [
+            3009.1344000000026,
+            3277.940699999999,
+            3001.1577999999936
+          ],
+          "runtimeMs": [
+            64.85439999999653,
+            62.2300000000032,
+            62.63209999999526,
+            62.383499999996275,
+            62.53780000000552
+          ],
+          "executableBytes": 733696,
+          "executableSha256": "672da0853c65985d0ee2b674bfea989a7ab1267d46a59e455d144b1ea3b5f1df",
+          "medianBuildMs": 3009.1344000000026,
+          "medianRuntimeMs": 62.53780000000552,
+          "minRuntimeMs": 62.2300000000032,
+          "maxRuntimeMs": 64.85439999999653
+        },
+        "bytecode": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push-bytecode.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode\\list_push-bytecode.exe",
+            "--native-from-bytecode"
+          ],
+          "warmBuild": {
+            "ms": 3405.644500000002,
+            "status": 1,
+            "stdout": "",
+            "stderr": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `last`: jump v17 has type Opaque/ptr, expected Unit/i8"
+          },
+          "buildMs": [],
+          "runtimeMs": []
+        }
+      }
+    }
+  ]
+}

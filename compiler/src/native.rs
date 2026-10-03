@@ -75,6 +75,7 @@ use machine::{
     runtime_signature, signature, store_physical_value,
 };
 mod operations;
+mod optimization;
 use operations::{
     fail_if, lower_binary, lower_native_terminator, propagate_native_failure, runtime_call,
     write_native_newline, write_native_separator, write_native_value, zero_i64,

@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-03T16:32:29.323Z",
+  "cpu": "AMD Ryzen 5 4500 6-Core Processor              ",
+  "compilerSha256": "9d2e55a63ad48e34c44d667b2a40b0877c46f6130f3217f7dae86525acc75d81",
+  "note": "Larger program coverage: one initial build per route; nine alternating checked runtime samples. Initial build times are descriptive, not warmed compilation medians.",
+  "cases": [
+    {
+      "name": "formatter_1000_functions",
+      "source": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\formatter.fos",
+      "sourceSha256": "956a811e7c3bcbfea3dc6283f7d2d2d444dc50db0d8a506aac426aaf6b72c5b9",
+      "expected": "47000",
+      "variants": {
+        "ssa": {
+          "build": {
+            "ms": 8565.4551,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\formatter_1000_functions-ssa.exe",
+            "stderr": ""
+          },
+          "runtimeMs": [
+            1890.2605000000003,
+            1872.0871000000006,
+            1543.8773,
+            1568.4127000000008,
+            1577.8551000000007,
+            1511.9766000000018,
+            1538.9851999999992,
+            1514.2808000000005,
+            1526.1074999999983
+          ],
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\formatter_1000_functions-ssa.exe",
+          "executableBytes": 1630720,
+          "warmRun": {
+            "ms": 1618.9400999999998,
+            "status": 0,
+            "stdout": "47000",
+            "stderr": ""
+          },
+          "medianRuntimeMs": 1543.8773
+        },
+        "bytecode": {
+          "build": {
+            "ms": 8224.9268,
+            "status": 1,
+            "stdout": "",
+            "stderr": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `drop_sign`: branch condition v20 has type Opaque/ptr, expected Bool/i8"
+          },
+          "runtimeMs": [],
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\formatter_1000_functions-bytecode.exe"
+        }
+      },
+      "sourceCheck": {
+        "ms": 394.2835,
+        "status": 0,
+        "stdout": "ok: checked 11 function(s)",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "taker_10000_integers",
+      "source": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\parser",
+      "sourceSha256": "03d3a84968dbecabae92e8bf85e3c5ae424e16507d61c2a0207b56dd0dc918df",
+      "expected": "1234567890000",
+      "variants": {
+        "ssa": {
+          "build": {
+            "ms": 6397.258600000001,
+            "status": 0,
+            "stdout": "built native executable C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\taker_10000_integers-ssa.exe",
+            "stderr": ""
+          },
+          "runtimeMs": [
+            887.5126000000018,
+            944.6853999999948,
+            959.4674999999988,
+            885.3587999999945,
+            909.5004999999946,
+            1088.2588000000032,
+            1009.1252000000022,
+            935.023000000001,
+            910.1869999999981
+          ],
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\taker_10000_integers-ssa.exe",
+          "executableBytes": 868864,
+          "warmRun": {
+            "ms": 941.3214999999982,
+            "status": 0,
+            "stdout": "1234567890000",
+            "stderr": ""
+          },
+          "medianRuntimeMs": 935.023000000001
+        },
+        "bytecode": {
+          "build": {
+            "ms": 6849.416000000005,
+            "status": 1,
+            "stdout": "",
+            "stderr": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `clock_time`: branch v17 has type Opaque/ptr, expected String/ptr"
+          },
+          "runtimeMs": [],
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\taker_10000_integers-bytecode.exe"
+        }
+      },
+      "sourceCheck": {
+        "ms": 867.4228999999978,
+        "status": 0,
+        "stdout": "ok: checked 1 module (0 implicit)",
+        "stderr": ""
+      }
+    }
+  ],
+  "takerSourceSha256": "bab05be5579d5459affb1c48dc0bf8533b9d2c340cc2bda5950d11ca45bd1d97"
+}

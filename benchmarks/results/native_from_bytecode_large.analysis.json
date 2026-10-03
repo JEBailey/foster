@@ -1,0 +1,496 @@
+{
+  "supported": 25,
+  "total": 29,
+  "familyBalancedRuntimeSpeedup": 1.084884542637697,
+  "familyBalancedBuildRatio": 1.0112187751556305,
+  "families": [
+    {
+      "family": "scalar",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0140049926006196,
+      "buildRatio": 0.972542947877849,
+      "sizeRatio": 1
+    },
+    {
+      "family": "record_fresh",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0210220748409569,
+      "buildRatio": 1.0146281374392778,
+      "sizeRatio": 1
+    },
+    {
+      "family": "record_reuse",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0114327047805935,
+      "buildRatio": 0.9742500588940799,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "family": "list_fresh",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0504698037247941,
+      "buildRatio": 0.9663382396735263,
+      "sizeRatio": 0.9986928104575163
+    },
+    {
+      "family": "list_push",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0074263897261253,
+      "buildRatio": 1.1829881643152567,
+      "sizeRatio": 1
+    },
+    {
+      "family": "field_read",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0555241767646821,
+      "buildRatio": 0.9833711013057919,
+      "sizeRatio": 0.9986893840104849
+    },
+    {
+      "family": "method_read",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.025266693626909,
+      "buildRatio": 0.9978497844377014,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "family": "list_iterator",
+      "passed": 0,
+      "total": 2,
+      "speedup": null,
+      "buildRatio": null,
+      "sizeRatio": null
+    },
+    {
+      "family": "list_snapshot",
+      "passed": 0,
+      "total": 2,
+      "speedup": null,
+      "buildRatio": null,
+      "sizeRatio": null
+    },
+    {
+      "family": "branch_counter",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.2765421081515882,
+      "buildRatio": 1.0041180758196244,
+      "sizeRatio": 0.9934895833333334
+    },
+    {
+      "family": "enum_dispatch",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.1826301406966415,
+      "buildRatio": 1.024189681848863,
+      "sizeRatio": 0.9961290322580645
+    },
+    {
+      "family": "float_loop",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.0125829853587227,
+      "buildRatio": 1.0104337374074743,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "family": "scalar_cse",
+      "passed": 2,
+      "total": 2,
+      "speedup": 1.1561286687633068,
+      "buildRatio": 1.0248669578581298,
+      "sizeRatio": 0.9973856209150327
+    },
+    {
+      "family": "fibonacci",
+      "passed": 3,
+      "total": 3,
+      "speedup": 1.2542012365884316,
+      "buildRatio": 0.9954573932777142,
+      "sizeRatio": 1
+    }
+  ],
+  "rows": [
+    {
+      "name": "scalar_1x",
+      "family": "scalar",
+      "supported": true,
+      "speedup": 1.004763774301153,
+      "ci95": [
+        0.9955577906443078,
+        1.1021668908639715
+      ],
+      "defaultMs": 533.6004000000003,
+      "bytecodeMs": 531.0704999999998,
+      "buildRatio": 0.9594848777908096,
+      "sizeRatio": 1
+    },
+    {
+      "name": "scalar_4x",
+      "family": "scalar",
+      "supported": true,
+      "speedup": 1.0233312061177113,
+      "ci95": [
+        1.0054781063385851,
+        1.0349017859633778
+      ],
+      "defaultMs": 2115.2474,
+      "bytecodeMs": 2067.0213000000003,
+      "buildRatio": 0.9857787312341071,
+      "sizeRatio": 1
+    },
+    {
+      "name": "record_fresh_1x",
+      "family": "record_fresh",
+      "supported": true,
+      "speedup": 1.0263780077853073,
+      "ci95": [
+        0.9788817634102003,
+        1.1492456591288691
+      ],
+      "defaultMs": 380.372199999998,
+      "bytecodeMs": 370.59659999998985,
+      "buildRatio": 1.0004610196627401,
+      "sizeRatio": 1
+    },
+    {
+      "name": "record_fresh_4x",
+      "family": "record_fresh",
+      "supported": true,
+      "speedup": 1.0156940906810568,
+      "ci95": [
+        1.0006632416466035,
+        1.0798547887461643
+      ],
+      "defaultMs": 1465.861899999989,
+      "bytecodeMs": 1443.2119999999995,
+      "buildRatio": 1.0289958699545707,
+      "sizeRatio": 1
+    },
+    {
+      "name": "record_reuse_1x",
+      "family": "record_reuse",
+      "supported": true,
+      "speedup": 1.0160053563382725,
+      "ci95": [
+        1.007027212980851,
+        1.0232123654997543
+      ],
+      "defaultMs": 225.0396999999939,
+      "bytecodeMs": 221.4945999999909,
+      "buildRatio": 0.9531884309125676,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "name": "record_reuse_4x",
+      "family": "record_reuse",
+      "supported": true,
+      "speedup": 1.0068806329788555,
+      "ci95": [
+        0.950479697201857,
+        1.0168220152452592
+      ],
+      "defaultMs": 869.1595000000088,
+      "bytecodeMs": 863.2200000000012,
+      "buildRatio": 0.9957770640862733,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "name": "list_fresh_1x",
+      "family": "list_fresh",
+      "supported": true,
+      "speedup": 1.0305476171774002,
+      "ci95": [
+        0.9689022544131418,
+        1.075734587266009
+      ],
+      "defaultMs": 127.25810000000638,
+      "bytecodeMs": 123.48589999999967,
+      "buildRatio": 0.9463672796815537,
+      "sizeRatio": 0.9986928104575163
+    },
+    {
+      "name": "list_fresh_4x",
+      "family": "list_fresh",
+      "supported": true,
+      "speedup": 1.0707771190233624,
+      "ci95": [
+        1.0245836745891366,
+        1.0873373424314043
+      ],
+      "defaultMs": 514.5294999999751,
+      "bytecodeMs": 480.5197000000044,
+      "buildRatio": 0.9867306420077735,
+      "sizeRatio": 0.9986928104575163
+    },
+    {
+      "name": "list_push_1x",
+      "family": "list_push",
+      "supported": true,
+      "speedup": 1.0015778729465648,
+      "ci95": [
+        0.9785783493082383,
+        1.0141499668924765
+      ],
+      "defaultMs": 64.17470000000321,
+      "bytecodeMs": 64.07359999997425,
+      "buildRatio": 1.1127126112476733,
+      "sizeRatio": 1
+    },
+    {
+      "name": "list_push_4x",
+      "family": "list_push",
+      "supported": true,
+      "speedup": 1.0133090577678538,
+      "ci95": [
+        0.943942950065051,
+        1.039412053137018
+      ],
+      "defaultMs": 242.3814999999886,
+      "bytecodeMs": 239.19800000003306,
+      "buildRatio": 1.257702108130849,
+      "sizeRatio": 1
+    },
+    {
+      "name": "field_read_1x",
+      "family": "field_read",
+      "supported": true,
+      "speedup": 1.0166872158794722,
+      "ci95": [
+        0.9852987813065054,
+        1.0288874163334158
+      ],
+      "defaultMs": 226.84619999997085,
+      "bytecodeMs": 223.12290000001667,
+      "buildRatio": 1.0080347921337771,
+      "sizeRatio": 0.9986893840104849
+    },
+    {
+      "name": "field_read_4x",
+      "family": "field_read",
+      "supported": true,
+      "speedup": 1.0958446908088588,
+      "ci95": [
+        0.9683966579787907,
+        1.1811275163856882
+      ],
+      "defaultMs": 952.7653999999748,
+      "bytecodeMs": 869.4346999999834,
+      "buildRatio": 0.9593108595353245,
+      "sizeRatio": 0.9986893840104849
+    },
+    {
+      "name": "method_read_1x",
+      "family": "method_read",
+      "supported": true,
+      "speedup": 1.0438114236561435,
+      "ci95": [
+        1.005169646539796,
+        1.0812526671437657
+      ],
+      "defaultMs": 342.20939999999246,
+      "bytecodeMs": 327.84600000001956,
+      "buildRatio": 0.9744603966353992,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "name": "method_read_4x",
+      "family": "method_read",
+      "supported": true,
+      "speedup": 1.0070514359564389,
+      "ci95": [
+        0.9424886164164135,
+        1.0438796998579283
+      ],
+      "defaultMs": 1310.3426999999792,
+      "bytecodeMs": 1301.1675999999861,
+      "buildRatio": 1.021800573671663,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "name": "list_iterator_1x",
+      "family": "list_iterator",
+      "supported": false,
+      "error": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `ByteBuffer.length`: return value v3 has type Opaque/ptr, expected Int/i64"
+    },
+    {
+      "name": "list_iterator_4x",
+      "family": "list_iterator",
+      "supported": false,
+      "error": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `float_text?`: branch condition v56 has type Opaque/ptr, expected Bool/i8"
+    },
+    {
+      "name": "list_snapshot_1x",
+      "family": "list_snapshot",
+      "supported": false,
+      "error": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `map_into`: jump v28 has type Unit/i8, expected Opaque/ptr"
+    },
+    {
+      "name": "list_snapshot_4x",
+      "family": "list_snapshot",
+      "supported": false,
+      "error": "error: optimized bytecode cannot be sealed for native compilation: invalid shared IR in `ListMap.values`: branch v18 has type Opaque/ptr, expected Unit/i8"
+    },
+    {
+      "name": "branch_counter_1x",
+      "family": "branch_counter",
+      "supported": true,
+      "speedup": 1.2129476280968374,
+      "ci95": [
+        1.1816424956995175,
+        1.2734120119047454
+      ],
+      "defaultMs": 843.4855999999563,
+      "bytecodeMs": 695.4014999999781,
+      "buildRatio": 1.0282416098580935,
+      "sizeRatio": 0.9934895833333334
+    },
+    {
+      "name": "branch_counter_4x",
+      "family": "branch_counter",
+      "supported": true,
+      "speedup": 1.3434708277066707,
+      "ci95": [
+        1.2299610245929702,
+        1.40137197189259
+      ],
+      "defaultMs": 3576.7686000000103,
+      "bytecodeMs": 2662.3344000000507,
+      "buildRatio": 0.9805605030191813,
+      "sizeRatio": 0.9934895833333334
+    },
+    {
+      "name": "enum_dispatch_1x",
+      "family": "enum_dispatch",
+      "supported": true,
+      "speedup": 1.1882755477980604,
+      "ci95": [
+        1.1400935719618759,
+        1.4133440751602717
+      ],
+      "defaultMs": 737.4361999999965,
+      "bytecodeMs": 620.593600000022,
+      "buildRatio": 1.0017133878439786,
+      "sizeRatio": 0.9961290322580645
+    },
+    {
+      "name": "enum_dispatch_4x",
+      "family": "enum_dispatch",
+      "supported": true,
+      "speedup": 1.1770115544966537,
+      "ci95": [
+        1.1622563059565152,
+        1.184722366036085
+      ],
+      "defaultMs": 2744.232100000023,
+      "bytecodeMs": 2331.5251999999164,
+      "buildRatio": 1.047170295550703,
+      "sizeRatio": 0.9961290322580645
+    },
+    {
+      "name": "float_loop_1x",
+      "family": "float_loop",
+      "supported": true,
+      "speedup": 1.019149265779242,
+      "ci95": [
+        0.968580468236194,
+        1.048561010830253
+      ],
+      "defaultMs": 249.99120000004768,
+      "bytecodeMs": 245.2939999999944,
+      "buildRatio": 0.9766756675955561,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "name": "float_loop_4x",
+      "family": "float_loop",
+      "supported": true,
+      "speedup": 1.0060590108496226,
+      "ci95": [
+        0.8810453356895631,
+        1.06226990953614
+      ],
+      "defaultMs": 989.5857000000542,
+      "bytecodeMs": 983.6258999999845,
+      "buildRatio": 1.0453586298558488,
+      "sizeRatio": 0.9986910994764397
+    },
+    {
+      "name": "scalar_cse_2000000",
+      "family": "scalar_cse",
+      "supported": true,
+      "speedup": 1.1559277772302627,
+      "ci95": [
+        1.0542656538644286,
+        1.17502736005166
+      ],
+      "defaultMs": 589.9518999999855,
+      "bytecodeMs": 510.3708999999799,
+      "buildRatio": 1.0713955015611674,
+      "sizeRatio": 0.9973856209150327
+    },
+    {
+      "name": "scalar_cse_8000000",
+      "family": "scalar_cse",
+      "supported": true,
+      "speedup": 1.1563295952097845,
+      "ci95": [
+        1.1324707223130395,
+        1.1664652368903825
+      ],
+      "defaultMs": 2276.524699999951,
+      "bytecodeMs": 1968.750699999975,
+      "buildRatio": 0.9803590548764421,
+      "sizeRatio": 0.9973856209150327
+    },
+    {
+      "name": "fibonacci_28",
+      "family": "fibonacci",
+      "supported": true,
+      "speedup": 1.2470799640611785,
+      "ci95": [
+        1.2162274945808713,
+        1.2705169750748906
+      ],
+      "defaultMs": 185.298000000068,
+      "bytecodeMs": 148.5855000000447,
+      "buildRatio": 0.9566184853940434,
+      "sizeRatio": 1
+    },
+    {
+      "name": "fibonacci_32",
+      "family": "fibonacci",
+      "supported": true,
+      "speedup": 1.264928876642323,
+      "ci95": [
+        1.1293251413144858,
+        1.2800525749030462
+      ],
+      "defaultMs": 1232.811699999962,
+      "bytecodeMs": 974.6095000000205,
+      "buildRatio": 1.03173590857619,
+      "sizeRatio": 1
+    },
+    {
+      "name": "fibonacci_35",
+      "family": "fibonacci",
+      "supported": true,
+      "speedup": 1.250665774172293,
+      "ci95": [
+        1.2348873139436718,
+        1.2902336623297164
+      ],
+      "defaultMs": 5137.781400000094,
+      "bytecodeMs": 4108.037100000074,
+      "buildRatio": 0.9994491767160031,
+      "sizeRatio": 1
+    }
+  ]
+}

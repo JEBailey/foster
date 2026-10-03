@@ -1,0 +1,412 @@
+{
+  "note": "Diagnostic copies of already benchmarked executables. Only cancellation call instructions in verified matching native function bodies are replaced by xor eax,eax (plus padding). This disables cancellation and failure polling and is not a proposed production change. Original executables and compiler sources remain untouched.",
+  "cases": [
+    {
+      "name": "branch_counter_4x",
+      "expected": "10666691999996",
+      "variants": {
+        "ssa": {
+          "output": "target/native-route-analysis/branch_counter_4x-ssa-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 22,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 4311,
+              "polls": 22
+            }
+          ],
+          "runtimeMs": [
+            284.4994000000006,
+            255.55140000000029,
+            252.72920000000158,
+            255.75229999999647,
+            255.09819999999672
+          ],
+          "normalRuntimeMs": [
+            3239.6625000000004,
+            3260.6679999999997,
+            3335.9125999999997,
+            3331.6342000000004,
+            3258.6857999999993
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\branch_counter_4x-ssa.exe",
+          "medianMs": 255.55140000000029,
+          "normalMedianMs": 3260.6679999999997
+        },
+        "bytecode": {
+          "output": "target/native-route-analysis/branch_counter_4x-bytecode-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 17,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 1903,
+              "polls": 17
+            }
+          ],
+          "runtimeMs": [
+            130.65779999999995,
+            127.66960000000108,
+            129.52140000000145,
+            128.88560000000143,
+            127.7494000000006
+          ],
+          "normalRuntimeMs": [
+            2688.7136999999993,
+            2670.9763999999996,
+            2641.9712,
+            2655.162500000002,
+            2642.360099999998
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\branch_counter_4x-bytecode.exe",
+          "medianMs": 128.88560000000143,
+          "normalMedianMs": 2655.162500000002
+        }
+      },
+      "speedup": 1.9827769743089798,
+      "normalSpeedup": 1.2280483774533562
+    },
+    {
+      "name": "enum_dispatch_4x",
+      "expected": "4000002000000",
+      "variants": {
+        "ssa": {
+          "output": "target/native-route-analysis/enum_dispatch_4x-ssa-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 33,
+          "matches": [
+            {
+              "symbol": "foster_fn_9",
+              "bytes": 1215,
+              "polls": 9
+            },
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 5802,
+              "polls": 24
+            }
+          ],
+          "runtimeMs": [
+            543.7884999999951,
+            722.0017999999982,
+            543.2700999999943,
+            540.6345000000001,
+            585.4722000000038
+          ],
+          "normalRuntimeMs": [
+            2801.298499999997,
+            2928.272799999999,
+            2758.9344999999958,
+            2709.233800000002,
+            2706.722200000004
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\enum_dispatch_4x-ssa.exe",
+          "medianMs": 543.7884999999951,
+          "normalMedianMs": 2758.9344999999958
+        },
+        "bytecode": {
+          "output": "target/native-route-analysis/enum_dispatch_4x-bytecode-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 27,
+          "matches": [
+            {
+              "symbol": "foster_fn_9",
+              "bytes": 972,
+              "polls": 7
+            },
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 4653,
+              "polls": 20
+            }
+          ],
+          "runtimeMs": [
+            522.274599999997,
+            673.1745999999985,
+            661.2453999999998,
+            522.4285000000091,
+            541.8104000000021
+          ],
+          "normalRuntimeMs": [
+            2356.6133999999947,
+            4319.871400000004,
+            2330.9407999999967,
+            2350.190800000011,
+            2343.5513999999966
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\enum_dispatch_4x-bytecode.exe",
+          "medianMs": 541.8104000000021,
+          "normalMedianMs": 2350.190800000011
+        }
+      },
+      "speedup": 1.003650908140547,
+      "normalSpeedup": 1.17391936858913
+    },
+    {
+      "name": "fibonacci_32",
+      "expected": "2178309",
+      "variants": {
+        "ssa": {
+          "output": "target/native-route-analysis/fibonacci_32-ssa-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 8,
+          "matches": [
+            {
+              "symbol": "foster_fn_9",
+              "bytes": 1093,
+              "polls": 7
+            },
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 130,
+              "polls": 1
+            }
+          ],
+          "runtimeMs": [
+            149.08909999999742,
+            132.8872999999876,
+            118.13020000001416,
+            119.14599999999336,
+            117.90200000000186
+          ],
+          "normalRuntimeMs": [
+            1253.8600999999908,
+            1264.9956000000093,
+            1213.0002000000095,
+            1193.2866000000067,
+            1207.5877999999939
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_32-ssa.exe",
+          "medianMs": 119.14599999999336,
+          "normalMedianMs": 1213.0002000000095
+        },
+        "bytecode": {
+          "output": "target/native-route-analysis/fibonacci_32-bytecode-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 6,
+          "matches": [
+            {
+              "symbol": "foster_fn_9",
+              "bytes": 1013,
+              "polls": 5
+            },
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 130,
+              "polls": 1
+            }
+          ],
+          "runtimeMs": [
+            172.71869999999763,
+            116.39609999999811,
+            107.21450000000186,
+            107.47069999999076,
+            106.99670000000333
+          ],
+          "normalRuntimeMs": [
+            1067.7642999999953,
+            1053.8395000000019,
+            958.7816000000021,
+            997.3227000000043,
+            971.1426999999967
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_32-bytecode.exe",
+          "medianMs": 107.47069999999076,
+          "normalMedianMs": 997.3227000000043
+        }
+      },
+      "speedup": 1.1086370517732145,
+      "normalSpeedup": 1.216256483483234
+    },
+    {
+      "name": "scalar_cse_8000000",
+      "expected": "15900000",
+      "variants": {
+        "ssa": {
+          "output": "target/native-route-analysis/scalar_cse_8000000-ssa-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 12,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 2143,
+              "polls": 12
+            }
+          ],
+          "runtimeMs": [
+            409.6972999999998,
+            385.58759999999893,
+            381.838499999998,
+            376.1267999999982,
+            378.7642000000051
+          ],
+          "normalRuntimeMs": [
+            2222.984700000001,
+            2185.7869000000064,
+            2211.5388999999996,
+            2220.1073000000033,
+            2190.607699999993
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_cse_8000000-ssa.exe",
+          "medianMs": 381.838499999998,
+          "normalMedianMs": 2211.5388999999996
+        },
+        "bytecode": {
+          "output": "target/native-route-analysis/scalar_cse_8000000-bytecode-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 10,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 1191,
+              "polls": 10
+            }
+          ],
+          "runtimeMs": [
+            322.99289999999746,
+            301.44710000000487,
+            299.8960000000079,
+            309.01239999999234,
+            299.9728000000032
+          ],
+          "normalRuntimeMs": [
+            2092.6312000000034,
+            1906.6401999999944,
+            1897.6303000000044,
+            1895.0497999999934,
+            1895.5626000000047
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_cse_8000000-bytecode.exe",
+          "medianMs": 301.44710000000487,
+          "normalMedianMs": 1897.6303000000044
+        }
+      },
+      "speedup": 1.2666849341061561,
+      "normalSpeedup": 1.1654213679029022
+    },
+    {
+      "name": "scalar_4x",
+      "expected": "199999990000000",
+      "variants": {
+        "ssa": {
+          "output": "target/native-route-analysis/scalar_4x-ssa-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 6,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 871,
+              "polls": 6
+            }
+          ],
+          "runtimeMs": [
+            149.33140000001004,
+            139.57779999999912,
+            140.20329999999376,
+            141.7345000000205,
+            138.07070000001113
+          ],
+          "normalRuntimeMs": [
+            2274.628300000011,
+            2131.662100000016,
+            2091.176699999982,
+            2197.37950000001,
+            2109.793799999985
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_4x-ssa.exe",
+          "medianMs": 140.20329999999376,
+          "normalMedianMs": 2131.662100000016
+        },
+        "bytecode": {
+          "output": "target/native-route-analysis/scalar_4x-bytecode-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 6,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 671,
+              "polls": 6
+            }
+          ],
+          "runtimeMs": [
+            82.8640999999916,
+            94.93439999999828,
+            79.68960000001243,
+            99.06530000001658,
+            81.9825000000128
+          ],
+          "normalRuntimeMs": [
+            2195.433600000004,
+            2088.889200000005,
+            2104.208500000008,
+            2100.927800000005,
+            2068.885899999994
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_4x-bytecode.exe",
+          "medianMs": 82.8640999999916,
+          "normalMedianMs": 2100.927800000005
+        }
+      },
+      "speedup": 1.6919667262422204,
+      "normalSpeedup": 1.014628917757198
+    },
+    {
+      "name": "list_push_4x",
+      "expected": "2000001",
+      "variants": {
+        "ssa": {
+          "output": "target/native-route-analysis/list_push_4x-ssa-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 6,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 2136,
+              "polls": 6
+            }
+          ],
+          "runtimeMs": [
+            28.364500000025146,
+            31.498099999997066,
+            31.199500000016997,
+            29.82809999998426,
+            29.320100000011735
+          ],
+          "normalRuntimeMs": [
+            229.74099999997998,
+            242.50860000000102,
+            250.37890000001062,
+            231.94710000001942,
+            229.7488000000012
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_push_4x-ssa.exe",
+          "medianMs": 29.82809999998426,
+          "normalMedianMs": 231.94710000001942
+        },
+        "bytecode": {
+          "output": "target/native-route-analysis/list_push_4x-bytecode-NO-POLLS-DIAGNOSTIC.exe",
+          "patched": 6,
+          "matches": [
+            {
+              "symbol": "foster_native_entry",
+              "bytes": 2136,
+              "polls": 6
+            }
+          ],
+          "runtimeMs": [
+            30.950299999996787,
+            34.842700000008335,
+            33.374900000024354,
+            30.932800000009593,
+            30.346400000009453
+          ],
+          "normalRuntimeMs": [
+            228.10570000001462,
+            255.4878000000026,
+            352.25759999998263,
+            227.95720000000438,
+            228.37670000002254
+          ],
+          "original": "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_push_4x-bytecode.exe",
+          "medianMs": 30.950299999996787,
+          "normalMedianMs": 228.37670000002254
+        }
+      },
+      "speedup": 0.9637418700299305,
+      "normalSpeedup": 1.0156338190366905
+    }
+  ],
+  "compilerSha256": "9d2e55a63ad48e34c44d667b2a40b0877c46f6130f3217f7dae86525acc75d81",
+  "repeats": 5,
+  "warmups": 1
+}

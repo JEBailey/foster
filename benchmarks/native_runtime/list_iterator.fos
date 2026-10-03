@@ -1,5 +1,5 @@
 import std.iter
-import core.option
+import core.option.Option
 func main() -> Int {
     let index = 0
     let total = 0

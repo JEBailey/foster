@@ -19,6 +19,13 @@ Without `-o`, a source file produces a sibling executable with the source extens
 directory package produces `main` (or `main.exe` on Windows) inside that directory. `--optimize`
 is the default; `--no-optimize` disables shared SSA, Cranelift, and linker optimization.
 
+Optimized native compilation removes redundant scalar copies and block parameters, threads
+jump-only blocks, and reserves addressable stack storage for values used by reference.
+Ownership operations, checked arithmetic, and cancellation behavior remain intact.
+The [31-workload comparison](../benchmarks/results/native_cleanup.md) measured 30.4% less
+runtime across 14 benchmark families, with native build times roughly unchanged.
+VM bytecode remains unchanged.
+
 The shared Rust runtime is compiled once per runtime source, Rust toolchain/host, and optimization
 mode, then reused across native builds and compiler processes. Each executable still compiles its
 own Foster object and a small startup shim containing its string constants and entry signature.
@@ -466,6 +473,14 @@ Host wrappers close external resources automatically only when they implement `d
 remote cancellation follows owner lifetimes, while process shutdown ordering remains open. Host-fatal events
 such as allocation failure and invalid compiler/runtime metadata are
 outside modeled language failure cleanup.
+
+Optimized native code allocates stack homes only for values whose storage is taken by reference.
+Other values remain in SSA form. A native-only cleanup propagates non-addressable scalar
+copies, removes unused scalar block parameters, and threads blocks containing only a
+cancellation poll and a jump. Poll-only cycles and addressable parameter rebinding are
+preserved; calls, checked arithmetic, ownership operations, and remaining cancellation
+points retain their failure cleanup. This cleanup does not modify VM bytecode or its
+optimizer, and unoptimized native builds retain the original lowering.
 
 Locals passed by reference retain addressable storage across control-flow edges. Native
 instruction operands and branch arguments reload that storage after possible alias mutations,

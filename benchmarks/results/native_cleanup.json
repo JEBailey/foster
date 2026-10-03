@@ -1,0 +1,2121 @@
+{
+  "date": "2026-10-03T17:54:40.683Z",
+  "cpu": "AMD Ryzen 5 4500 6-Core Processor              ",
+  "repeats": 5,
+  "compilerHashes": {
+    "before": "9d2e55a63ad48e34c44d667b2a40b0877c46f6130f3217f7dae86525acc75d81",
+    "after": "dc9503d9ae2e99c4dfece7d2479844ea473f748fa01f466f5da5a57be80210fd"
+  },
+  "note": "Default optimized native route in both compilers. Identical source hashes and expected results from the larger comparison. Three alternating build samples and five alternating runtime samples after warmup. Includes process startup and cleanup. First nine rows were measured again after unrelated background builds ended; their original samples are retained.",
+  "cases": [
+    {
+      "name": "scalar_1x",
+      "family": "scalar",
+      "sourceSha256": "aba2d3f5410403bb2028fd3f977a19be5a42c577dd37653e6ad7f40b19b1199b",
+      "expected": "12499997500000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_1x-before.exe"
+          ],
+          "buildMs": [
+            578.8670999999999,
+            378.5852,
+            379.42650000000003
+          ],
+          "runtimeMs": [
+            561.4879000000001,
+            542.7551000000003,
+            553.9610000000002,
+            555.4623999999994,
+            561.6468000000004
+          ],
+          "executableBytes": 389632,
+          "bytecodeHashes": {
+            "true": "6a23fec676095a8ae4cba99ef5910207147d7b69a7849eff850041ced961c012",
+            "false": "13160738cb3d62cc66b70779c0910934df94e01289d433594d676c8b0e583e29"
+          },
+          "medianBuildMs": 379.42650000000003,
+          "medianRuntimeMs": 555.4623999999994,
+          "initialRuntimeMs": [
+            653.5330000000004,
+            652.0823,
+            633.0122000000001,
+            585.3683000000001,
+            556.2250999999997
+          ],
+          "initialBuildMs": [
+            400.6375000000003,
+            405.37400000000025,
+            398.12270000000035
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_1x-after.exe"
+          ],
+          "buildMs": [
+            403.38379999999984,
+            398.57489999999984,
+            379.44169999999986
+          ],
+          "runtimeMs": [
+            373.7591999999995,
+            389.28760000000057,
+            358.82800000000043,
+            345.9465,
+            351.46410000000014
+          ],
+          "executableBytes": 389120,
+          "bytecodeHashes": {
+            "true": "6a23fec676095a8ae4cba99ef5910207147d7b69a7849eff850041ced961c012",
+            "false": "13160738cb3d62cc66b70779c0910934df94e01289d433594d676c8b0e583e29"
+          },
+          "medianBuildMs": 398.57489999999984,
+          "medianRuntimeMs": 358.82800000000043,
+          "initialRuntimeMs": [
+            381.28870000000006,
+            449.91159999999945,
+            394.2431000000006,
+            430.3045000000002,
+            367.40869999999995
+          ],
+          "initialBuildMs": [
+            401.11090000000013,
+            393.3373999999999,
+            470.7522999999992
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.5479906807718427,
+      "buildTimeRatio": 1.0504666911773421,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "scalar_4x",
+      "family": "scalar",
+      "sourceSha256": "705a7a668e187d736550d90e39050362e8149bdb8d09eb8964020d622cc24f6d",
+      "expected": "199999990000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_4x-before.exe"
+          ],
+          "buildMs": [
+            388.5045999999984,
+            385.28269999999975,
+            381.985200000001
+          ],
+          "runtimeMs": [
+            2203.6775,
+            2234.5193,
+            2205.7826999999997,
+            2171.977999999999,
+            2384.344699999998
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 385.28269999999975,
+          "medianRuntimeMs": 2205.7826999999997,
+          "initialRuntimeMs": [
+            2228.125100000001,
+            2247.043999999998,
+            2234.475300000002,
+            2236.4887000000017,
+            2235.5608999999968
+          ],
+          "initialBuildMs": [
+            383.71590000000106,
+            387.84549999999945,
+            376.58309999999983
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_4x-after.exe"
+          ],
+          "buildMs": [
+            388.9472000000005,
+            406.9328999999998,
+            408.4321
+          ],
+          "runtimeMs": [
+            1397.4424,
+            1398.3410000000003,
+            1810.5900999999976,
+            1574.0298000000003,
+            1499.3436000000002
+          ],
+          "executableBytes": 389120,
+          "medianBuildMs": 406.9328999999998,
+          "medianRuntimeMs": 1499.3436000000002,
+          "initialRuntimeMs": [
+            1670.1915000000008,
+            1674.321,
+            1436.8471000000027,
+            1462.7484000000004,
+            1896.4453999999969
+          ],
+          "initialBuildMs": [
+            385.48199999999997,
+            384.4483,
+            401.1975999999995
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.4711655820587086,
+      "buildTimeRatio": 1.0561930239795352,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "record_fresh_1x",
+      "family": "record_fresh",
+      "sourceSha256": "0b70f1505fd1fc2b2f387090751e23c17ee4be5586e5af8b7d0636251a4d4050",
+      "expected": "2000001000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_fresh_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_1x-before.exe"
+          ],
+          "buildMs": [
+            574.8090000000011,
+            387.9202000000005,
+            387.8810000000012
+          ],
+          "runtimeMs": [
+            391.0662999999986,
+            376.2644,
+            411.99089999999705,
+            421.7853000000032,
+            416.0266999999949
+          ],
+          "executableBytes": 390656,
+          "medianBuildMs": 387.9202000000005,
+          "medianRuntimeMs": 411.99089999999705,
+          "initialRuntimeMs": [
+            401.8691000000035,
+            402.35570000000007,
+            389.0650000000023,
+            389.5601999999999,
+            391.2321000000011
+          ],
+          "initialBuildMs": [
+            420.75709999999526,
+            401.8011000000042,
+            402.0457999999999
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_fresh_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_1x-after.exe"
+          ],
+          "buildMs": [
+            470.2404999999999,
+            401.20040000000154,
+            390.0115000000005
+          ],
+          "runtimeMs": [
+            291.058100000002,
+            294.2737000000052,
+            286.38990000000194,
+            288.51640000000043,
+            313.4068000000043
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 401.20040000000154,
+          "medianRuntimeMs": 291.058100000002,
+          "initialRuntimeMs": [
+            304.09070000000065,
+            306.09040000000095,
+            289.9158000000025,
+            301.9340999999986,
+            307.9976000000024
+          ],
+          "initialBuildMs": [
+            414.587400000004,
+            400.1574000000037,
+            403.97639999999956
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.415493676348448,
+      "buildTimeRatio": 1.0342343605720998,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "record_fresh_4x",
+      "family": "record_fresh",
+      "sourceSha256": "f7711773cae504f23ac173b8851683946110314c91b90613c37eabb79ecdb9da",
+      "expected": "32000004000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_fresh_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_4x-before.exe"
+          ],
+          "buildMs": [
+            427.1241000000009,
+            431.0845999999947,
+            391.81760000000213
+          ],
+          "runtimeMs": [
+            1542.6809000000067,
+            1495.4607000000033,
+            1554.6190999999963,
+            1533.3233000000037,
+            1551.7446999999956
+          ],
+          "executableBytes": 390656,
+          "medianBuildMs": 427.1241000000009,
+          "medianRuntimeMs": 1542.6809000000067,
+          "initialRuntimeMs": [
+            1648.0489000000016,
+            1625.9449999999997,
+            1556.5501999999979,
+            1534.9832999999999,
+            1540.070200000002
+          ],
+          "initialBuildMs": [
+            407.5904999999984,
+            398.9927000000025,
+            452.35379999999714
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_fresh_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_fresh_4x-after.exe"
+          ],
+          "buildMs": [
+            380.50109999999404,
+            433.95650000000023,
+            403.9789000000019
+          ],
+          "runtimeMs": [
+            1121.4428999999946,
+            1129.2784000000029,
+            1138.5062000000034,
+            1187.5969999999943,
+            1134.0819999999949
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 403.9789000000019,
+          "medianRuntimeMs": 1134.0819999999949,
+          "initialRuntimeMs": [
+            1121.5049,
+            1168.4566999999952,
+            1152.9867999999988,
+            1137.1772999999957,
+            1137.2778000000035
+          ],
+          "initialBuildMs": [
+            385.5011999999988,
+            390.23389999999927,
+            834.6923999999999
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.3602904375521467,
+      "buildTimeRatio": 0.9458115334629936,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "record_reuse_1x",
+      "family": "record_reuse",
+      "sourceSha256": "55d204c60ee7f2e170456210069649cf6a058fc6c3631da3ad73aae223772049",
+      "expected": "2000001000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_reuse_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_1x-before.exe"
+          ],
+          "buildMs": [
+            411.52820000000065,
+            438.40239999999903,
+            441.6244000000006
+          ],
+          "runtimeMs": [
+            233.21310000000085,
+            239.59709999999905,
+            245.7332000000024,
+            232.0673999999999,
+            237.2899999999936
+          ],
+          "executableBytes": 391168,
+          "bytecodeHashes": {
+            "true": "8f2d43f7ab1c2819396a5be172c09c4d6adef42366eadd0e7ec9a5a3896f6ccd",
+            "false": "46046138295a97a2cdc907ddf9e94e6433c85c2a19ae2805a62c6365620cc9ac"
+          },
+          "medianBuildMs": 438.40239999999903,
+          "medianRuntimeMs": 237.2899999999936,
+          "initialRuntimeMs": [
+            252.79699999999139,
+            245.37289999998757,
+            236.44689999999537,
+            240.08839999999327,
+            236.6235000000015
+          ],
+          "initialBuildMs": [
+            445.6719000000012,
+            418.0341000000044,
+            403.4366000000009
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_reuse_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_1x-after.exe"
+          ],
+          "buildMs": [
+            431.5671000000002,
+            442.619200000001,
+            429.6183999999994
+          ],
+          "runtimeMs": [
+            154.84429999999702,
+            149.90090000000055,
+            156.60719999999856,
+            160.78540000000066,
+            161.16040000000066
+          ],
+          "executableBytes": 390144,
+          "bytecodeHashes": {
+            "true": "8f2d43f7ab1c2819396a5be172c09c4d6adef42366eadd0e7ec9a5a3896f6ccd",
+            "false": "46046138295a97a2cdc907ddf9e94e6433c85c2a19ae2805a62c6365620cc9ac"
+          },
+          "medianBuildMs": 431.5671000000002,
+          "medianRuntimeMs": 156.60719999999856,
+          "initialRuntimeMs": [
+            158.56010000000242,
+            153.28239999999641,
+            158.2210999999952,
+            159.5051999999996,
+            152.91100000000733
+          ],
+          "initialBuildMs": [
+            649.4971000000078,
+            427.4658000000054,
+            392.5625
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.5151921495307736,
+      "buildTimeRatio": 0.9844086163761904,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "record_reuse_4x",
+      "family": "record_reuse",
+      "sourceSha256": "14f4c83c2c1a8cc48563a70f432f71c258ebd35858faf3733fd5948d804b3de7",
+      "expected": "32000004000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_reuse_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_4x-before.exe"
+          ],
+          "buildMs": [
+            387.479800000001,
+            384.43940000000293,
+            387.5795000000071
+          ],
+          "runtimeMs": [
+            920.1962000000058,
+            970.4616999999998,
+            910.5219999999972,
+            997.0953000000009,
+            907.2309999999998
+          ],
+          "executableBytes": 391168,
+          "medianBuildMs": 387.479800000001,
+          "medianRuntimeMs": 920.1962000000058,
+          "initialRuntimeMs": [
+            1066.7716999999975,
+            932.4680999999982,
+            1061.9440000000031,
+            1031.9654999999912,
+            937.7635000000009
+          ],
+          "initialBuildMs": [
+            459.15290000000095,
+            410.096000000005,
+            388.46549999999115
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\record_reuse_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\record_reuse_4x-after.exe"
+          ],
+          "buildMs": [
+            394.4094999999943,
+            377.63090000000375,
+            376.15009999999893
+          ],
+          "runtimeMs": [
+            596.078800000003,
+            600.8629000000074,
+            590.8298000000068,
+            614.7393000000011,
+            602.9235999999946
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 377.63090000000375,
+          "medianRuntimeMs": 600.8629000000074,
+          "initialRuntimeMs": [
+            596.9082999999955,
+            581.1926999999996,
+            755.3948000000091,
+            648.7361999999994,
+            578.8245999999926
+          ],
+          "initialBuildMs": [
+            427.9916999999987,
+            438.2975999999908,
+            419.2433000000019
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.531457841713966,
+      "buildTimeRatio": 0.9745821588635144,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "list_fresh_1x",
+      "family": "list_fresh",
+      "sourceSha256": "d6adb5c893f94f20e28d46bdd3e0cc7a0f1b543c654e15b7924311e3ee895fbc",
+      "expected": "124999750000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_fresh_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_1x-before.exe"
+          ],
+          "buildMs": [
+            423.33030000000144,
+            433.69550000000163,
+            394.8920999999973
+          ],
+          "runtimeMs": [
+            125.3804999999993,
+            132.44109999999637,
+            123.32050000000163,
+            125.91769999999087,
+            127.54279999999562
+          ],
+          "executableBytes": 391680,
+          "medianBuildMs": 423.33030000000144,
+          "medianRuntimeMs": 125.91769999999087,
+          "initialRuntimeMs": [
+            127.88589999999385,
+            123.28149999999732,
+            133.9377000000095,
+            127.79619999999704,
+            125.12290000000212
+          ],
+          "initialBuildMs": [
+            404.9921000000031,
+            391.6322000000073,
+            418.65989999999874
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_fresh_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_1x-after.exe"
+          ],
+          "buildMs": [
+            405.0026000000071,
+            400.8268000000098,
+            385.19920000000275
+          ],
+          "runtimeMs": [
+            104.86999999999534,
+            106.17839999998978,
+            108.97539999999572,
+            101.8799999999901,
+            115.94959999999264
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 400.8268000000098,
+          "medianRuntimeMs": 106.17839999998978,
+          "initialRuntimeMs": [
+            109.75780000000668,
+            120.34539999999106,
+            104.89069999998901,
+            113.55990000000747,
+            102.83169999999518
+          ],
+          "initialBuildMs": [
+            416.04210000000603,
+            393.34719999998924,
+            415.08039999999164
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.18590692645588,
+      "buildTimeRatio": 0.9468417450865398,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "list_fresh_4x",
+      "family": "list_fresh",
+      "sourceSha256": "99c9f8cc7ec63889bd1b24405e22b668909cd8bb55aff5a92efb5dfd263d4244",
+      "expected": "1999999000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_fresh_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_4x-before.exe"
+          ],
+          "buildMs": [
+            402.43679999999586,
+            391.43859999999404,
+            383.3798999999999
+          ],
+          "runtimeMs": [
+            468.1432000000059,
+            487.08559999999125,
+            500.09850000000733,
+            496.5104999999894,
+            486.2905000000028
+          ],
+          "executableBytes": 391680,
+          "medianBuildMs": 391.43859999999404,
+          "medianRuntimeMs": 487.08559999999125,
+          "initialRuntimeMs": [
+            495.72879999999714,
+            493.72090000000026,
+            762.0500000000029,
+            621.1765000000014,
+            494.5320000000065
+          ],
+          "initialBuildMs": [
+            399.03250000000116,
+            384.7927000000054,
+            396.1811000000016
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_fresh_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_fresh_4x-after.exe"
+          ],
+          "buildMs": [
+            405.8969999999972,
+            406.8752999999997,
+            379.4988000000012
+          ],
+          "runtimeMs": [
+            384.2100999999966,
+            395.8599000000104,
+            398.6091999999917,
+            404.97490000000107,
+            414.2395000000106
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 405.8969999999972,
+          "medianRuntimeMs": 398.6091999999917,
+          "initialRuntimeMs": [
+            398.01510000000417,
+            395.9175000000105,
+            480.71540000000095,
+            408.78859999999986,
+            410.1502000000037
+          ],
+          "initialBuildMs": [
+            386.809500000003,
+            386.90439999999944,
+            393.4858999999997
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.2219627645322821,
+      "buildTimeRatio": 1.0369365719170347,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "list_push_1x",
+      "family": "list_push",
+      "sourceSha256": "039f6db9dc6b9a5cd909c714a7390aac8d7fc87fccbb196a20e7cbbb9ee65d61",
+      "expected": "500001",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_push_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_1x-before.exe"
+          ],
+          "buildMs": [
+            3520.7330000000075,
+            3264.3248999999923,
+            3283.1612000000023
+          ],
+          "runtimeMs": [
+            66.16909999999916,
+            65.06450000000768,
+            65.02539999999863,
+            64.62930000000051,
+            70.19729999999981
+          ],
+          "executableBytes": 733696,
+          "bytecodeHashes": {
+            "true": "234b45d793f8478460c5dccec823bb6714d160300d72676fed324b727dd6e0a3",
+            "false": "3b99677130befde65e348f445f3264aa0a4977924e5e74d670091679c3975a34"
+          },
+          "medianBuildMs": 3283.1612000000023,
+          "medianRuntimeMs": 65.06450000000768,
+          "initialRuntimeMs": [
+            66.10620000000927,
+            64.70769999999902,
+            63.928000000014435,
+            64.37409999998636,
+            65.53369999999995
+          ],
+          "initialBuildMs": [
+            3190.820399999997,
+            3259.404899999994,
+            3136.8361000000004
+          ]
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_push_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_1x-after.exe"
+          ],
+          "buildMs": [
+            3218.568299999999,
+            3330.7525999999925,
+            3264.5217999999877
+          ],
+          "runtimeMs": [
+            58.40800000001036,
+            50.71769999999378,
+            46.353799999997136,
+            53.63309999999183,
+            45.9548000000068
+          ],
+          "executableBytes": 733184,
+          "bytecodeHashes": {
+            "true": "234b45d793f8478460c5dccec823bb6714d160300d72676fed324b727dd6e0a3",
+            "false": "3b99677130befde65e348f445f3264aa0a4977924e5e74d670091679c3975a34"
+          },
+          "medianBuildMs": 3264.5217999999877,
+          "medianRuntimeMs": 50.71769999999378,
+          "initialRuntimeMs": [
+            46.58170000000973,
+            46.439400000002934,
+            46.98649999999907,
+            45.30819999999949,
+            46.26980000000913
+          ],
+          "initialBuildMs": [
+            3114.294299999994,
+            3100.349299999987,
+            3142.885099999985
+          ]
+        }
+      },
+      "runtimeSpeedup": 1.2828756035864335,
+      "buildTimeRatio": 0.994322727741783,
+      "retimedAfterBackgroundBuilds": true
+    },
+    {
+      "name": "list_push_4x",
+      "family": "list_push",
+      "sourceSha256": "5e1602f06f35933863c334b2f17d15aff03ab1b71b460b213239e23ac67851bd",
+      "expected": "2000001",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_push_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_4x-before.exe"
+          ],
+          "buildMs": [
+            3383.0819000000192,
+            3974.9216000000015,
+            3216.5481000000145
+          ],
+          "runtimeMs": [
+            228.5162999999884,
+            232.36410000000615,
+            229.67199999999139,
+            233.3967999999877,
+            235.39509999999427
+          ],
+          "executableBytes": 733696,
+          "medianBuildMs": 3383.0819000000192,
+          "medianRuntimeMs": 232.36410000000615
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_push_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_push_4x-after.exe"
+          ],
+          "buildMs": [
+            3186.760800000018,
+            3277.5990000000165,
+            3166.7239999999874
+          ],
+          "runtimeMs": [
+            154.25280000001658,
+            154.5559999999823,
+            152.81429999999818,
+            155.7838000000047,
+            160.20090000002529
+          ],
+          "executableBytes": 733184,
+          "medianBuildMs": 3186.760800000018,
+          "medianRuntimeMs": 154.5559999999823
+        }
+      },
+      "runtimeSpeedup": 1.5034298247886382,
+      "buildTimeRatio": 0.9419697465792951
+    },
+    {
+      "name": "field_read_1x",
+      "family": "field_read",
+      "sourceSha256": "c6c7a5e551b3284b409a4b217c68f5bab540c51980ea44525b04b203c6ce0a6d",
+      "expected": "20000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\field_read_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_1x-before.exe"
+          ],
+          "buildMs": [
+            401.9871999999741,
+            378.45079999999143,
+            382.7245000000112
+          ],
+          "runtimeMs": [
+            295.5474000000104,
+            230.1492000000144,
+            258.24849999998696,
+            229.96909999998752,
+            234.72909999999683
+          ],
+          "executableBytes": 390656,
+          "medianBuildMs": 382.7245000000112,
+          "medianRuntimeMs": 234.72909999999683
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\field_read_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_1x-after.exe"
+          ],
+          "buildMs": [
+            398.4444000000076,
+            374.4070000000065,
+            563.6080000000075
+          ],
+          "runtimeMs": [
+            151.94550000000163,
+            150.7345000000205,
+            218.7630000000063,
+            150.31549999999697,
+            167.27349999998114
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 398.4444000000076,
+          "medianRuntimeMs": 151.94550000000163
+        }
+      },
+      "runtimeSpeedup": 1.5448242955533025,
+      "buildTimeRatio": 1.0410736704862007
+    },
+    {
+      "name": "field_read_4x",
+      "family": "field_read",
+      "sourceSha256": "22373b87e9639f94a4a8ac3166ca45614803daeafc09a2eb36ad13bb5b290dce",
+      "expected": "80000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\field_read_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_4x-before.exe"
+          ],
+          "buildMs": [
+            382.0728999999992,
+            389.441599999991,
+            405.50109999999404
+          ],
+          "runtimeMs": [
+            871.9984000000113,
+            912.5946000000113,
+            902.7905000000028,
+            879.4310000000114,
+            912.3279000000039
+          ],
+          "executableBytes": 390656,
+          "medianBuildMs": 389.441599999991,
+          "medianRuntimeMs": 902.7905000000028
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\field_read_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\field_read_4x-after.exe"
+          ],
+          "buildMs": [
+            379.5133999999962,
+            382.46100000001024,
+            425.50359999999637
+          ],
+          "runtimeMs": [
+            561.8345000000263,
+            570.6654999999737,
+            562.7376999999979,
+            562.0848000000115,
+            562.6869000000006
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 382.46100000001024,
+          "medianRuntimeMs": 562.6869000000006
+        }
+      },
+      "runtimeSpeedup": 1.6044277910148643,
+      "buildTimeRatio": 0.9820753612352123
+    },
+    {
+      "name": "method_read_1x",
+      "family": "method_read",
+      "sourceSha256": "b45a99ef255ceb39edae7121699f80799cd909676d734aacec521f564d482d87",
+      "expected": "20000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\method_read_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_1x-before.exe"
+          ],
+          "buildMs": [
+            418.01310000001104,
+            396.38240000000224,
+            377.51250000001164
+          ],
+          "runtimeMs": [
+            408.6402999999991,
+            328.30509999999776,
+            330.9667999999947,
+            329.2350999999908,
+            329.2662999999884
+          ],
+          "executableBytes": 391168,
+          "medianBuildMs": 396.38240000000224,
+          "medianRuntimeMs": 329.2662999999884
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\method_read_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_1x-after.exe"
+          ],
+          "buildMs": [
+            529.0013000000035,
+            382.77270000000135,
+            392.62899999998626
+          ],
+          "runtimeMs": [
+            251.59230000001844,
+            254.90989999999874,
+            247.66560000000754,
+            249.05350000000908,
+            248.29170000000158
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 392.62899999998626,
+          "medianRuntimeMs": 249.05350000000908
+        }
+      },
+      "runtimeSpeedup": 1.3220705591367976,
+      "buildTimeRatio": 0.9905308611078193
+    },
+    {
+      "name": "method_read_4x",
+      "family": "method_read",
+      "sourceSha256": "9da1b069f453fb6da7796df60d03db41cf005d4f2092d51129b7d95f38822c5e",
+      "expected": "80000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\method_read_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_4x-before.exe"
+          ],
+          "buildMs": [
+            419.3330999999889,
+            396.7748000000138,
+            377.78979999999865
+          ],
+          "runtimeMs": [
+            1307.6882000000041,
+            1446.7744999999995,
+            1292.453599999979,
+            1285.0915000000095,
+            1293.5950000000012
+          ],
+          "executableBytes": 391168,
+          "medianBuildMs": 396.7748000000138,
+          "medianRuntimeMs": 1293.5950000000012
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\method_read_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\method_read_4x-after.exe"
+          ],
+          "buildMs": [
+            397.63279999999213,
+            385.1964000000153,
+            389.04550000000745
+          ],
+          "runtimeMs": [
+            980.2565000000177,
+            1164.5627999999851,
+            984.5874999999942,
+            987.2256000000052,
+            1031.7012000000104
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 389.04550000000745,
+          "medianRuntimeMs": 987.2256000000052
+        }
+      },
+      "runtimeSpeedup": 1.3103337271642816,
+      "buildTimeRatio": 0.9805196801812865
+    },
+    {
+      "name": "list_iterator_1x",
+      "family": "list_iterator",
+      "sourceSha256": "a2fee0c1083e3bdfd461f916b874869ffac1397c8ffb2236b6fcf2d0c96d612c",
+      "expected": "31249875000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_iterator_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_1x-before.exe"
+          ],
+          "buildMs": [
+            3563.708500000008,
+            3408.956199999986,
+            3344.951700000005
+          ],
+          "runtimeMs": [
+            265.09520000001066,
+            293.9689000000071,
+            273.257500000007,
+            532.2666999999783,
+            290.37119999999413
+          ],
+          "executableBytes": 741376,
+          "medianBuildMs": 3408.956199999986,
+          "medianRuntimeMs": 290.37119999999413
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_iterator_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_1x-after.exe"
+          ],
+          "buildMs": [
+            3898.5904000000155,
+            3550.9986999999965,
+            4482.184600000008
+          ],
+          "runtimeMs": [
+            225.48089999999502,
+            253.05319999999483,
+            226.87279999998282,
+            271.4799999999814,
+            213.04019999998854
+          ],
+          "executableBytes": 737280,
+          "medianBuildMs": 3898.5904000000155,
+          "medianRuntimeMs": 226.87279999998282
+        }
+      },
+      "runtimeSpeedup": 1.279885468861918,
+      "buildTimeRatio": 1.1436317075590563
+    },
+    {
+      "name": "list_iterator_4x",
+      "family": "list_iterator",
+      "sourceSha256": "0bb6d42bbb1d280dd4e5eebc8748740d45d400d90ec6f06f8398ad846902866c",
+      "expected": "499999500000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_iterator_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_4x-before.exe"
+          ],
+          "buildMs": [
+            3207.7737000000197,
+            3210.3123000000196,
+            3202.4017999999924
+          ],
+          "runtimeMs": [
+            1074.6371999999974,
+            977.8050000000512,
+            1007.6293000000296,
+            979.6777999999467,
+            967.4493999999831
+          ],
+          "executableBytes": 741376,
+          "medianBuildMs": 3207.7737000000197,
+          "medianRuntimeMs": 979.6777999999467
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_iterator_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_iterator_4x-after.exe"
+          ],
+          "buildMs": [
+            3212.710400000011,
+            3261.0450999999885,
+            3332.462200000009
+          ],
+          "runtimeMs": [
+            826.4145000000135,
+            781.3822999999975,
+            783.3446000000113,
+            791.843899999978,
+            800.2778999999864
+          ],
+          "executableBytes": 737280,
+          "medianBuildMs": 3261.0450999999885,
+          "medianRuntimeMs": 791.843899999978
+        }
+      },
+      "runtimeSpeedup": 1.2372107684355136,
+      "buildTimeRatio": 1.0166069695003637
+    },
+    {
+      "name": "list_snapshot_1x",
+      "family": "list_snapshot",
+      "sourceSha256": "a33256b772da303e6b22527e489b96de7b120877c89723025616954e252086fd",
+      "expected": "31249875000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_snapshot_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_1x-before.exe"
+          ],
+          "buildMs": [
+            3342.3437000000267,
+            3313.949900000007,
+            3423.6173999999883
+          ],
+          "runtimeMs": [
+            283.7253999999957,
+            271.90869999997085,
+            292.7460999999894,
+            275.6059000000241,
+            276.94719999999506
+          ],
+          "executableBytes": 742400,
+          "medianBuildMs": 3342.3437000000267,
+          "medianRuntimeMs": 276.94719999999506
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_snapshot_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_1x-after.exe"
+          ],
+          "buildMs": [
+            3893.631300000008,
+            3208.299500000023,
+            3249.9163999999873
+          ],
+          "runtimeMs": [
+            234.56670000002487,
+            233.96220000000903,
+            235.39729999995325,
+            238.09560000000056,
+            238.50920000002952
+          ],
+          "executableBytes": 737792,
+          "medianBuildMs": 3249.9163999999873,
+          "medianRuntimeMs": 235.39729999995325
+        }
+      },
+      "runtimeSpeedup": 1.1765096710966951,
+      "buildTimeRatio": 0.9723465602894045
+    },
+    {
+      "name": "list_snapshot_4x",
+      "family": "list_snapshot",
+      "sourceSha256": "283239e85d5f98edbadd62eecff73d83dcf79e5768977c534e67dfee0cb78539",
+      "expected": "499999500000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_snapshot_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_4x-before.exe"
+          ],
+          "buildMs": [
+            3577.6832000000286,
+            3191.9110999999684,
+            3232.4103999999934
+          ],
+          "runtimeMs": [
+            1088.9378000000142,
+            1086.741399999999,
+            1093.6701000000467,
+            1075.9942000000156,
+            1125.5659999999916
+          ],
+          "executableBytes": 742400,
+          "medianBuildMs": 3232.4103999999934,
+          "medianRuntimeMs": 1088.9378000000142
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\list_snapshot_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\list_snapshot_4x-after.exe"
+          ],
+          "buildMs": [
+            3557.7171999999555,
+            3230.1959000000497,
+            3824.3601999999955
+          ],
+          "runtimeMs": [
+            905.1332000000402,
+            895.351100000029,
+            912.3374999999651,
+            897.2248000000254,
+            896.0145000000484
+          ],
+          "executableBytes": 737792,
+          "medianBuildMs": 3557.7171999999555,
+          "medianRuntimeMs": 897.2248000000254
+        }
+      },
+      "runtimeSpeedup": 1.2136733179911918,
+      "buildTimeRatio": 1.1006390772656722
+    },
+    {
+      "name": "branch_counter_1x",
+      "family": "branch_counter",
+      "sourceSha256": "f0497d760284e877f215045e92cd5ce63a0fa317d65bfdc2f7cb53a2fd05bfa9",
+      "expected": "666672999996",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\branch_counter_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_1x-before.exe"
+          ],
+          "buildMs": [
+            566.0834000000032,
+            440.562900000019,
+            551.6144000000204
+          ],
+          "runtimeMs": [
+            879.8771999999881,
+            849.2468000000226,
+            848.4746999999625,
+            851.4685000000172,
+            862.6191000000108
+          ],
+          "executableBytes": 393216,
+          "medianBuildMs": 551.6144000000204,
+          "medianRuntimeMs": 851.4685000000172
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\branch_counter_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_1x-after.exe"
+          ],
+          "buildMs": [
+            550.468200000003,
+            445.4140999999945,
+            392.02309999999125
+          ],
+          "runtimeMs": [
+            465.8797000000486,
+            452.5195000000531,
+            433.29629999998724,
+            434.2946000000229,
+            436.1781000000192
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 445.4140999999945,
+          "medianRuntimeMs": 436.1781000000192
+        }
+      },
+      "runtimeSpeedup": 1.9521119927845525,
+      "buildTimeRatio": 0.8074736627614835
+    },
+    {
+      "name": "branch_counter_4x",
+      "family": "branch_counter",
+      "sourceSha256": "bf76146161e1d5cd392b2283db28dc99640994e84bad1653277d68f8e6c32dd5",
+      "expected": "10666691999996",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\branch_counter_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_4x-before.exe"
+          ],
+          "buildMs": [
+            485.35269999998854,
+            390.0432000000146,
+            398.89040000003297
+          ],
+          "runtimeMs": [
+            3616.711899999995,
+            3412.4678999999887,
+            3491.4032000000007,
+            4174.256999999983,
+            3508.120900000038
+          ],
+          "executableBytes": 393216,
+          "medianBuildMs": 398.89040000003297,
+          "medianRuntimeMs": 3508.120900000038
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\branch_counter_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\branch_counter_4x-after.exe"
+          ],
+          "buildMs": [
+            414.03960000001825,
+            400.469299999997,
+            397.79120000003604
+          ],
+          "runtimeMs": [
+            1754.3199999999488,
+            1730.237700000056,
+            2080.9948999999906,
+            2043.365599999961,
+            1793.723399999959
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 400.469299999997,
+          "medianRuntimeMs": 1793.723399999959
+        }
+      },
+      "runtimeSpeedup": 1.9557758459303807,
+      "buildTimeRatio": 1.0039582301302912
+    },
+    {
+      "name": "enum_dispatch_1x",
+      "family": "enum_dispatch",
+      "sourceSha256": "43104c44fe2abda78057f69e8c5687add81e6ae0ac45d513a88ecbe069f30b44",
+      "expected": "250000500000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\enum_dispatch_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_1x-before.exe"
+          ],
+          "buildMs": [
+            405.8386000000173,
+            421.15360000001965,
+            402.5180999999866
+          ],
+          "runtimeMs": [
+            810.8763000000035,
+            972.1431000000448,
+            802.5329999999958,
+            891.2682999999961,
+            766.664999999979
+          ],
+          "executableBytes": 396800,
+          "medianBuildMs": 405.8386000000173,
+          "medianRuntimeMs": 810.8763000000035
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\enum_dispatch_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_1x-after.exe"
+          ],
+          "buildMs": [
+            402.00169999996433,
+            434.08380000002217,
+            415.22690000000875
+          ],
+          "runtimeMs": [
+            645.5751000000164,
+            831.6853000000119,
+            599.6005000000005,
+            940.9330000000191,
+            604.775500000047
+          ],
+          "executableBytes": 393216,
+          "medianBuildMs": 415.22690000000875,
+          "medianRuntimeMs": 645.5751000000164
+        }
+      },
+      "runtimeSpeedup": 1.2560526265650316,
+      "buildTimeRatio": 1.0231330878826979
+    },
+    {
+      "name": "enum_dispatch_4x",
+      "family": "enum_dispatch",
+      "sourceSha256": "bb1486b156388bfc9657117762311bdcf90eeb57bc9b0d5ce529198218ce1845",
+      "expected": "4000002000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\enum_dispatch_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_4x-before.exe"
+          ],
+          "buildMs": [
+            401.6522999999579,
+            401.1682000000146,
+            407.149000000034
+          ],
+          "runtimeMs": [
+            2920.275800000003,
+            2814.15419999999,
+            2851.1184000000358,
+            2906.624600000039,
+            2826.9051999999792
+          ],
+          "executableBytes": 396800,
+          "medianBuildMs": 401.6522999999579,
+          "medianRuntimeMs": 2851.1184000000358
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\enum_dispatch_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\enum_dispatch_4x-after.exe"
+          ],
+          "buildMs": [
+            400.0576000000001,
+            407.6160000000382,
+            394.9433999999892
+          ],
+          "runtimeMs": [
+            2340.5933999999543,
+            2273.7750000000233,
+            2184.4192999999505,
+            2177.8290999999736,
+            2236.2379000000074
+          ],
+          "executableBytes": 393216,
+          "medianBuildMs": 400.0576000000001,
+          "medianRuntimeMs": 2236.2379000000074
+        }
+      },
+      "runtimeSpeedup": 1.2749620243892774,
+      "buildTimeRatio": 0.9960296505212145
+    },
+    {
+      "name": "float_loop_1x",
+      "family": "float_loop",
+      "sourceSha256": "e905c7d3b5da11b39a8d9236b1a9865fb003b93b5c538846509d7d8020cfc890",
+      "expected": "2000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_1x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\float_loop_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_1x-before.exe"
+          ],
+          "buildMs": [
+            431.89100000000326,
+            416.6603999999934,
+            405.6116000000038
+          ],
+          "runtimeMs": [
+            258.3548000000301,
+            250.3076000000001,
+            250.45880000002217,
+            253.3980000000447,
+            247.36980000004405
+          ],
+          "executableBytes": 391168,
+          "medianBuildMs": 416.6603999999934,
+          "medianRuntimeMs": 250.45880000002217
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_1x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\float_loop_1x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_1x-after.exe"
+          ],
+          "buildMs": [
+            386.11019999999553,
+            409.5761000000057,
+            418.87269999994896
+          ],
+          "runtimeMs": [
+            176.72889999998733,
+            169.8403999999864,
+            189.48419999994803,
+            172.4728999999934,
+            178.30320000002393
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 409.5761000000057,
+          "medianRuntimeMs": 176.72889999998733
+        }
+      },
+      "runtimeSpeedup": 1.417192094784951,
+      "buildTimeRatio": 0.9829974242812904
+    },
+    {
+      "name": "float_loop_4x",
+      "family": "float_loop",
+      "sourceSha256": "12d7147c702ef87e29506a79e9b1223bc8a9f6f7c5e402764793a2780f004dfc",
+      "expected": "8000000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_4x-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\float_loop_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_4x-before.exe"
+          ],
+          "buildMs": [
+            448.6310999999987,
+            386.36069999996107,
+            399.594700000016
+          ],
+          "runtimeMs": [
+            994.6189000000013,
+            1054.1922999999952,
+            1022.8930999999866,
+            988.3414000000339,
+            1013.3729999999632
+          ],
+          "executableBytes": 391168,
+          "medianBuildMs": 399.594700000016,
+          "medianRuntimeMs": 1013.3729999999632
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_4x-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\float_loop_4x.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\float_loop_4x-after.exe"
+          ],
+          "buildMs": [
+            390.7366000000038,
+            412.5734999999986,
+            410.7973999999813
+          ],
+          "runtimeMs": [
+            652.4804000000004,
+            717.8807999999844,
+            681.3998000000138,
+            657.4737999999779,
+            647.5642000000225
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 410.7973999999813,
+          "medianRuntimeMs": 657.4737999999779
+        }
+      },
+      "runtimeSpeedup": 1.5413131291315292,
+      "buildTimeRatio": 1.0280351566223596
+    },
+    {
+      "name": "scalar_cse_2000000",
+      "family": "scalar_cse",
+      "sourceSha256": "6bfb31b4afbbcf01a332c06eae028ced1329d88255b5f3be51d08b8042ab57e9",
+      "expected": "3900000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_2000000-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_cse_2000000.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_2000000-before.exe"
+          ],
+          "buildMs": [
+            427.0488000000478,
+            419.21240000001853,
+            390.49599999998463
+          ],
+          "runtimeMs": [
+            568.139199999976,
+            575.0642000000225,
+            577.5227000000305,
+            569.0077000000165,
+            599.9259999999776
+          ],
+          "executableBytes": 391680,
+          "medianBuildMs": 419.21240000001853,
+          "medianRuntimeMs": 575.0642000000225
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_2000000-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_cse_2000000.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_2000000-after.exe"
+          ],
+          "buildMs": [
+            380.98560000001453,
+            389.59779999998864,
+            380.2252000000444
+          ],
+          "runtimeMs": [
+            390.62309999996796,
+            363.8925000000163,
+            349.9040999999852,
+            367.5089999999618,
+            362.679999999993
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 380.98560000001453,
+          "medianRuntimeMs": 363.8925000000163
+        }
+      },
+      "runtimeSpeedup": 1.580313416737077,
+      "buildTimeRatio": 0.9088128118347589
+    },
+    {
+      "name": "scalar_cse_8000000",
+      "family": "scalar_cse",
+      "sourceSha256": "8d490d15441c450f6ec2cdc9f13102092bddf4aca34dd783178334d4c4f6bd4a",
+      "expected": "15900000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_8000000-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_cse_8000000.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_8000000-before.exe"
+          ],
+          "buildMs": [
+            413.8092000000179,
+            417.8753999999608,
+            386.8069999999716
+          ],
+          "runtimeMs": [
+            2279.2334000000264,
+            2486.292700000049,
+            2389.803600000043,
+            2790.3326000000234,
+            2396.836499999976
+          ],
+          "executableBytes": 391680,
+          "medianBuildMs": 413.8092000000179,
+          "medianRuntimeMs": 2396.836499999976
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_8000000-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\scalar_cse_8000000.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\scalar_cse_8000000-after.exe"
+          ],
+          "buildMs": [
+            424.749199999962,
+            422.15200000000186,
+            414.02289999998175
+          ],
+          "runtimeMs": [
+            1539.1332999999868,
+            1441.9408999999869,
+            1476.157200000016,
+            1433.4294000000227,
+            1391.907200000016
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 422.15200000000186,
+          "medianRuntimeMs": 1441.9408999999869
+        }
+      },
+      "runtimeSpeedup": 1.662229360440499,
+      "buildTimeRatio": 1.0201609824044116
+    },
+    {
+      "name": "fibonacci_28",
+      "family": "fibonacci",
+      "sourceSha256": "a21e740d1ab408935d95941525f22fc82ebe834c1900d51a65b729d452fe2cb5",
+      "expected": "317811",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_28-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_28.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_28-before.exe"
+          ],
+          "buildMs": [
+            429.44980000000214,
+            999.2608999999939,
+            412.35210000001825
+          ],
+          "runtimeMs": [
+            197.6441000000341,
+            197.33580000000075,
+            186.67889999999898,
+            195.14770000003045,
+            203.34090000001015
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 429.44980000000214,
+          "medianRuntimeMs": 197.33580000000075
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_28-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_28.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_28-after.exe"
+          ],
+          "buildMs": [
+            413.3557000000146,
+            456.9866000000038,
+            418.7233000000124
+          ],
+          "runtimeMs": [
+            209.72899999999208,
+            164.35479999997187,
+            131.47010000003502,
+            115.7780999999959,
+            112.94030000001658
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 418.7233000000124,
+          "medianRuntimeMs": 131.47010000003502
+        }
+      },
+      "runtimeSpeedup": 1.5009937620793488,
+      "buildTimeRatio": 0.9750226918257042
+    },
+    {
+      "name": "fibonacci_32",
+      "family": "fibonacci",
+      "sourceSha256": "cdae300d8137ff43da47f125fff3ea14989c92d29dc0b541fb184ca33ceab45c",
+      "expected": "2178309",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_32-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_32.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_32-before.exe"
+          ],
+          "buildMs": [
+            404.6037999999826,
+            428.1797999999835,
+            454.68450000003213
+          ],
+          "runtimeMs": [
+            1239.3643000000156,
+            1222.086500000034,
+            1242.1001999999862,
+            1423.398600000015,
+            1236.0199999999604
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 428.1797999999835,
+          "medianRuntimeMs": 1239.3643000000156
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_32-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_32.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_32-after.exe"
+          ],
+          "buildMs": [
+            415.58129999996163,
+            409.8765999999596,
+            463.09440000000177
+          ],
+          "runtimeMs": [
+            734.6762000000454,
+            727.9340000000084,
+            743.8544000000111,
+            1019.7112000000197,
+            708.9478000000236
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 415.58129999996163,
+          "medianRuntimeMs": 734.6762000000454
+        }
+      },
+      "runtimeSpeedup": 1.6869531094105663,
+      "buildTimeRatio": 0.9705766129088239
+    },
+    {
+      "name": "fibonacci_35",
+      "family": "fibonacci",
+      "sourceSha256": "4e4799e6742cb9c7ea8265244d597919e8b1400e6b05c7c8c7a67726edd7edc4",
+      "expected": "9227465",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_35-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_35.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_35-before.exe"
+          ],
+          "buildMs": [
+            404.2325000000419,
+            490.3963999999687,
+            576.970100000035
+          ],
+          "runtimeMs": [
+            5439.7972999999765,
+            5468.7477999998955,
+            5149.135499999975,
+            5232.703499999945,
+            5227.3436999999685
+          ],
+          "executableBytes": 390144,
+          "medianBuildMs": 490.3963999999687,
+          "medianRuntimeMs": 5232.703499999945
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_35-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-large-run2\\fibonacci_35.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\fibonacci_35-after.exe"
+          ],
+          "buildMs": [
+            397.41049999999814,
+            404.49560000002384,
+            448.1439000000246
+          ],
+          "runtimeMs": [
+            3089.107399999979,
+            3204.3384999999544,
+            3082.2890999999363,
+            3126.799699999974,
+            3061.3608999999706
+          ],
+          "executableBytes": 389632,
+          "medianBuildMs": 404.49560000002384,
+          "medianRuntimeMs": 3089.107399999979
+        }
+      },
+      "runtimeSpeedup": 1.6939208717702663,
+      "buildTimeRatio": 0.8248339506571616
+    },
+    {
+      "name": "formatter_1000_functions",
+      "family": "formatter_1000_functions",
+      "sourceSha256": "956a811e7c3bcbfea3dc6283f7d2d2d444dc50db0d8a506aac426aaf6b72c5b9",
+      "expected": "47000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\formatter_1000_functions-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\formatter.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\formatter_1000_functions-before.exe"
+          ],
+          "buildMs": [
+            8115.774699999951,
+            8018.907699999982,
+            7799.986300000106
+          ],
+          "runtimeMs": [
+            1541.159500000067,
+            1534.8993000000482,
+            1539.5629999999655,
+            1530.3344999999972,
+            1587.4598000000697
+          ],
+          "executableBytes": 1630720,
+          "medianBuildMs": 8018.907699999982,
+          "medianRuntimeMs": 1539.5629999999655
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\formatter_1000_functions-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\formatter.fos",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\formatter_1000_functions-after.exe"
+          ],
+          "buildMs": [
+            7488.124300000025,
+            7477.016500000027,
+            7356.198100000038
+          ],
+          "runtimeMs": [
+            782.6129999998957,
+            808.5200000000186,
+            815.6463000000222,
+            862.8253999999724,
+            854.3371999999508
+          ],
+          "executableBytes": 1087488,
+          "medianBuildMs": 7477.016500000027,
+          "medianRuntimeMs": 815.6463000000222
+        }
+      },
+      "runtimeSpeedup": 1.88753752698924,
+      "buildTimeRatio": 0.9324233149609695
+    },
+    {
+      "name": "taker_10000_integers",
+      "family": "taker_10000_integers",
+      "sourceSha256": "03d3a84968dbecabae92e8bf85e3c5ae424e16507d61c2a0207b56dd0dc918df",
+      "expected": "1234567890000",
+      "variants": {
+        "before": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\taker_10000_integers-before.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\parser",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\taker_10000_integers-before.exe"
+          ],
+          "buildMs": [
+            5565.729500000001,
+            6033.246399999996,
+            5593.6175
+          ],
+          "runtimeMs": [
+            873.8292999999976,
+            891.9727000000057,
+            915.9369999999981,
+            880.4498000000021,
+            920.5967999999993
+          ],
+          "executableBytes": 868864,
+          "medianBuildMs": 5593.6175,
+          "medianRuntimeMs": 891.9727000000057
+        },
+        "after": {
+          "output": "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\taker_10000_integers-after.exe",
+          "args": [
+            "build",
+            "C:\\Users\\jason\\git\\foster\\target\\native-from-bytecode-programs\\parser",
+            "--native",
+            "-o",
+            "C:\\Users\\jason\\git\\foster\\target\\native-cleanup\\taker_10000_integers-after.exe"
+          ],
+          "buildMs": [
+            5653.2248,
+            5509.743699999999,
+            5608.006099999999
+          ],
+          "runtimeMs": [
+            632.0084999999963,
+            632.6851999999999,
+            650.2850000000035,
+            657.4950000000026,
+            666.9093999999968
+          ],
+          "executableBytes": 829952,
+          "medianBuildMs": 5608.006099999999,
+          "medianRuntimeMs": 650.2850000000035
+        }
+      },
+      "runtimeSpeedup": 1.3716642702814934,
+      "buildTimeRatio": 1.0025723246181917
+    }
+  ]
+}

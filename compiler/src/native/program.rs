@@ -187,16 +187,20 @@ fn prepare_shared(
         let source = &prepared.program.functions[&instance.key.function];
         let source_states = &facts[&instance.key.function];
         let environment = prepared.environment();
-        let (lowered, failure_cleanup) = crate::compiler::profile::measure("native.lower", || {
-            lower_shared_to_native_ir(
-                &prepared.program.bodies[&instance.key.function],
-                source,
-                source_states,
-                &prepared.function_types[&instance.ir_function],
-                &instance.key,
-                environment,
-            )
-        })?;
+        let (mut lowered, mut failure_cleanup) =
+            crate::compiler::profile::measure("native.lower", || {
+                lower_shared_to_native_ir(
+                    &prepared.program.bodies[&instance.key.function],
+                    source,
+                    source_states,
+                    &prepared.function_types[&instance.ir_function],
+                    &instance.key,
+                    environment,
+                )
+            })?;
+        if optimized {
+            super::optimization::run(&mut lowered, &mut failure_cleanup);
+        }
         lowered.verify(&prepared.function_types).map_err(|error| {
             native_error(format!("invalid native IR for `{}`: {error}", source.name))
         })?;
@@ -240,8 +244,11 @@ fn prepare_shared(
             mutable_parameter_homes.insert(home);
         }
         let mut home_types = std::collections::BTreeMap::new();
+        let addressable = super::optimization::addressable_homes(&lowered);
         for (value, home) in lowered.values.hints().enumerate() {
-            if let Some(home) = home {
+            if let Some(home) = home
+                && (!optimized || addressable.contains(home))
+            {
                 home_types.entry(*home).or_insert(lowered.values[value]);
             }
         }
@@ -372,6 +379,41 @@ impl NativeProgram<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_cleanup_preserves_vm_and_avoids_nonaddressable_stack_homes() {
+        for (index, source) in [
+            include_str!("../../../benchmarks/fibonacci.fos"),
+            include_str!("../../../benchmarks/native_runtime/branch_counter.fos"),
+            include_str!("../../../benchmarks/native_runtime/record_reuse.fos"),
+            include_str!("../../../benchmarks/native_runtime/list_push.fos"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let compilation = crate::compile(source).unwrap();
+            let before =
+                crate::vm::encode_program(&crate::vm::compile(&compilation).unwrap()).unwrap();
+            let prepared =
+                prepare_with_options(&compilation, CompileOptions { optimize: true }).unwrap();
+            prepared
+                .compile_object(CompileOptions { optimize: true })
+                .unwrap();
+            assert_eq!(
+                before,
+                crate::vm::encode_program(&crate::vm::compile(&compilation).unwrap()).unwrap()
+            );
+            if index < 2 {
+                assert!(
+                    prepared
+                        .functions()
+                        .iter()
+                        .all(|function| function.home_types.is_empty()),
+                    "scalar workloads must not allocate addressable stack homes"
+                );
+            }
+        }
+    }
 
     #[test]
     fn shared_optimization_precedes_native_specialization_and_cleanup() {

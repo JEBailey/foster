@@ -1,0 +1,25 @@
+enum Item = Number(Int) | Empty
+func inspect(item: Item) -> Int {
+    branch item {
+        Item.Number(value) -> value + 1
+        Item.Empty -> 0
+    }
+}
+func main() -> Int {
+    let index = 0
+    let total = 0
+    let phase = false
+    while index < 100000 {
+        let item = branch phase {
+            true -> Item.Number(index)
+            false -> Item.Empty
+        }
+        total = total + inspect(item)
+        phase = branch phase {
+            true -> false
+            false -> true
+        }
+        index = index + 1
+    }
+    total
+}
