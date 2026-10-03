@@ -1,4 +1,4 @@
-//! Generated from IANA 2026d; do not edit. See tools/tzdata/generate.py.
+//! Generated from IANA 2026d; do not edit. See tools/tzdata/src/main.fos.
 
 /// Returns the pinned IANA release.
 pub func version() -> String { "2026d" }

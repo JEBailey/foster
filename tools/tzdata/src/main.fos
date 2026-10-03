@@ -1,0 +1,270 @@
+//! Offline, pinned IANA database generation and independent reference fixtures.
+import core.list.List
+import core.list
+import core.string.String
+import core.string.StringBuilder
+import core.string
+import core.int
+import core.result.Result
+import std.process.Arguments
+import std.fs
+import std.path
+import std.crypto.sha256
+import std.json
+import std.json.JsonValue
+import support
+import tzif
+
+const VERSION = "2026d"
+const DATA_HASH = "0cb2aa8e333c3dc049badc42a0c61f21987b8cd44e107fa900bad764aacc7767"
+const CODE_HASH = "2f5c9f7fe29e6b8cb863583667884b8ce17b0a485355a054b591c6bdfcd81791"
+
+func canonical(value: String) -> String {
+    branch path::canonicalize(value) {
+        Result.Ok(value) -> value.strip_prefix("\\\\?\\")
+        Result.Error(error) -> panic("cannot resolve " + value + ": " + error.message)
+    }
+}
+
+func before(left: String, right: String) -> Bool {
+    let a = left.bytes
+    let b = right.bytes
+    let index = 0
+    while index < a.length && index < b.length {
+        if a[index].int != b[index].int return a[index].int < b[index].int
+        index = index + 1
+    }
+    a.length < b.length
+}
+
+func files(directory: String, prefix: String) -> List<String> {
+    let names = branch fs::list_directory(directory) {
+        Result.Ok(value) -> value
+        Result.Error(error) -> panic(error.message)
+    }
+    let output = []
+    for name in names {
+        let full = directory + "/" + name
+        branch {
+            fs::directory?(full) -> {
+                for entry in files(full, prefix + name + "/") {
+                    output.push(entry.copy())
+                }
+            }
+            fs::file?(full) -> output.push(prefix + name)
+            _ -> panic("unexpected zone entry: " + full)
+        }
+    }
+    // Directory-first traversal is not globally lexicographic (e.g. GMT vs GMT+0).
+    let index = 1
+    while index < output.length {
+        let position = index
+        while position > 0 && before(output[position], output[position - 1]) {
+            let previous = output[position - 1].copy()
+            output[position - 1] = output[position].copy()
+            output[position] = move previous
+            position = position - 1
+        }
+        index = index + 1
+    }
+    output
+}
+
+func label(name: String) -> String {
+    assert(name.length <= 40, "zone identifier too long")
+    let value = name.copy()
+    while value.length < 40 {
+        value = value + " "
+    }
+    value
+}
+
+func quoted(value: String) -> String {
+    branch json::stringify(JsonValue.String(value.copy())) {
+        Result.Ok(value) -> value
+        Result.Error(error) -> panic(error.message)
+    }
+}
+
+func tables(zones: String, names: List<String>) -> String {
+    let payloads = []
+    let records = StringBuilder.empty()
+    for name in names {
+        let payload = tzif::payload(tzif::parse(support::read_bytes(zones + "/" + name)))
+        let index = 0
+        while index < payloads.length && payloads[index] != payload {
+            index = index + 1
+        }
+        if index == payloads.length payloads.push(payload.copy())
+        records.append(label(name) + support::padded(index, 4, false))
+    }
+    let positions = StringBuilder.empty()
+    let rules = StringBuilder.empty()
+    let position = 0
+    for payload in payloads {
+        positions.append(support::padded(position, 7, false) + support::padded(payload.byte_length(), 7, false))
+        rules.append(payload)
+        position = position + payload.byte_length()
+    }
+    println(VERSION + ": " + names.length.as_string() + " identifiers, " + payloads.length.as_string() + " distinct rule sets")
+    let output = "//! Generated from IANA " + VERSION + "; do not edit. See tools/tzdata/src/main.fos.\n"
+    output = output + "\n/// Returns the pinned IANA release.\npub func version() -> String { " + quoted(VERSION) + " }\n"
+    output = output + "\n/// Returns sorted, fixed-width identifier/index records.\npub func names() -> String { " + quoted((move records).finish()) + " }\n"
+    output = output + "\n/// Returns fixed-width offset/length pairs for the rule sets.\npub func positions() -> String { " + quoted((move positions).finish()) + " }\n"
+    output = output + "\n/// Returns the contiguous signed decimal headers and transition records.\npub func rules() -> String { " + quoted((move rules).finish()) + " }\n"
+    output
+}
+
+func flags(windows: Bool) -> List<String> {
+    branch {
+        windows -> ["-w", "-DHAVE_DIRECT_H=1", "-DHAVE_GETRESUID=0", "-DHAVE_GETEUID=0", "-DHAVE_FCHMOD=0", "-DHAVE_LINK=0", "-DHAVE_SYMLINK=0", "-DHAVE_GETRANDOM=0", "-DHAVE_UNISTD_H=0", "-Dssize_t=intptr_t"]
+        _ -> []
+    }
+}
+
+func unpack(archives: String, work: String) -> () {
+    let kinds = ["tzdata", "tzcode"]
+    let hashes = [DATA_HASH, CODE_HASH]
+    // Validate both inputs before extracting either one.
+    let index = 0
+    while index < 2 {
+        let archive = archives + "/" + kinds[index] + VERSION + ".tar.gz"
+        assert(sha256::digest(support::read_bytes(archive)) == hashes[index], "archive hash mismatch: " + archive)
+        let members = support::command("tar", ["-tzf", archive]).split("\n")
+        for member in members {
+            if member != "" {
+                assert(member != "." && member != ".." && !member.contains?("/") && !member.contains?("\\") && !member.contains?(":"), "archive must contain flat filenames")
+            }
+        }
+        index = index + 1
+    }
+    for kind in kinds {
+        support::command("tar", ["-xzf", archives + "/" + kind + VERSION + ".tar.gz", "-C", work.copy()])
+    }
+    assert(support::text(support::read_bytes(work + "/version")).trim() == VERSION, "IANA version mismatch")
+    support::write_text(work + "/version.h", "#define PKGVERSION \"\"\n#define TZVERSION \"" + VERSION + "\"\n#define REPORT_BUGS_TO \"tz@iana.org\"\n")
+    support::write_text(work + "/tzdir.h", "#define TZDIR \"zoneinfo\"\n#define TZDEFAULT \"localtime\"\n")
+}
+
+func references(oracle: String, zones: String, names: List<String>) -> String {
+    // 1900-01-01, 1970-01-01, and January/July 15 in 2026, 2050, and 2400 UTC.
+    let instants = ["-2208988800", "0", "1768435200", "1784073600", "2525817600", "2541456000", "13570675200", "13586400000"]
+    let result = StringBuilder.empty()
+    for name in names {
+        let arguments = [":" + canonical(zones + "/" + name)]
+        for instant in instants {
+            arguments.push(instant.copy())
+        }
+        let offsets = support::command(oracle, arguments).trim().split("\n")
+        assert(offsets.length == 8, "incomplete reference offsets")
+        result.append(label(name))
+        for offset in offsets {
+            result.append(support::padded(support::decimal(offset.copy().trim()), 7, true))
+        }
+        result.append("\n")
+    }
+    (move result).finish()
+}
+
+func main(args: Arguments) -> Int {
+    let root = "."
+    let archives = ""
+    let scratch = ""
+    let compiler = ""
+    let check = false
+    let reference = false
+    let index = 0
+    while index < args.values.length {
+        let option = args.values[index].copy()
+        branch {
+            option == "--check" -> {
+                check = true
+            }
+            option == "--reference" -> {
+                reference = true
+            }
+            option == "--help" -> {
+                println("tzdata generator [--check] [--reference] [--root PATH] [--archives PATH] [--work PATH] [--cc PATH]")
+                return 0
+            }
+            _ -> {
+                assert(option == "--root" || option == "--archives" || option == "--work" || option == "--cc", "unknown option: " + option)
+                index = index + 1
+                assert(index < args.values.length, "missing option value")
+                let value = args.values[index].copy()
+                branch {
+                    option == "--root" -> {
+                        root = move value
+                    }
+                    option == "--archives" -> {
+                        archives = move value
+                    }
+                    option == "--work" -> {
+                        scratch = move value
+                    }
+                    _ -> {
+                        compiler = move value
+                    }
+                }
+            }
+        }
+        index = index + 1
+    }
+    root = canonical(root)
+    let windows = root.contains?("\\") || root.contains?(":")
+    if archives == "" archives = root + "/tools/tzdata/vendor"
+    archives = canonical(archives)
+    if scratch == "" scratch = root + "/target/tzdata-generator"
+    support::directory(scratch)
+    scratch = canonical(scratch)
+    // Each run starts empty, without deleting any caller-supplied directory.
+    let run = 0
+    while fs::exists?(scratch + "/run-" + run.as_string()) {
+        run = run + 1
+    }
+    let work = scratch + "/run-" + run.as_string()
+    support::directory(work)
+    if compiler == "" compiler = branch {
+        windows -> "clang" _ -> "cc"
+    }
+    unpack(archives, work)
+    let extension = branch {
+        windows -> ".exe" _ -> ""
+    }
+    let zic = work + "/zic" + extension
+    let options = ["-O2", "-std=gnu17", "-o", zic.copy(), work + "/zic.c"]
+    for flag in flags(windows) {
+        options.push(flag.copy())
+    }
+    if windows options.push(root + "/tools/tzdata/windows_getopt.c")
+    support::command(compiler, options)
+    let zones = work + "/zones"
+    let inputs = ["-b", "fat", "-d", zones.copy()]
+    for source in ["africa", "antarctica", "asia", "australasia", "europe", "northamerica", "southamerica", "etcetera", "backward"] {
+        inputs.push(work + "/" + source)
+    }
+    support::command(zic, inputs)
+    let names = files(zones, "")
+    assert(names.length > 0, "no generated zones")
+    branch {
+        reference -> {
+            let oracle = work + "/reference" + extension
+            let oracle_options = ["-O2", "-std=gnu17", "-Dtime_tz=int64_t", "-DSUPPRESS_TZDIR=1", "-DHAVE_STRUCT_STAT_ST_CTIM=0", "-DHAVE_TZNAME=0", "-I", work.copy(), "-o", oracle.copy(), work + "/localtime.c", root + "/tools/tzdata/reference.c"]
+            for flag in flags(windows) {
+                oracle_options.push(flag.copy())
+            }
+            support::command(compiler, oracle_options)
+            support::publish(root + "/tests/fixtures/tzdata-offsets.txt", references(oracle, zones, names), check)
+        }
+        _ -> support::publish(root + "/packages/tzdata/src/data.fos", tables(zones, names), check)
+    }
+    println(branch {
+        check -> "Pinned tzdata output verified" _ -> "Pinned tzdata output generated"
+    })
+    0
+}
+
+test "identifier padding and ASCII string emission" {
+    assert(label("UTC").length == 40)
+    assert(quoted("a\nb") == "\"a\\u000ab\"")
+}

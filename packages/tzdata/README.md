@@ -86,6 +86,6 @@ cargo test --test tzdata
 
 The integration test builds the library and consumes only its artifact. It covers VM/native
 execution with optimization on/off, nanoseconds, alias and error behavior, historical offsets,
-future recurrence, overlaps, half-hour changes, and skipped days. An independent Python `zoneinfo`
-reader generates reference offsets from the same pinned TZif files: all identifiers are checked
+future recurrence, overlaps, half-hour changes, and skipped days. The Foster generator uses pinned IANA `localtime.c`
+as an independent reader to generate reference offsets from the same pinned TZif files: all identifiers are checked
 at eight historical/future instants in native mode, with a representative subset in the VM.

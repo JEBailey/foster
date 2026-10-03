@@ -1,0 +1,107 @@
+//! Shared binary-safe IO, decimal formatting, and subprocess handling for generation.
+import core.bytes.Bytes
+import core.bytes
+import core.list.List
+import core.string.String
+import core.string
+import core.int
+import core.result.Result
+import std.fs
+import std.process
+
+pub func text(data: Bytes) -> String [consume data] {
+    branch String.from_utf8(move data) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> panic("expected UTF-8 text")
+    }
+}
+
+pub func read_bytes(path: String) -> Bytes {
+    branch fs::read_bytes(path) {
+        Result.Ok(value) -> value
+        Result.Error(error) -> panic("cannot read " + path + ": " + error.message)
+    }
+}
+
+pub func write_text(path: String, value: String) -> () {
+    branch fs::write_text(path, value) {
+        Result.Ok(_) -> ()
+        Result.Error(error) -> panic("cannot write " + path + ": " + error.message)
+    }
+}
+
+pub func directory(path: String) -> () {
+    branch fs::create_directory_all(path) {
+        Result.Ok(_) -> ()
+        Result.Error(error) -> panic("cannot create " + path + ": " + error.message)
+    }
+}
+
+pub func command(executable: String, arguments: List<String>) -> String {
+    let child = branch process::spawn(executable, arguments) {
+        Result.Ok(value) -> value
+        Result.Error(error) -> panic("cannot start " + executable + ": " + error.message)
+    }
+    branch await child {
+        Result.Ok(output) -> {
+            assert(output.status.success, executable + ": " + text(move output.stderr))
+            text(move output.stdout)
+        }
+        Result.Error(error) -> panic(executable + ": " + error.message)
+    }
+}
+
+pub func decimal(value: String) -> Int {
+    let data = value.bytes
+    assert(data.length > 0, "empty decimal")
+    let position = 0
+    let negative = false
+    if data[0].int == 45 || data[0].int == 43 {
+        negative = data[0].int == 45
+        position = 1
+    }
+    assert(position < data.length, "missing decimal digits")
+    let result = 0
+    while position < data.length {
+        let digit = data[position].int - 48
+        assert(digit >= 0 && digit <= 9, "invalid decimal")
+        // Accumulate negatively so INT64_MIN is representable.
+        result = result * 10 - digit
+        position = position + 1
+    }
+    branch {
+        negative -> result _ -> -result
+    }
+}
+
+pub func padded(value: Int, width: Int, signed: Bool) -> String {
+    let spelling = value.as_string()
+    let prefix = branch {
+        value < 0 -> "-" signed -> "+" _ -> ""
+    }
+    let digits = branch {
+        value < 0 -> spelling.slice(1, spelling.length) _ -> spelling.copy()
+    }
+    let zeros = ""
+    while prefix.length + zeros.length + digits.length < width {
+        zeros = zeros + "0"
+    }
+    assert(prefix.length + zeros.length + digits.length == width, "decimal field overflow")
+    prefix + zeros + digits
+}
+
+pub func publish(path: String, value: String, check: Bool) -> () {
+    branch {
+        check -> {
+            assert(text(read_bytes(path)) == value, "stale generated file: " + path)
+        }
+        _ -> write_text(path, value)
+    }
+}
+
+test "signed decimal fields include negative minimum and fixed padding" {
+    assert(decimal("-9223372036854775808") == (-9223372036854775807 - 1))
+    assert(padded(-123, 7, true) == "-000123")
+    assert(padded(123, 7, true) == "+000123")
+    assert(padded(12, 4, false) == "0012")
+}
