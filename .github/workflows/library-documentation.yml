@@ -1,4 +1,4 @@
-name: Library documentation
+name: Library docs2
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: library-documentation-${{ github.ref }}
+  group: library-docs2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -22,13 +22,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Generate library reference
-        run: cargo run --locked --bin foster -- docs library --output target/library-documentation
+        run: cargo run --locked --bin foster -- documentation library --output target/library-docs2
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v4
         with:
-          path: target/library-documentation/
+          path: target/library-docs2/
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

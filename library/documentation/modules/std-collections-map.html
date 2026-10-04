@@ -1,0 +1,181 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.collections.map — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.collections.map</h1><p>15 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>15 declarations</p><ul><li data-declaration><a href="#Entry">Entry <small>type</small></a></li><li data-declaration><a href="#ListMap">ListMap <small>type</small></a></li><li data-declaration><a href="#Map">Map <small>type</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.borrow">ListMap.borrow <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.contains_key?">ListMap.contains_key? <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.empty">ListMap.empty <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.empty?">ListMap.empty? <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.iterator">ListMap.iterator <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.keys">ListMap.keys <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.length">ListMap.length <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.put">ListMap.put <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.remove">ListMap.remove <small>function</small></a></li><li data-owner="ListMap" data-declaration><a href="#ListMap.values">ListMap.values <small>function</small></a></li><li data-owner="Map" data-declaration><a href="#Map.empty">Map.empty <small>function</small></a></li><li data-declaration><a href="#find_index">find_index <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Associative collection contracts and insertion-ordered list maps.</p>
+<p><code>Map&lt;K, V&gt;</code> defines the shared API. <code>Map.empty</code> constructs <code>ListMap</code>, whose key searches
+are linear. Use std.collections.hash_map for hashed lookup. borrow returns a reference;
+remove transfers a value and preserves the map. put consumes and returns the updated collection.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Entry">Entry</a><span class="badge visibility-public">public</span></h3><p>A key-value pair yielded while iterating a map.</p>
+<h4>Fields</h4><ul><li><code>key: K<span class="badge visibility-public">public</span></code></li><li><code>value: V<span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#ListMap">ListMap</a><span class="badge visibility-public">public</span></h3><p>An insertion-ordered associative collection.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#Map" title="std.collections.map.Map">Map</a>&lt;K, V&gt;</code></li></ul><h4>Fields</h4><ul><li><code>entries: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;<span class="badge visibility-private">private</span></code></li></ul><h4>Functions and methods</h4><ul><li><a href="#ListMap.borrow"><code>borrow</code></a><br><small>Borrows the stored value; absent keys return `None`. No `Copy` is required.</small></li><li><a href="#ListMap.contains_key?"><code>contains_key?</code></a><br><small>Returns whether the map contains `key` without consuming the map.</small></li><li><a href="#ListMap.empty"><code>empty</code></a><br><small>Creates an empty map.</small></li><li><a href="#ListMap.empty?"><code>empty?</code></a><br><small>Returns whether the map contains no entries.</small></li><li><a href="#ListMap.iterator"><code>iterator</code></a><br><small>Creates an independent iterator in insertion order.</small></li><li><a href="#ListMap.keys"><code>keys</code></a><br><small>Consumes the map and returns its keys in storage order.</small></li><li><a href="#ListMap.length"><code>length</code></a><br><small>Returns the number of entries in the map.</small></li><li><a href="#ListMap.put"><code>put</code></a><br><small>Consumes the map, `key`, and `value`, returning the updated map.</small></li><li><a href="#ListMap.remove"><code>remove</code></a><br><small>Removes and returns the owned value, preserving the map and remaining insertion order.</small></li><li><a href="#ListMap.values"><code>values</code></a><br><small>Consumes the map and returns its values in storage order.</small></li></ul></article><article class="type-summary"><h3><a href="#Map">Map</a><span class="badge visibility-public">public</span></h3><p>An associative collection with unique keys and implementation-defined iteration order.
+Lookup borrows the stored value. Removal mutates the map and transfers the selected value.
+put consumes and returns the concrete implementation; membership checks borrow it.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="std-collections.html#Collection" title="std.collections.Collection">Collection</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;</code></li></ul><h4>Required methods</h4><ul><li><code>borrow</code><br><small>Borrows the stored value; absent keys return `None`. No `Copy` is required.
+The reference permits mutation and cannot outlive or survive reshaping the map.</small></li><li><code>remove</code><br><small>Removes and returns the owned value, preserving all other entries; absent keys return `None`.</small></li><li><code>contains_key?</code><br><small>Tests key membership without consuming the map.</small></li><li><code>put</code><br><small>Consumes the map, `key`, and `value`, returning the updated concrete implementation.
+Replaces an equal key and releases its previous entry; iteration order depends on the implementation.</small></li><li><code>keys</code><br><small>Consumes the map and returns its keys in iteration order.</small></li><li><code>values</code><br><small>Consumes the map and returns its values in iteration order.</small></li></ul><h4>Functions and methods</h4><ul><li><a href="#Map.empty"><code>empty</code></a><br><small>Creates an insertion-ordered list-backed map; use HashMap.empty for hashed storage.</small></li></ul></article></div></section></div><article id="Entry"><h2><a class="anchor" href="#Entry">Entry</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Entry&lt;K, V&gt; = {
+    pub key: K<span class="badge visibility-public">public</span>
+    pub value: V<span class="badge visibility-public">public</span>
+}</code></pre><p>A key-value pair yielded while iterating a map.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap"><h2><a class="anchor" href="#ListMap">ListMap</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ListMap&lt;K, V&gt; = &amp; <a class="type-link" href="#Map" title="std.collections.map.Map">Map</a>&lt;K, V&gt; &amp; {
+    entries: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;<span class="badge visibility-private">private</span>
+}</code></pre><p>An insertion-ordered associative collection.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Map"><h2><a class="anchor" href="#Map">Map</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Map&lt;K, V&gt; = &amp; <a class="type-link" href="std-collections.html#Collection" title="std.collections.Collection">Collection</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt; &amp; {
+    pub func borrow(self, key: K) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;ref[self] V&gt; [read self, read key]
+    pub func remove(self, key: K) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;V&gt; [read key, reshape self]
+    pub func contains_key?(self, key: K) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [read self, read key]
+    pub func put(self, key: K, value: V) -&gt; self [mut self, consume self, consume key, consume value]
+    pub func keys(self) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;K&gt; [consume self]
+    pub func values(self) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;V&gt; [consume self]
+}</code></pre><p>An associative collection with unique keys and implementation-defined iteration order.
+Lookup borrows the stored value. Removal mutates the map and transfers the selected value.
+put consumes and returns the concrete implementation; membership checks borrow it.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.borrow"><h2><a class="anchor" href="#ListMap.borrow">ListMap.borrow</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func borrow&lt;K, V&gt;(self: <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;, key: K) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;ref[self] V&gt;</code></pre><p>Borrows the stored value; absent keys return <code>None</code>. No <code>Copy</code> is required.
+The reference permits mutation and cannot outlive or survive reshaping the map.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.contains_key?"><h2><a class="anchor" href="#ListMap.contains_key?">ListMap.contains_key?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func contains_key?&lt;K, V&gt;(self: <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;, key: K) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether the map contains <code>key</code> without consuming the map.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.empty"><h2><a class="anchor" href="#ListMap.empty">ListMap.empty</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func empty&lt;K, V&gt;() -&gt; <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;</code></pre><p>Creates an empty map.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.empty?"><h2><a class="anchor" href="#ListMap.empty?">ListMap.empty?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func empty?&lt;K, V&gt;(self: <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether the map contains no entries.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.iterator"><h2><a class="anchor" href="#ListMap.iterator">ListMap.iterator</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func iterator&lt;K, V&gt;(self: <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="std-iter.html#Iterator" title="std.iter.Iterator">Iterator</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;</code></pre><p>Creates an independent iterator in insertion order.
+Replacing an existing key does not move its entry to the end.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.keys"><h2><a class="anchor" href="#ListMap.keys">ListMap.keys</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func keys&lt;K, V&gt;(self: consume <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;K&gt;</code></pre><p>Consumes the map and returns its keys in storage order.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.length"><h2><a class="anchor" href="#ListMap.length">ListMap.length</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func length&lt;K, V&gt;(self: <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the number of entries in the map.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.put"><h2><a class="anchor" href="#ListMap.put">ListMap.put</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func put&lt;K, V&gt;(self: consume <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;, key: consume K, value: consume V) -&gt; <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt; [mut self.entries]</code></pre><p>Consumes the map, <code>key</code>, and <code>value</code>, returning the updated map.
+Replacing an equal key releases the old entry and preserves its insertion position.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.remove"><h2><a class="anchor" href="#ListMap.remove">ListMap.remove</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func remove&lt;K, V&gt;(self: <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;, key: K) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;V&gt; [mut self.entries]</code></pre><p>Removes and returns the owned value, preserving the map and remaining insertion order.
+An absent key returns <code>None</code> and leaves the map unchanged.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap.values"><h2><a class="anchor" href="#ListMap.values">ListMap.values</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func values&lt;K, V&gt;(self: consume <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;V&gt;</code></pre><p>Consumes the map and returns its values in storage order.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Map.empty"><h2><a class="anchor" href="#Map.empty">Map.empty</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func empty&lt;K, V&gt;() -&gt; <a class="type-link" href="#ListMap" title="std.collections.map.ListMap">ListMap</a>&lt;K, V&gt;</code></pre><p>Creates an insertion-ordered list-backed map; use HashMap.empty for hashed storage.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="find_index"><h2><a class="anchor" href="#find_index">find_index</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func find_index&lt;K, V&gt;(entries: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;, key: K) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Finds a key without extracting owned entries or growing the call stack.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

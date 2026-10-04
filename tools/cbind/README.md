@@ -178,7 +178,7 @@ variadics, static/inline functions, old-style prototypes, and unknown types are 
 By default any unsupported declaration stops the build after writing the report
 and draft manifest. Header types cannot establish retention, ownership, destructor,
 or error-handling contracts. Add reviewed operations/resources/callbacks with `--contracts`
-following [C integration](../../docs/c-integration.md), or build a maintained
+following [C integration](../../documentation/c-integration.md), or build a maintained
 manifest directly. Resource contracts remove their copyable value records,
 dependent records, and unreviewed operations using those records. Destructors and
 validity functions are handled by the owner rather than exposed as raw operations.
@@ -199,7 +199,7 @@ entries are resolved after C type validation. For a complete executable fixture:
 
 The generated methods support borrowed synchronous handlers, owned registrations,
 and explicitly polled background notifications; see
-[callback contracts](../../docs/c-integration.md#callbacks) for lifetime and signature limits.
+[callback contracts](../../documentation/c-integration.md#callbacks) for lifetime and signature limits.
 
 See the [foster-raylib repository](../../../foster-raylib/README.md) (sibling of this one) for a working graphics
 UI built from the real raylib header, including returned `Color`/`Vector2` values

@@ -1,0 +1,194 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.resource — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.resource</h1><p>10 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>10 declarations</p><ul><li data-declaration><a href="#Accepting">Accepting <small>type</small></a></li><li data-declaration><a href="#Appendable">Appendable <small>type</small></a></li><li data-declaration><a href="#Closable">Closable <small>type</small></a></li><li data-declaration><a href="#PositionedReadable">PositionedReadable <small>type</small></a></li><li data-declaration><a href="#ReadWrite">ReadWrite <small>type</small></a></li><li data-declaration><a href="#Readable">Readable <small>type</small></a></li><li data-declaration><a href="#Resource">Resource <small>type</small></a></li><li data-declaration><a href="#ResourceIdentifier">ResourceIdentifier <small>type</small></a></li><li data-declaration><a href="#Sized">Sized <small>type</small></a></li><li data-declaration><a href="#Writable">Writable <small>type</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p><code>Resource</code> identities separated from access capabilities.</p>
+<p>A resource identifier names a location; constructing one does not perform I/O.
+<code>Readable</code> and writable structural contracts describe the operations supported by
+a provider. Use std.fs or std.net.tcp for concrete host resources.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Accepting">Accepting</a><span class="badge visibility-public">public</span></h3><p>A value that accepts child values of type <code>C</code>.</p>
+<h4>Required methods</h4><ul><li><code>accept</code><br><small>Waits for and returns the next accepted child value.</small></li></ul></article><article class="type-summary"><h3><a href="#Appendable">Appendable</a><span class="badge visibility-public">public</span></h3><p>A value that accepts bytes at its current logical end.</p>
+<h4>Required methods</h4><ul><li><code>append</code><br><small>Appends bytes and returns the number accepted.</small></li></ul></article><article class="type-summary"><h3><a href="#Closable">Closable</a><span class="badge visibility-public">public</span></h3><p>An owned value that can release its host or provider state deterministically.</p>
+<h4>Required methods</h4><ul><li><code>close</code><br><small>Releases the value and consumes its live identity.</small></li></ul></article><article class="type-summary"><h3><a href="#PositionedReadable">PositionedReadable</a><span class="badge visibility-public">public</span></h3><p>A value supporting bounded binary reads at explicit offsets.</p>
+<p>Position belongs to the operation rather than the resource, so callers can share one stable
+identifier without manufacturing separate reader objects.</p>
+<h4>Required methods</h4><ul><li><code>read_at</code><br><small>Reads at most `maximum` bytes beginning at `offset`.</small></li></ul></article><article class="type-summary"><h3><a href="#ReadWrite">ReadWrite</a><span class="badge visibility-public">public</span></h3><p>A value supporting both complete binary reads and writes.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#Readable" title="std.resource.Readable">Readable</a>&lt;E&gt;</code></li><li><code><a class="type-link" href="#Writable" title="std.resource.Writable">Writable</a>&lt;E&gt;</code></li></ul></article><article class="type-summary"><h3><a href="#Readable">Readable</a><span class="badge visibility-public">public</span></h3><p>A value whose complete binary contents can be read.</p>
+<h4>Required methods</h4><ul><li><code>read</code><br><small>Reads the complete contents.</small></li></ul></article><article class="type-summary"><h3><a href="#Resource">Resource</a><span class="badge visibility-public">public</span></h3><p>A resource associated with an identifier of the concrete type <code>L</code>.</p>
+<p>Keeping <code>L</code> in the contract prevents a file, socket, or future URI-backed provider from losing
+the kind of identifier with which it was created.</p>
+<h4>Fields</h4><ul><li><code>location: L<span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#ResourceIdentifier">ResourceIdentifier</a><span class="badge visibility-public">public</span></h3><p>An explicit identifier for a resource provider or target.</p>
+<p>The uncommon <code>resource_id</code> member prevents displayable values such as integers from satisfying
+this contract accidentally merely because they implement <code>as_string</code>.</p>
+<h4>Required methods</h4><ul><li><code>resource_id</code><br><small>Returns the stable textual identifier supplied to the resource provider.</small></li></ul></article><article class="type-summary"><h3><a href="#Sized">Sized</a><span class="badge visibility-public">public</span></h3><p>A value whose current binary length can be queried.</p>
+<h4>Required methods</h4><ul><li><code>length</code><br><small>Returns the current length in bytes.</small></li></ul></article><article class="type-summary"><h3><a href="#Writable">Writable</a><span class="badge visibility-public">public</span></h3><p>A value whose binary contents can be replaced.</p>
+<h4>Required methods</h4><ul><li><code>write</code><br><small>Writes bytes and returns the number accepted.</small></li><li><code>flush</code><br><small>Makes buffered output visible to the destination.</small></li></ul></article></div></section></div><article id="Accepting"><h2><a class="anchor" href="#Accepting">Accepting</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Accepting&lt;C, E&gt; = {
+    pub func accept(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;C, E&gt; [mut self]
+}</code></pre><p>A value that accepts child values of type <code>C</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Appendable"><h2><a class="anchor" href="#Appendable">Appendable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Appendable&lt;E&gt; = {
+    pub func append(self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+}</code></pre><p>A value that accepts bytes at its current logical end.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Closable"><h2><a class="anchor" href="#Closable">Closable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Closable&lt;E&gt; = {
+    pub func close(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [consume self]
+}</code></pre><p>An owned value that can release its host or provider state deterministically.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="PositionedReadable"><h2><a class="anchor" href="#PositionedReadable">PositionedReadable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type PositionedReadable&lt;E&gt; = {
+    pub func read_at(self, offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
+}</code></pre><p>A value supporting bounded binary reads at explicit offsets.</p>
+<p>Position belongs to the operation rather than the resource, so callers can share one stable
+identifier without manufacturing separate reader objects.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ReadWrite"><h2><a class="anchor" href="#ReadWrite">ReadWrite</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ReadWrite&lt;E&gt; = &amp; <a class="type-link" href="#Readable" title="std.resource.Readable">Readable</a>&lt;E&gt; &amp; <a class="type-link" href="#Writable" title="std.resource.Writable">Writable</a>&lt;E&gt; &amp; {
+
+}</code></pre><p>A value supporting both complete binary reads and writes.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Readable"><h2><a class="anchor" href="#Readable">Readable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Readable&lt;E&gt; = {
+    pub func read(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
+}</code></pre><p>A value whose complete binary contents can be read.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Resource"><h2><a class="anchor" href="#Resource">Resource</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Resource&lt;L&gt; = {
+    pub location: L<span class="badge visibility-public">public</span>
+}</code></pre><p>A resource associated with an identifier of the concrete type <code>L</code>.</p>
+<p>Keeping <code>L</code> in the contract prevents a file, socket, or future URI-backed provider from losing
+the kind of identifier with which it was created.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ResourceIdentifier"><h2><a class="anchor" href="#ResourceIdentifier">ResourceIdentifier</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ResourceIdentifier = {
+    pub func resource_id(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self]
+}</code></pre><p>An explicit identifier for a resource provider or target.</p>
+<p>The uncommon <code>resource_id</code> member prevents displayable values such as integers from satisfying
+this contract accidentally merely because they implement <code>as_string</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Sized"><h2><a class="anchor" href="#Sized">Sized</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Sized&lt;E&gt; = {
+    pub func length(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+}</code></pre><p>A value whose current binary length can be queried.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Writable"><h2><a class="anchor" href="#Writable">Writable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Writable&lt;E&gt; = {
+    pub func write(self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+    pub func flush(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+}</code></pre><p>A value whose binary contents can be replaced.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

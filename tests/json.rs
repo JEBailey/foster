@@ -1,6 +1,6 @@
 #[test]
 fn json_guide_example_runs() {
-    let guide = include_str!("../docs/json.md").replace("\r\n", "\n");
+    let guide = include_str!("../documentation/json.md").replace("\r\n", "\n");
     for example in guide.split("```foster\n").skip(1) {
         let source = example.split_once("```").unwrap().0;
         let compilation = foster::compile(source).unwrap();

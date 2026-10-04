@@ -16,7 +16,7 @@ fn compile_tools() {
     println!("cargo:rerun-if-changed=tools/driver");
     println!("cargo:rerun-if-changed=library");
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo supplies OUT_DIR"));
-    for name in ["init", "project", "format", "documentation"] {
+    for name in ["init", "project", "format", "docs2"] {
         let path = format!("tools/driver/{name}.fos");
         let source = fs::read_to_string(&path).expect("embedded tool source must exist");
         let compilation =

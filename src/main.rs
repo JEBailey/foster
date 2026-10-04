@@ -80,8 +80,8 @@ fn execute() -> Result<(), Box<dyn Error>> {
             arguments.get_flag("check"),
         )?,
         Some(("test", arguments)) => test(arguments)?,
-        Some(("docs", arguments)) => docs(arguments)?,
-        Some(("serve-docs", arguments)) => serve_docs(arguments)?,
+        Some(("documentation", arguments)) => docs(arguments)?,
+        Some(("serve-documentation", arguments)) => serve_docs(arguments)?,
         _ => unreachable!("clap requires a recognized subcommand"),
     }
     Ok(())
@@ -109,14 +109,14 @@ fn cli() -> Command {
     let port = || {
         Arg::new("port")
             .long("port")
-            .help("TCP port for the documentation server")
+            .help("TCP port for the docs2 server")
             .value_parser(value_parser!(u16))
             .default_value("8000")
     };
     let no_open = || {
         Arg::new("no-open")
             .long("no-open")
-            .help("Do not open the documentation site in a browser")
+            .help("Do not open the docs2 site in a browser")
             .action(ArgAction::SetTrue)
     };
 
@@ -252,32 +252,32 @@ fn cli() -> Command {
                 ),
         )
         .subcommand(
-            Command::new("docs")
-                .about("Generate static API documentation for Foster source")
+            Command::new("documentation")
+                .about("Generate static API docs2 for Foster source")
                 .arg(path())
                 .arg(
                     Arg::new("output")
                         .long("output")
-                        .help("Write generated documentation to this directory")
+                        .help("Write generated docs2 to this directory")
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
                     Arg::new("serve")
                         .long("serve")
-                        .help("Serve the generated documentation after building it")
+                        .help("Serve the generated docs2 after building it")
                         .action(ArgAction::SetTrue),
                 )
                 .arg(no_open().requires("serve"))
                 .arg(port().requires("serve")),
         )
         .subcommand(
-            Command::new("serve-docs")
-                .about("Serve an existing generated documentation directory")
+            Command::new("serve-documentation")
+                .about("Serve an existing generated docs2 directory")
                 .arg(
                     Arg::new("directory")
-                        .help("Generated documentation directory to serve")
+                        .help("Generated docs2 directory to serve")
                         .value_parser(value_parser!(PathBuf))
-                        .default_value("documentation"),
+                        .default_value("docs2"),
                 )
                 .arg(no_open())
                 .arg(port()),
@@ -751,7 +751,7 @@ fn format_path(path: &Path, check: bool) -> Result<(), Box<dyn Error>> {
                     || !entry.file_type().is_dir()
                     || !matches!(
                         entry.file_name().to_str(),
-                        Some("target" | ".git" | ".foster" | "documentation")
+                        Some("target" | ".git" | ".foster" | "docs2")
                     )
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -854,12 +854,12 @@ fn default_package_path(source: &Path) -> PathBuf {
 
 fn default_documentation_directory(source: &Path) -> PathBuf {
     if source.is_dir() {
-        source.join("documentation")
+        source.join("../docs2")
     } else {
         source
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("documentation")
+            .join("../docs2")
     }
 }
 

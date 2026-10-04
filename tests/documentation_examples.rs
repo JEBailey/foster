@@ -1,7 +1,7 @@
 //! Check the time guide's examples together with its documented imports.
 #[test]
 fn time_guide_examples_execute() {
-    let guide = include_str!("../docs/time.md").replace("\r\n", "\n");
+    let guide = include_str!("../documentation/time.md").replace("\r\n", "\n");
     let mut source = String::new();
     let mut calls = Vec::new();
     for (index, block) in guide.split("```foster\n").skip(1).enumerate() {

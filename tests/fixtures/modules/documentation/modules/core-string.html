@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.string — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><header><h1>module core.string</h1><p>1 declaration</p></header><main><a class="crumb" href="../index.html">← All modules</a><article class="module-documentation"><p>Immutable UTF-8 text and Unicode-aware sequence operations.</p>
+</article><nav class="on-this-page" aria-label="On this page"><strong>On this page</strong><ul><li><a href="#String">String <small>type</small></a></li></ul></nav><article id="String"><h2><a class="anchor" href="#String">String</a><span class="badge kind">type</span><span class="badge">public</span></h2><pre><code>pub type String {
+    value: Bytes
+}</code></pre><p>Immutable Unicode text stored as validated UTF-8 bytes.</p>
+<p>The backing bytes are private so every <code>String</code> value preserves the UTF-8
+validity invariant. String literals and checked decoding are its trusted
+construction paths.</p>
+</article></main></body></html>

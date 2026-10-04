@@ -1,0 +1,206 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.code_point — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.code_point</h1><p>28 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>28 declarations</p><ul><li data-declaration><a href="#GeneralCategory">GeneralCategory <small>variant</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.alphabetic?">CodePoint.alphabetic? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.alphanumeric?">CodePoint.alphanumeric? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.as_int">CodePoint.as_int <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.as_string">CodePoint.as_string <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.assigned?">CodePoint.assigned? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.case_fold">CodePoint.case_fold <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.category">CodePoint.category <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.control?">CodePoint.control? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.copy">CodePoint.copy <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.digit?">CodePoint.digit? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.from">CodePoint.from <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.identifier_part?">CodePoint.identifier_part? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.identifier_start?">CodePoint.identifier_start? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.letter?">CodePoint.letter? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.lower">CodePoint.lower <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.lowercase?">CodePoint.lowercase? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.mark?">CodePoint.mark? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.numeric?">CodePoint.numeric? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.punctuation?">CodePoint.punctuation? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.separator?">CodePoint.separator? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.simple_lower">CodePoint.simple_lower <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.simple_title">CodePoint.simple_title <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.simple_upper">CodePoint.simple_upper <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.symbol?">CodePoint.symbol? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.titlecase?">CodePoint.titlecase? <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.upper">CodePoint.upper <small>function</small></a></li><li data-owner="CodePoint" data-declaration><a href="#CodePoint.uppercase?">CodePoint.uppercase? <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Unicode scalar construction, classification, and case mapping.</p>
+<p>A <code>CodePoint</code> represents one Unicode scalar, not a grapheme cluster. Classification
+uses Unicode 17.0.0. Full case mappings return <code>String</code> because one scalar can expand;
+simple mappings return one <code>CodePoint</code>. Casing is locale-independent.</p>
+<p>Think of a scalar as one numbered text ingredient. An accented letter can use
+a base letter and a separate accent, so one visible text element may contain
+several CodePoint values. Use String operations when you want to keep that
+whole element together. A category is a broad label, such as a letter or mark;
+classification methods answer narrower questions, such as whether it is uppercase.</p>
+<p>Supports <a href="core-copy.html#Copy">Copy</a>: copying preserves the source and returns an independent scalar value.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#GeneralCategory">GeneralCategory</a><span class="badge visibility-public">public</span></h3><p>Unicode 17.0.0 General_Category values.</p>
+<h4>Cases</h4><ul><li><code>Unassigned</code></li><li><code>UppercaseLetter</code></li><li><code>LowercaseLetter</code></li><li><code>TitlecaseLetter</code></li><li><code>ModifierLetter</code></li><li><code>OtherLetter</code></li><li><code>NonspacingMark</code></li><li><code>SpacingMark</code></li><li><code>EnclosingMark</code></li><li><code>DecimalNumber</code></li><li><code>LetterNumber</code></li><li><code>OtherNumber</code></li><li><code>ConnectorPunctuation</code></li><li><code>DashPunctuation</code></li><li><code>OpenPunctuation</code></li><li><code>ClosePunctuation</code></li><li><code>InitialPunctuation</code></li><li><code>FinalPunctuation</code></li><li><code>OtherPunctuation</code></li><li><code>MathSymbol</code></li><li><code>CurrencySymbol</code></li><li><code>ModifierSymbol</code></li><li><code>OtherSymbol</code></li><li><code>SpaceSeparator</code></li><li><code>LineSeparator</code></li><li><code>ParagraphSeparator</code></li><li><code>Control</code></li><li><code>Format</code></li><li><code>Surrogate</code></li><li><code>PrivateUse</code></li></ul></article></div></section></div><article id="GeneralCategory"><h2><a class="anchor" href="#GeneralCategory">GeneralCategory</a><span class="badge kind">variant</span><span class="badge visibility-public">public</span></h2><pre><code>pub enum GeneralCategory = Unassigned
+    | UppercaseLetter
+    | LowercaseLetter
+    | TitlecaseLetter
+    | ModifierLetter
+    | OtherLetter
+    | NonspacingMark
+    | SpacingMark
+    | EnclosingMark
+    | DecimalNumber
+    | LetterNumber
+    | OtherNumber
+    | ConnectorPunctuation
+    | DashPunctuation
+    | OpenPunctuation
+    | ClosePunctuation
+    | InitialPunctuation
+    | FinalPunctuation
+    | OtherPunctuation
+    | MathSymbol
+    | CurrencySymbol
+    | ModifierSymbol
+    | OtherSymbol
+    | SpaceSeparator
+    | LineSeparator
+    | ParagraphSeparator
+    | Control
+    | Format
+    | Surrogate
+    | PrivateUse</code></pre><p>Unicode 17.0.0 General_Category values.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.alphabetic?"><h2><a class="anchor" href="#CodePoint.alphabetic?">CodePoint.alphabetic?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func alphabetic?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode alphabetic property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.alphanumeric?"><h2><a class="anchor" href="#CodePoint.alphanumeric?">CodePoint.alphanumeric?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func alphanumeric?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests Alphabetic or any Number category.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.as_int"><h2><a class="anchor" href="#CodePoint.as_int">CodePoint.as_int</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func as_int(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the Unicode scalar value represented by this code point.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.as_string"><h2><a class="anchor" href="#CodePoint.as_string">CodePoint.as_string</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func as_string(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Returns the string representation of this code point.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.assigned?"><h2><a class="anchor" href="#CodePoint.assigned?">CodePoint.assigned?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func assigned?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode assigned property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.case_fold"><h2><a class="anchor" href="#CodePoint.case_fold">CodePoint.case_fold</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func case_fold(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Returns the full default Unicode mapping, which may contain multiple scalars.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.category"><h2><a class="anchor" href="#CodePoint.category">CodePoint.category</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func category(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="#GeneralCategory" title="core.code_point.GeneralCategory">GeneralCategory</a></code></pre><p>Returns the Unicode 17.0.0 General_Category.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.control?"><h2><a class="anchor" href="#CodePoint.control?">CodePoint.control?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func control?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode control property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.copy"><h2><a class="anchor" href="#CodePoint.copy">CodePoint.copy</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func copy(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a></code></pre><p>Explicitly copies this scalar value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.digit?"><h2><a class="anchor" href="#CodePoint.digit?">CodePoint.digit?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func digit?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode digit property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.from"><h2><a class="anchor" href="#CodePoint.from">CodePoint.from</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func from(value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;<a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>&gt;</code></pre><p>Creates a code point from a valid Unicode scalar value.</p>
+<p>Returns <code>None</code> for negative values, surrogate code points, and values above <code>0x10FFFF</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.identifier_part?"><h2><a class="anchor" href="#CodePoint.identifier_part?">CodePoint.identifier_part?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func identifier_part?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode identifier_part property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.identifier_start?"><h2><a class="anchor" href="#CodePoint.identifier_start?">CodePoint.identifier_start?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func identifier_start?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode identifier_start property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.letter?"><h2><a class="anchor" href="#CodePoint.letter?">CodePoint.letter?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func letter?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode letter property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.lower"><h2><a class="anchor" href="#CodePoint.lower">CodePoint.lower</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func lower(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Returns the full default Unicode mapping, which may contain multiple scalars.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.lowercase?"><h2><a class="anchor" href="#CodePoint.lowercase?">CodePoint.lowercase?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func lowercase?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode lowercase property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.mark?"><h2><a class="anchor" href="#CodePoint.mark?">CodePoint.mark?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func mark?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode mark property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.numeric?"><h2><a class="anchor" href="#CodePoint.numeric?">CodePoint.numeric?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func numeric?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode numeric property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.punctuation?"><h2><a class="anchor" href="#CodePoint.punctuation?">CodePoint.punctuation?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func punctuation?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode punctuation property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.separator?"><h2><a class="anchor" href="#CodePoint.separator?">CodePoint.separator?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func separator?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode separator property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.simple_lower"><h2><a class="anchor" href="#CodePoint.simple_lower">CodePoint.simple_lower</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_lower(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a></code></pre><p>Returns the one-to-one Unicode simple lower mapping.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.simple_title"><h2><a class="anchor" href="#CodePoint.simple_title">CodePoint.simple_title</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_title(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a></code></pre><p>Returns the one-to-one Unicode simple title mapping.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.simple_upper"><h2><a class="anchor" href="#CodePoint.simple_upper">CodePoint.simple_upper</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_upper(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a></code></pre><p>Returns the one-to-one Unicode simple upper mapping.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.symbol?"><h2><a class="anchor" href="#CodePoint.symbol?">CodePoint.symbol?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func symbol?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode symbol property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.titlecase?"><h2><a class="anchor" href="#CodePoint.titlecase?">CodePoint.titlecase?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func titlecase?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode titlecase property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.upper"><h2><a class="anchor" href="#CodePoint.upper">CodePoint.upper</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func upper(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Returns the full default Unicode mapping, which may contain multiple scalars.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="CodePoint.uppercase?"><h2><a class="anchor" href="#CodePoint.uppercase?">CodePoint.uppercase?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func uppercase?(self: <a class="type-link" href="#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests the Unicode uppercase property.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

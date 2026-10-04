@@ -1,0 +1,147 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.future — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.future</h1><p>3 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>3 declarations</p><ul><li data-declaration><a href="#Future">Future <small>type</small></a></li><li data-declaration><a href="#RemoteFuture">RemoteFuture <small>type</small></a></li><li data-owner="RemoteFuture" data-declaration><a href="#RemoteFuture.resolve">RemoteFuture.resolve <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Values whose result is obtained by consuming them with <code>await</code>.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Future">Future</a><span class="badge visibility-public">public</span></h3><p>A consuming, potentially suspending computation. Composes with other contracts.</p>
+<h4>Required methods</h4><ul><li><code>resolve</code><br><small>Consumes this computation and returns its completed result.</small></li></ul></article><article class="type-summary"><h3><a href="#RemoteFuture">RemoteFuture</a><span class="badge visibility-public">public</span></h3><p>An outstanding remote request. Its remote owner must outlive completion.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#Future" title="core.future.Future">Future</a>&lt;T&gt;</code></li></ul><h4>Fields</h4><ul><li><code>value: RawFuture&lt;T&gt;<span class="badge visibility-private">private</span></code></li></ul><h4>Functions and methods</h4><ul><li><a href="#RemoteFuture.resolve"><code>resolve</code></a><br><small>Waits for the remote request, consuming its single completion handle.</small></li></ul></article></div></section></div><article id="Future"><h2><a class="anchor" href="#Future">Future</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Future&lt;T&gt; = {
+    pub func resolve(self) -&gt; T [consume self, suspend]
+}</code></pre><p>A consuming, potentially suspending computation. Composes with other contracts.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RemoteFuture"><h2><a class="anchor" href="#RemoteFuture">RemoteFuture</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type RemoteFuture&lt;T&gt; = &amp; <a class="type-link" href="#Future" title="core.future.Future">Future</a>&lt;T&gt; &amp; {
+    value: RawFuture&lt;T&gt;<span class="badge visibility-private">private</span>
+}</code></pre><p>An outstanding remote request. Its remote owner must outlive completion.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RemoteFuture.resolve"><h2><a class="anchor" href="#RemoteFuture.resolve">RemoteFuture.resolve</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func resolve&lt;T&gt;(self: consume <a class="type-link" href="#RemoteFuture" title="core.future.RemoteFuture">RemoteFuture</a>&lt;T&gt;) -&gt; T [suspend]</code></pre><p>Waits for the remote request, consuming its single completion handle.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

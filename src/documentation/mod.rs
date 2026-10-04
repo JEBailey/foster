@@ -1,4 +1,4 @@
-//! Static API documentation generation and local preview serving.
+//! Static API docs2 generation and local preview serving.
 
 mod render;
 mod server;
@@ -11,7 +11,7 @@ use crate::compiler::Compilation;
 
 pub use server::{ServeOptions, serve};
 
-/// Summary of a generated documentation site.
+/// Summary of a generated docs2 site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationReport {
     pub output: PathBuf,
@@ -19,7 +19,7 @@ pub struct GenerationReport {
     pub declarations: usize,
 }
 
-/// Generate a self-contained static documentation site from resolved compiler data.
+/// Generate a self-contained static docs2 site from resolved compiler data.
 pub fn generate(
     compilation: &Compilation,
     output: impl AsRef<Path>,
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn foster_writer_reports_counts_and_filesystem_errors() {
         let root = std::env::temp_dir().join(format!(
-            "foster-documentation-writer-{}-{}",
+            "foster-docs2-writer-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

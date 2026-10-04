@@ -2,7 +2,7 @@ use foster::vm::{CompileOptions, Value};
 
 #[test]
 fn agent_guide_examples_execute() {
-    let guide = include_str!("../docs/writing-foster.md").replace("\r\n", "\n");
+    let guide = include_str!("../documentation/writing-foster.md").replace("\r\n", "\n");
     let examples = guide.split("```foster\n").skip(1).collect::<Vec<_>>();
     assert!(
         !examples.is_empty(),

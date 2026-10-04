@@ -1,0 +1,153 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.crypto.sha256 — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.crypto.sha256</h1><p>7 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>7 declarations</p><ul><li data-declaration><a href="#MODULUS">MODULUS <small>constant</small></a></li><li data-declaration><a href="#and_table">and_table <small>function</small></a></li><li data-declaration><a href="#combine">combine <small>function</small></a></li><li data-declaration><a href="#digest">digest <small>function</small></a></li><li data-declaration><a href="#rotate">rotate <small>function</small></a></li><li data-declaration><a href="#word">word <small>function</small></a></li><li data-declaration><a href="#words">words <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>SHA-256 digests of immutable binary data.</p>
+<p>digest preserves its input and returns 64 lowercase hexadecimal characters.
+Pass a string's UTF-8 bytes to hash text. This is a one-shot digest API;
+it does not provide incremental hashing, HMAC, or password hashing.</p>
+<pre><code class="language-foster">import std.crypto.sha256
+func main() -&gt; Int {
+    assert(sha256::digest("abc".bytes) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    0
+}
+</code></pre>
+</article></div><article id="MODULUS"><h2><a class="anchor" href="#MODULUS">MODULUS</a><span class="badge kind">constant</span><span class="badge visibility-private">private</span></h2><pre><code>const MODULUS: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p class="empty">No documentation provided.</p><a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="and_table"><h2><a class="anchor" href="#and_table">and_table</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func and_table() -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>&gt;</code></pre><p>Builds the 16-by-16 nibble AND table once per digest.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="combine"><h2><a class="anchor" href="#combine">combine</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func combine(table: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>&gt;, a: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, b: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, c: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, mode: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Computes a three-way XOR, choice, or majority using eight nibble lookups.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="digest"><h2><a class="anchor" href="#digest">digest</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func digest(input: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Returns the SHA-256 digest of arbitrary bytes as lowercase hexadecimal text.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="rotate"><h2><a class="anchor" href="#rotate">rotate</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func rotate(value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, divisor: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Rotates an unsigned word right using the supplied power-of-two divisor.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="word"><h2><a class="anchor" href="#word">word</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func word(value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Reduces a nonnegative integer to an unsigned 32-bit word.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="words"><h2><a class="anchor" href="#words">words</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func words(text: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>&gt;</code></pre><p>Decodes the standard's hexadecimal initial words and round constants.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

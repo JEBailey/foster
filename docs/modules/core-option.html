@@ -1,0 +1,156 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.option — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.option</h1><p>9 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>9 declarations</p><ul><li data-declaration><a href="#Option">Option <small>variant</small></a></li><li data-owner="Option" data-declaration><a href="#Option.absent?">Option.absent? <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.and_then">Option.and_then <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.flatten">Option.flatten <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.map">Option.map <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.or_else">Option.or_else <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.present?">Option.present? <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.unwrap_or">Option.unwrap_or <small>function</small></a></li><li data-owner="Option" data-declaration><a href="#Option.unwrap_or_else">Option.unwrap_or_else <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p><code>Option</code>al values and transformations that preserve absence.</p>
+<p><code>Some</code> carries a value; <code>None</code> represents absence without an error explanation.
+map and and_then invoke their callback only for <code>Some</code>. unwrap_or receives an
+already evaluated fallback; unwrap_or_else computes one only for <code>None</code>.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Option">Option</a><span class="badge visibility-public">public</span></h3><p>A value that is either present as <code>Some(T)</code> or absent as <code>None</code>.</p>
+<h4>Cases</h4><ul><li><code>Some(T)</code></li><li><code>None</code></li></ul><h4>Required methods</h4><ul><li><code>map</code><br><small>Applies `transform` to a present value and preserves `None`.</small></li><li><code>and_then</code><br><small>Applies an optional-producing transform to a present value and flattens the result.</small></li><li><code>unwrap_or</code><br><small>Returns the contained value, or `fallback` for `None`.
+The fallback is evaluated before this call, even for `Some`; use
+`unwrap_or_else` to defer computation.</small></li><li><code>present?</code><br><small>Returns whether the option contains a value.</small></li><li><code>absent?</code><br><small>Returns whether the option contains no value.</small></li><li><code>unwrap_or_else</code><br><small>Returns the contained value; calls `fallback` exactly once only for `None`.</small></li><li><code>or_else</code><br><small>Preserves a present value, or computes another option when this option is `None`.</small></li></ul><h4>Functions and methods</h4><ul><li><a href="#Option.absent?"><code>absent?</code></a><br><small>Returns whether the option contains no value.</small></li><li><a href="#Option.and_then"><code>and_then</code></a><br><small>Applies an optional-producing transform to a present value and flattens the result.</small></li><li><a href="#Option.flatten"><code>flatten</code></a><br><small>Removes one layer from a nested option.</small></li><li><a href="#Option.map"><code>map</code></a><br><small>Applies `transform` to a present value and preserves `None`.</small></li><li><a href="#Option.or_else"><code>or_else</code></a><br><small>Preserves a present value, or computes another option when this option is `None`.</small></li><li><a href="#Option.present?"><code>present?</code></a><br><small>Returns whether the option contains a value.</small></li><li><a href="#Option.unwrap_or"><code>unwrap_or</code></a><br><small>Returns the contained value, or `fallback` for `None`.</small></li><li><a href="#Option.unwrap_or_else"><code>unwrap_or_else</code></a><br><small>Returns the contained value; calls `fallback` exactly once only for `None`.</small></li></ul></article></div></section></div><article id="Option"><h2><a class="anchor" href="#Option">Option</a><span class="badge kind">variant</span><span class="badge visibility-public">public</span></h2><pre><code>pub enum Option&lt;T&gt; = Some(T)
+    | None</code></pre><p>A value that is either present as <code>Some(T)</code> or absent as <code>None</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.absent?"><h2><a class="anchor" href="#Option.absent?">Option.absent?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func absent?&lt;T&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether the option contains no value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.and_then"><h2><a class="anchor" href="#Option.and_then">Option.and_then</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func and_then&lt;T, U&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;, transform: func(T) -&gt; <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;U&gt;) -&gt; <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;U&gt;</code></pre><p>Applies an optional-producing transform to a present value and flattens the result.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.flatten"><h2><a class="anchor" href="#Option.flatten">Option.flatten</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func flatten&lt;T&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;<a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;&gt;) -&gt; <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;</code></pre><p>Removes one layer from a nested option.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.map"><h2><a class="anchor" href="#Option.map">Option.map</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func map&lt;T, U&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;, transform: func(T) -&gt; U) -&gt; <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;U&gt;</code></pre><p>Applies <code>transform</code> to a present value and preserves <code>None</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.or_else"><h2><a class="anchor" href="#Option.or_else">Option.or_else</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func or_else&lt;T&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;, fallback: func() -&gt; <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;) -&gt; <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;</code></pre><p>Preserves a present value, or computes another option when this option is <code>None</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.present?"><h2><a class="anchor" href="#Option.present?">Option.present?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func present?&lt;T&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether the option contains a value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.unwrap_or"><h2><a class="anchor" href="#Option.unwrap_or">Option.unwrap_or</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func unwrap_or&lt;T&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;, fallback: consume T) -&gt; T</code></pre><p>Returns the contained value, or <code>fallback</code> for <code>None</code>.
+The fallback is evaluated before this call, even for <code>Some</code>; use
+<code>unwrap_or_else</code> to defer computation.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Option.unwrap_or_else"><h2><a class="anchor" href="#Option.unwrap_or_else">Option.unwrap_or_else</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func unwrap_or_else&lt;T&gt;(self: <a class="type-link" href="#Option" title="core.option.Option">Option</a>&lt;T&gt;, fallback: func() -&gt; T) -&gt; T</code></pre><p>Returns the contained value; calls <code>fallback</code> exactly once only for <code>None</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

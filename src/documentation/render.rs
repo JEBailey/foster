@@ -1,4 +1,4 @@
-//! Resolved compiler-data adapter for the Foster documentation renderer.
+//! Resolved compiler-data adapter for the Foster docs2 renderer.
 use super::type_links::TypeLinks;
 use crate::ast::{Effect, EffectKind, ParameterMode};
 use crate::compiler::Compilation;
@@ -27,8 +27,8 @@ pub(super) struct ModulePage {
     pub html: String,
 }
 
-// Count-prefixed string stream, consumed by Reader in documentation.fos.
-// Optional values use a presence flag so missing and empty documentation differ.
+// Count-prefixed string stream, consumed by Reader in docs2.fos.
+// Optional values use a presence flag so missing and empty docs2 differ.
 #[derive(Default)]
 struct Data(Vec<String>);
 impl Data {
@@ -75,7 +75,7 @@ pub(super) fn write(
 ) -> Result<Site, FosterError> {
     let output = output
         .to_str()
-        .ok_or_else(|| FosterError::runtime("documentation output path must be valid UTF-8"))?;
+        .ok_or_else(|| FosterError::runtime("docs2 output path must be valid UTF-8"))?;
     render(compilation, "write", output)
 }
 
@@ -187,7 +187,7 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
 }
 
 fn invalid_response() -> FosterError {
-    FosterError::runtime("Foster documentation tool returned an invalid response")
+    FosterError::runtime("Foster docs2 tool returned an invalid response")
 }
 fn field<'a>(value: &'a Value, key: &str) -> Result<&'a Value, FosterError> {
     match value {

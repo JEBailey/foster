@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Foster documentation</title><link rel="stylesheet" href="style.css"></head><body><header><h1>Foster documentation</h1><p>Resolved package API reference</p></header><main><div class="summary"><span>12 modules</span><span>14 declarations</span></div><h2>Modules</h2><input class="filter" type="search" placeholder="Filter modules…" aria-label="Filter modules" data-module-filter><ul class="module-list"><li data-module="core"><a href="modules/core.html"><strong>core</strong><br><small>0 declarations</small></a></li><li data-module="core.bytes"><a href="modules/core-bytes.html"><strong>core.bytes</strong><br><small>2 declarations</small></a></li><li data-module="core.bytes.buffer"><a href="modules/core-bytes-buffer.html"><strong>core.bytes.buffer</strong><br><small>2 declarations</small></a></li><li data-module="core.list"><a href="modules/core-list.html"><strong>core.list</strong><br><small>2 declarations</small></a></li><li data-module="core.string"><a href="modules/core-string.html"><strong>core.string</strong><br><small>1 declaration</small></a></li><li data-module="core.symbol"><a href="modules/core-symbol.html"><strong>core.symbol</strong><br><small>1 declaration</small></a></li><li data-module="json"><a href="modules/json.html"><strong>json</strong><br><small>1 declaration</small></a></li><li data-module="json.parser"><a href="modules/json-parser.html"><strong>json.parser</strong><br><small>1 declaration</small></a></li><li data-module="main"><a href="modules/main.html"><strong>main</strong><br><small>3 declarations</small></a></li><li data-module="tools"><a href="modules/tools.html"><strong>tools</strong><br><small>0 declarations</small></a></li><li data-module="tools.text"><a href="modules/tools-text.html"><strong>tools.text</strong><br><small>0 declarations</small></a></li><li data-module="tools.text.trim"><a href="modules/tools-text-trim.html"><strong>tools.text.trim</strong><br><small>1 declaration</small></a></li></ul><p class="no-results" data-no-results>No modules match your filter.</p><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.style.display = visible ? 'none' : 'block';
+  });
+}
+</script></main></body></html>

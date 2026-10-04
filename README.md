@@ -6,15 +6,15 @@ runtime member lookup. Its defining direction is single ownership with group-par
 references, inferred effect contracts, structurally adaptable records, and lightweight remote
 objects running on virtual threads. The bootstrap compiler and register VM are written in Rust.
 
-Use the [documentation guide](docs/README.md) to find language, library, and compiler references.
+Use the [documentation guide](documentation/README.md) to find language, library, and compiler references.
 Coding agents should start with [AGENTS.md](AGENTS.md) and the
-[Foster writing guide](docs/writing-foster.md), which includes compiler-checked examples.
+[Foster writing guide](documentation/writing-foster.md), which includes compiler-checked examples.
 
 ## Implementation
 
 The Rust workspace has six packages: `foster` (the toolchain driver),
 `foster-compiler`, `foster-vm`, `foster-bytecode`, `foster-native-runtime`, and
-`foster-host`. See [workspace architecture](docs/workspace.md) for their responsibilities,
+`foster-host`. See [workspace architecture](documentation/workspace.md) for their responsibilities,
 dependencies, and build commands.
 
 Project creation, manifest and dependency management, formatting policy, and documentation page generation are
@@ -108,7 +108,7 @@ modules are errors.
 
 Build independent libraries with `foster build path/to/library --library -o math.flib`.
 Consumers can use `math = { path = "vendor/math.flib" }` in `[dependencies]` without the library source.
-See [compiled libraries](docs/compiled-libraries.md) for linking behavior and supported boundaries.
+See [compiled libraries](documentation/compiled-libraries.md) for linking behavior and supported boundaries.
 
 `run` invokes `main`. It may take no parameters, or one `std.process.Arguments` value containing
 the executable name and following command-line values. Pass program arguments after `--`, for
@@ -127,7 +127,7 @@ suitable for CI. The current directory is used when no path is supplied.
 ## Generated documentation
 
 `foster docs [file-or-directory]` type-checks the package and generates a static API site in a
-`documentation/` directory within the selected package. The site is built from resolved HIR, so signatures include
+`docs2` directory within the selected package. The site is built from resolved HIR, so signatures include
 inferred types and effects. It includes public and private declarations, their visibility, and all
 attached Markdown documentation comments, but omits private types without nonempty documentation.
 The index lists modules alphabetically in collapsible namespace groups, with indentation for nested
@@ -156,7 +156,7 @@ foster serve-docs documentation
 ```
 
 Both serving commands accept `--port <number>` and `--no-open`. The latter is useful on headless
-machines. Generated `documentation/` directories are ignored during Foster module discovery.
+machines. Generated `docs2` directories are ignored during Foster module discovery.
 
 ## Language snapshot
 
@@ -328,7 +328,7 @@ Foster has no prelude. Programs explicitly import embedded Foster-written module
 parser, time arithmetic, fixed-zone resolution, ISO/RFC formatting, validation, table building,
 and rendering are Foster code; only general scalar conversion and host-dependent filesystem,
 socket, clock, and operating-system entropy operations cross the VM boundary. See
-[the standard library reference](docs/core-library.md).
+[the standard library reference](documentation/core-library.md).
 
 ## Compiler and VM
 
@@ -383,7 +383,7 @@ Foster code. A versioned platform ABI provides filesystem and path operations, t
 directory, clocks, operating-system entropy, handle-based TCP listeners and connections, and
 in-process actor workers. Native code can spawn owned or borrowed actors, queue FIFO method calls,
 and consume their futures with `await`. Await suspends an actor coroutine; an ordinary thread
-waits for completion. See [native compilation](docs/native.md) for the exact boundary.
+waits for completion. See [native compilation](documentation/native.md) for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
 register assignment. Aggregate legalization separately freezes typed record slots, enum tags and
@@ -413,11 +413,11 @@ cargo run --release --bin foster -- run application.fpk
 
 The runtime validates the manifest and archive paths, expands resources into an isolated temporary
 working directory for the process, and removes that directory after execution. See the
-[package format](docs/package-format.md) for the versioned layout and limits.
+[package format](documentation/package-format.md) for the versioned layout and limits.
 
-See [the VM design](docs/vm.md), [binary format](docs/binary-format.md),
-[package format](docs/package-format.md), and
-[benchmarking guide](docs/benchmarking.md).
+See [the VM design](documentation/vm.md), [binary format](documentation/binary-format.md),
+[package format](documentation/package-format.md), and
+[benchmarking guide](documentation/benchmarking.md).
 
 ## Language server
 
@@ -441,28 +441,28 @@ remain build/run concerns, so ordinary library documents do not need a `main`. T
 
 ## Documentation map
 
-- [Semantic specification and conformance gaps](docs/semantics.md)
-- [Remote lifecycle, cancellation, and failure contract](docs/remote-semantics.md)
-- [Language design and implemented syntax](docs/language-design.md)
-- [Pre-release development policy](docs/development-policy.md)
-- [Roadmap](docs/roadmap.md)
-- [Ownership and borrowing](docs/ownership.md)
-- [Ownership verification](docs/ownership-verification.md)
-- [Closures and group borrowing](docs/closures.md)
-- [Effect derivation](docs/effect-derivation.md)
-- [Compiler diagnostics](docs/diagnostics.md)
-- [Testing Foster programs](docs/testing.md)
-- [Implemented feature test coverage](docs/test-coverage.md)
-- [Register VM](docs/vm.md)
-- [Native compilation](docs/native.md)
-- [Compiled bytecode format](docs/binary-format.md)
-- [Symbolic modules and callable descriptors](docs/symbolic-modules.md)
-- [Package archive format](docs/package-format.md)
-- [Core library](docs/core-library.md)
-- [Time in Foster](docs/time.md)
-- [Randomness in Foster](docs/random.md)
+- [Semantic specification and conformance gaps](documentation/semantics.md)
+- [Remote lifecycle, cancellation, and failure contract](documentation/remote-semantics.md)
+- [Language design and implemented syntax](documentation/language-design.md)
+- [Pre-release development policy](documentation/development-policy.md)
+- [Roadmap](documentation/roadmap.md)
+- [Ownership and borrowing](documentation/ownership.md)
+- [Ownership verification](documentation/ownership-verification.md)
+- [Closures and group borrowing](documentation/closures.md)
+- [Effect derivation](documentation/effect-derivation.md)
+- [Compiler diagnostics](documentation/diagnostics.md)
+- [Testing Foster programs](documentation/testing.md)
+- [Implemented feature test coverage](documentation/test-coverage.md)
+- [Register VM](documentation/vm.md)
+- [Native compilation](documentation/native.md)
+- [Compiled bytecode format](documentation/binary-format.md)
+- [Symbolic modules and callable descriptors](documentation/symbolic-modules.md)
+- [Package archive format](documentation/package-format.md)
+- [Core library](documentation/core-library.md)
+- [Time in Foster](documentation/time.md)
+- [Randomness in Foster](documentation/random.md)
 - [Standard-library source guide](library/README.md)
-- [Optimization and benchmarks](docs/benchmarking.md)
+- [Optimization and benchmarks](documentation/benchmarking.md)
 - [Executable examples](examples/README.md)
 
 The executable programs under `examples/` demonstrate the current language and library capabilities.

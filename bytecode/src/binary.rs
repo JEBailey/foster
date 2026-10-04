@@ -42,7 +42,7 @@ impl fmt::Display for BinaryError {
 
 impl std::error::Error for BinaryError {}
 
-/// Encodes a program using the canonical ordering defined by `docs/binary-format.md`.
+/// Encodes a program using the canonical ordering defined by `documentation/binary-format.md`.
 pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     verify(program).map_err(|error| BinaryError::new(format!("invalid program: {error}")))?;
     let mut w = Writer { bytes: Vec::new() };

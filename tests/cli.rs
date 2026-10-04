@@ -63,8 +63,8 @@ fn help_describes_commands_and_important_options() {
         "Compile Foster source to bytecode or a native executable",
         "Type-check and validate Foster source without running it",
         "Compile and run Foster test declarations",
-        "Generate static API documentation for Foster source",
-        "Serve an existing generated documentation directory",
+        "Generate static API docs2 for Foster source",
+        "Serve an existing generated docs2 directory",
         "Start the Foster language server over standard input/output",
     ] {
         assert!(top_level.contains(description), "{top_level}");
@@ -79,15 +79,15 @@ fn help_describes_commands_and_important_options() {
     );
     assert!(run.contains("Disable bytecode optimization"), "{run}");
 
-    let docs = foster().args(["docs", "--help"]).output().unwrap();
+    let docs = foster().args(["documentation", "--help"]).output().unwrap();
     assert!(docs.status.success());
     let docs = String::from_utf8(docs.stdout).unwrap();
     assert!(
-        docs.contains("Write generated documentation to this directory"),
+        docs.contains("Write generated docs2 to this directory"),
         "{docs}"
     );
     assert!(
-        docs.contains("Serve the generated documentation after building it"),
+        docs.contains("Serve the generated docs2 after building it"),
         "{docs}"
     );
 }
@@ -1026,7 +1026,7 @@ func main() -> String {
 #[test]
 fn docs_generates_a_static_site_from_resolved_declarations() {
     let unique = format!(
-        "foster-docs-{}-{}",
+        "foster-documentation-{}-{}",
         std::process::id(),
         time::SystemTime::now()
             .duration_since(time::UNIX_EPOCH)
@@ -1035,7 +1035,7 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     );
     let output_directory = std::env::temp_dir().join(unique);
     let output = foster()
-        .arg("docs")
+        .arg("documentation")
         .arg(benchmark_source())
         .arg("--output")
         .arg(&output_directory)
@@ -1049,7 +1049,7 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     );
     let index = fs::read_to_string(output_directory.join("index.html")).unwrap();
     let module = fs::read_to_string(output_directory.join("modules/main.html")).unwrap();
-    assert!(index.contains("Foster documentation"));
+    assert!(index.contains("Foster docs2"));
     assert!(index.contains("<span>1 module</span>"));
     assert!(index.contains("data-module-filter"));
     assert!(index.contains("declarations</span>"));
@@ -1066,7 +1066,7 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
 
 #[test]
 fn docs_rejects_server_only_options_without_serve() {
-    let output = foster().args(["docs", "--no-open"]).output().unwrap();
+    let output = foster().args(["documentation", "--no-open"]).output().unwrap();
 
     assert!(!output.status.success());
     assert!(

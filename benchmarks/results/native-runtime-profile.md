@@ -76,4 +76,4 @@ profile or a flamegraph of a representative application.
 
 Instrumentation and the diagnostic executable exist only in the opt-in test path.
 No production runtime behavior or ABI was changed. See
-[reproduction instructions](../../docs/benchmarking.md#native-runtime-profiling).
+[reproduction instructions](../../documentation/benchmarking.md#native-runtime-profiling).

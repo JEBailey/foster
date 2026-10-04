@@ -602,7 +602,7 @@ func main() -> Int {
         .find(|item| item.label == "documented")
         .unwrap();
     let Some(Documentation::MarkupContent(documentation)) = &item.documentation else {
-        panic!("expected markdown completion documentation")
+        panic!("expected markdown completion docs2")
     };
     assert_eq!(documentation.value, "Computes the documented answer.");
 }
@@ -1527,7 +1527,7 @@ fn source_builtins_provide_docs_navigation_and_parameter_hints() {
     assert!(
         uri_to_path(&location.uri)
             .unwrap()
-            .ends_with("docs/core-library.md")
+            .ends_with("../../../documentation/core-library.md")
     );
 
     let hints = workspace

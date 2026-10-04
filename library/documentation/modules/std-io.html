@@ -1,0 +1,222 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.io — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.io</h1><p>22 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>22 declarations</p><ul><li data-declaration><a href="#Duplex">Duplex <small>type</small></a></li><li data-declaration><a href="#IoError">IoError <small>type</small></a></li><li data-declaration><a href="#ReadReady">ReadReady <small>type</small></a></li><li data-declaration><a href="#Reader">Reader <small>type</small></a></li><li data-declaration><a href="#TextReader">TextReader <small>type</small></a></li><li data-declaration><a href="#TextWriter">TextWriter <small>type</small></a></li><li data-declaration><a href="#WriteReady">WriteReady <small>type</small></a></li><li data-declaration><a href="#Writer">Writer <small>type</small></a></li><li data-declaration><a href="#IoTestReader.read">IoTestReader.read <small>function</small></a></li><li data-declaration><a href="#IoTestWriter.flush">IoTestWriter.flush <small>function</small></a></li><li data-declaration><a href="#IoTestWriter.write">IoTestWriter.write <small>function</small></a></li><li data-declaration><a href="#append_and_read">append_and_read <small>function</small></a></li><li data-declaration><a href="#continue_write">continue_write <small>function</small></a></li><li data-declaration><a href="#copy">copy <small>function</small></a></li><li data-declaration><a href="#copy_remaining">copy_remaining <small>function</small></a></li><li data-declaration><a href="#finish_copy">finish_copy <small>function</small></a></li><li data-declaration><a href="#io_test_bytes">io_test_bytes <small>function</small></a></li><li data-declaration><a href="#io_test_require">io_test_require <small>function</small></a></li><li data-declaration><a href="#read_all">read_all <small>function</small></a></li><li data-declaration><a href="#read_remaining">read_remaining <small>function</small></a></li><li data-declaration><a href="#write_all">write_all <small>function</small></a></li><li data-declaration><a href="#write_copy_chunk">write_copy_chunk <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Binary and text stream contracts with complete-transfer helpers.</p>
+<p>Readers report EOF with an empty value. Writers may make partial progress.
+read_all, write_all, and copy propagate the first error without rolling back
+earlier I/O. write_all and copy flush on success. Implementations must honor
+the progress requirements in <code>Reader</code> and <code>Writer</code> to avoid nonterminating retries.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Duplex">Duplex</a><span class="badge visibility-public">public</span></h3><p>A bidirectional binary stream combining the <code>Reader&lt;E&gt;</code> and <code>Writer&lt;E&gt;</code> contracts.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;</code></li><li><code><a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;</code></li></ul></article><article class="type-summary"><h3><a href="#IoError">IoError</a><span class="badge visibility-public">public</span></h3><p>Describes a failed host I/O operation.
+<code>operation</code> identifies the failing action and <code>path</code> its target when available.
+<code>message</code> is human-readable host text whose wording may vary by platform.</p>
+<h4>Fields</h4><ul><li><code>operation: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li><li><code>path: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li><li><code>message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#ReadReady">ReadReady</a><span class="badge visibility-public">public</span></h3><p>Timed readiness for reading or accepting. Zero polls without waiting; negative timeouts fail.
+True includes EOF and pending I/O errors. Readiness is advisory when consumers race.</p>
+<h4>Required methods</h4><ul><li><code>wait_readable</code><br><small>Waits up to `milliseconds`; false means timeout, Error means the wait failed.</small></li></ul></article><article class="type-summary"><h3><a href="#Reader">Reader</a><span class="badge visibility-public">public</span></h3><p>A stateful source of binary data.</p>
+<p><code>read</code> returns at most <code>maximum</code> bytes. Empty bytes indicate clean end-of-stream.
+A successful read of a non-empty stream must return at least one byte.</p>
+<h4>Required methods</h4><ul><li><code>read</code><br><small>Reads at most `maximum` bytes; callers supply a positive maximum.
+For that positive request, empty bytes mean EOF and a nonempty result means progress.</small></li></ul></article><article class="type-summary"><h3><a href="#TextReader">TextReader</a><span class="badge visibility-public">public</span></h3><p>A stateful source which decodes text while preserving character boundaries between reads.
+Empty text indicates clean end-of-stream.</p>
+<h4>Required methods</h4><ul><li><code>read_text</code><br><small>Reads decoded text without splitting a character boundary.</small></li></ul></article><article class="type-summary"><h3><a href="#TextWriter">TextWriter</a><span class="badge visibility-public">public</span></h3><p>A stateful text destination.</p>
+<p><code>write_text</code> accepts the complete string or returns an error. <code>flush</code> makes buffered text visible
+to the destination.</p>
+<h4>Required methods</h4><ul><li><code>write_text</code><br><small>Writes the complete text value or returns an error.</small></li><li><code>flush</code><br><small>Makes buffered text visible to the destination.</small></li></ul></article><article class="type-summary"><h3><a href="#WriteReady">WriteReady</a><span class="badge visibility-public">public</span></h3><p>Timed readiness for writing. Readiness does not promise a complete write will fit.</p>
+<h4>Required methods</h4><ul><li><code>wait_writable</code><br><small>Waits up to `milliseconds`; zero polls, false means timeout, negative values fail.</small></li></ul></article><article class="type-summary"><h3><a href="#Writer">Writer</a><span class="badge visibility-public">public</span></h3><p>A stateful destination for binary data.</p>
+<p><code>write</code> may accept fewer bytes than supplied and reports the accepted count. A successful write
+of non-empty bytes must accept at least one byte. <code>flush</code> makes buffered output visible to the
+destination.</p>
+<h4>Required methods</h4><ul><li><code>write</code><br><small>Writes a prefix of `contents` and returns its byte count.
+For nonempty input, success must report `1..contents.length`; empty input may report zero.</small></li><li><code>flush</code><br><small>Makes buffered output visible to the destination.</small></li></ul></article></div></section></div><article id="Duplex"><h2><a class="anchor" href="#Duplex">Duplex</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Duplex&lt;E&gt; = &amp; <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt; &amp; <a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt; &amp; {
+
+}</code></pre><p>A bidirectional binary stream combining the <code>Reader&lt;E&gt;</code> and <code>Writer&lt;E&gt;</code> contracts.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="IoError"><h2><a class="anchor" href="#IoError">IoError</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type IoError = {
+    pub operation: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+    pub path: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+    pub message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+}</code></pre><p>Describes a failed host I/O operation.
+<code>operation</code> identifies the failing action and <code>path</code> its target when available.
+<code>message</code> is human-readable host text whose wording may vary by platform.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ReadReady"><h2><a class="anchor" href="#ReadReady">ReadReady</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ReadReady&lt;E&gt; = {
+    pub func wait_readable(self, milliseconds: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, E&gt; [read self]
+}</code></pre><p>Timed readiness for reading or accepting. Zero polls without waiting; negative timeouts fail.
+True includes EOF and pending I/O errors. Readiness is advisory when consumers race.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Reader"><h2><a class="anchor" href="#Reader">Reader</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Reader&lt;E&gt; = {
+    pub func read(self, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
+}</code></pre><p>A stateful source of binary data.</p>
+<p><code>read</code> returns at most <code>maximum</code> bytes. Empty bytes indicate clean end-of-stream.
+A successful read of a non-empty stream must return at least one byte.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="TextReader"><h2><a class="anchor" href="#TextReader">TextReader</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type TextReader&lt;E&gt; = {
+    pub func read_text(self, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, E&gt; [mut self]
+}</code></pre><p>A stateful source which decodes text while preserving character boundaries between reads.
+Empty text indicates clean end-of-stream.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="TextWriter"><h2><a class="anchor" href="#TextWriter">TextWriter</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type TextWriter&lt;E&gt; = {
+    pub func write_text(self, text: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+    pub func flush(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+}</code></pre><p>A stateful text destination.</p>
+<p><code>write_text</code> accepts the complete string or returns an error. <code>flush</code> makes buffered text visible
+to the destination.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="WriteReady"><h2><a class="anchor" href="#WriteReady">WriteReady</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type WriteReady&lt;E&gt; = {
+    pub func wait_writable(self, milliseconds: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, E&gt; [read self]
+}</code></pre><p>Timed readiness for writing. Readiness does not promise a complete write will fit.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Writer"><h2><a class="anchor" href="#Writer">Writer</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Writer&lt;E&gt; = {
+    pub func write(self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+    pub func flush(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+}</code></pre><p>A stateful destination for binary data.</p>
+<p><code>write</code> may accept fewer bytes than supplied and reports the accepted count. A successful write
+of non-empty bytes must accept at least one byte. <code>flush</code> makes buffered output visible to the
+destination.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="IoTestReader.read"><h2><a class="anchor" href="#IoTestReader.read">IoTestReader.read</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func read(self: IoTestReader, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, IoTestError&gt; [mut self.remaining]</code></pre><p>Reads a bounded chunk for the generic stream contract test.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="IoTestWriter.flush"><h2><a class="anchor" href="#IoTestWriter.flush">IoTestWriter.flush</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func flush(self: IoTestWriter) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), IoTestError&gt;</code></pre><p>Completes a test writer flush.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="IoTestWriter.write"><h2><a class="anchor" href="#IoTestWriter.write">IoTestWriter.write</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func write(self: IoTestWriter, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, IoTestError&gt; [mut self.contents]</code></pre><p>Accepts a bounded chunk for the generic stream contract test.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="append_and_read"><h2><a class="anchor" href="#append_and_read">append_and_read</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func append_and_read&lt;E&gt;(reader: <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;, buffer: consume <a class="type-link" href="core-bytes-buffer.html#ByteBuffer" title="core.bytes.buffer.ByteBuffer">ByteBuffer</a>, chunk: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut reader, reshape buffer]</code></pre><p>Appends one successful read before requesting another chunk.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="continue_write"><h2><a class="anchor" href="#continue_write">continue_write</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func continue_write&lt;E&gt;(writer: <a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, outcome: consume <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt;) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut writer]</code></pre><p>Handles one partial write and retries the unwritten suffix.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="copy"><h2><a class="anchor" href="#copy">copy</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func copy&lt;E&gt;(reader: <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;, writer: <a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut reader, mut writer]</code></pre><p>Copies through EOF, flushes the writer, and returns the total byte count.
+Reads chunks of at most 8192 bytes and retries partial writes. The first read,
+write, or flush error ends the operation; completed I/O is not rolled back.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="copy_remaining"><h2><a class="anchor" href="#copy_remaining">copy_remaining</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func copy_remaining&lt;E&gt;(reader: <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;, writer: <a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;, total: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut reader, mut writer]</code></pre><p>Continues copying after requesting one chunk.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="finish_copy"><h2><a class="anchor" href="#finish_copy">finish_copy</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func finish_copy&lt;E&gt;(total: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, outcome: consume <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt;) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt;</code></pre><p>Converts the final flush result into the completed byte count.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="io_test_bytes"><h2><a class="anchor" href="#io_test_bytes">io_test_bytes</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func io_test_bytes(outcome: <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, <a class="type-link" href="core-bytes.html#HexError" title="core.bytes.HexError">HexError</a>&gt;) -&gt; <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Extracts valid hexadecimal bytes for stream fixtures.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="io_test_require"><h2><a class="anchor" href="#io_test_require">io_test_require</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func io_test_require(condition: <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; ()</code></pre><p>Asserts one stream-test condition while keeping branch result types uniform.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="read_all"><h2><a class="anchor" href="#read_all">read_all</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func read_all&lt;E&gt;(reader: <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut reader]</code></pre><p>Reads through EOF and returns all bytes, retaining the reader for further use.
+Propagates the first read error; already consumed bytes are not restored.
+Memory use grows with the input size, so the stream must eventually terminate.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="read_remaining"><h2><a class="anchor" href="#read_remaining">read_remaining</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func read_remaining&lt;E&gt;(reader: <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;, buffer: consume <a class="type-link" href="core-bytes-buffer.html#ByteBuffer" title="core.bytes.buffer.ByteBuffer">ByteBuffer</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut reader, reshape buffer]</code></pre><p>Continues accumulating chunks until the reader reports EOF.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="write_all"><h2><a class="anchor" href="#write_all">write_all</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func write_all&lt;E&gt;(writer: <a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut writer]</code></pre><p>Writes all bytes, retrying partial writes, then flushes once.
+Empty input still flushes. A write or flush error is returned unchanged; bytes
+already accepted by the destination are not rolled back.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="write_copy_chunk"><h2><a class="anchor" href="#write_copy_chunk">write_copy_chunk</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func write_copy_chunk&lt;E&gt;(reader: <a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;, writer: <a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;, chunk: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, total: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, outcome: consume <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt;) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut reader, mut writer]</code></pre><p>Handles a partial chunk write without flushing between input chunks.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

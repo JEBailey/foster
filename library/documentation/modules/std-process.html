@@ -1,0 +1,207 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.process — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.process</h1><p>22 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>22 declarations</p><ul><li data-declaration><a href="#Arguments">Arguments <small>type</small></a></li><li data-declaration><a href="#ExitStatus">ExitStatus <small>type</small></a></li><li data-declaration><a href="#Process">Process <small>type</small></a></li><li data-declaration><a href="#ProcessError">ProcessError <small>type</small></a></li><li data-declaration><a href="#ProcessOutput">ProcessOutput <small>type</small></a></li><li data-declaration><a href="#SpawnOptions">SpawnOptions <small>type</small></a></li><li data-declaration><a href="#ProcessStatus">ProcessStatus <small>variant</small></a></li><li data-owner="Process" data-declaration><a href="#Process.deinit">Process.deinit <small>function</small></a></li><li data-owner="Process" data-declaration><a href="#Process.pid">Process.pid <small>function</small></a></li><li data-owner="Process" data-declaration><a href="#Process.poll">Process.poll <small>function</small></a></li><li data-owner="Process" data-declaration><a href="#Process.resolve">Process.resolve <small>function</small></a></li><li data-owner="Process" data-declaration><a href="#Process.terminate">Process.terminate <small>function</small></a></li><li data-declaration><a href="#ProcessHost.exchange">ProcessHost.exchange <small>function</small></a></li><li data-declaration><a href="#ProcessHost.release">ProcessHost.release <small>function</small></a></li><li data-declaration><a href="#ProcessHost.reserve">ProcessHost.reserve <small>function</small></a></li><li data-declaration><a href="#ProcessHost.wait_step">ProcessHost.wait_step <small>function</small></a></li><li data-owner="SpawnOptions" data-declaration><a href="#SpawnOptions.defaults">SpawnOptions.defaults <small>function</small></a></li><li data-declaration><a href="#decimal">decimal <small>function</small></a></li><li data-declaration><a href="#decode_status">decode_status <small>function</small></a></li><li data-declaration><a href="#response">response <small>function</small></a></li><li data-declaration><a href="#spawn">spawn <small>function</small></a></li><li data-declaration><a href="#spawn_with">spawn_with <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>The executable name and command-line arguments passed to main.</p>
+<p>Accept <code>Arguments</code> as main's parameter to read process inputs. The executable
+name is separate from values, which contains the user arguments in order.
+<code>spawn</code> starts a direct child immediately, without invoking a shell. Await its
+owned handle for captured output. Dropping the handle kills and reaps the child.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Arguments">Arguments</a><span class="badge visibility-public">public</span></h3><p>The command line passed to <code>main</code>.</p>
+<p><code>executable</code> is the path or command used to invoke the program. <code>values</code> contains every
+following argument in order and does not repeat the executable name.
+The invocation name is not necessarily an absolute canonical path.</p>
+<h4>Fields</h4><ul><li><code>executable: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li><li><code>values: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>&gt;<span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#ExitStatus">ExitStatus</a><span class="badge visibility-public">public</span></h3><p>A child's termination result. Signals may terminate it without an exit code.</p>
+<h4>Fields</h4><ul><li><code>success: <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a><span class="badge visibility-public">public</span></code></li><li><code>code: <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>&gt;<span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#Process">Process</a><span class="badge visibility-public">public</span></h3><p>An owned direct child and its completion future. Cannot be copied or fabricated.
+Standard input is closed; environment variables are inherited. Cleanup manages
+the direct child only. Descendants holding output pipes can delay await.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="core-future.html#Future" title="core.future.Future">Future</a>&lt;<a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#ProcessOutput" title="std.process.ProcessOutput">ProcessOutput</a>, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt;&gt;</code></li></ul><h4>Fields</h4><ul><li><code>token: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span></code></li><li><code>identifier: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span></code></li></ul><h4>Functions and methods</h4><ul><li><a href="#Process.pid"><code>pid</code></a><br><small>Returns the OS process identifier. The handle retains its own distinct identity.</small></li><li><a href="#Process.poll"><code>poll</code></a><br><small>Checks the direct child&#39;s state without waiting for completion.</small></li><li><a href="#Process.resolve"><code>resolve</code></a><br><small>Consumes the handle, waits for exit and both output streams, and reaps the child.</small></li><li><a href="#Process.terminate"><code>terminate</code></a><br><small>Requests immediate termination of a running direct child. Await still collects</small></li></ul></article><article class="type-summary"><h3><a href="#ProcessError">ProcessError</a><span class="badge visibility-public">public</span></h3><p>An operating-system or output-capture failure.</p>
+<h4>Fields</h4><ul><li><code>message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#ProcessOutput">ProcessOutput</a><span class="badge visibility-public">public</span></h3><p>Completed binary-safe output. A nonzero exit code is a normal completion.</p>
+<h4>Fields</h4><ul><li><code>status: <a class="type-link" href="#ExitStatus" title="std.process.ExitStatus">ExitStatus</a><span class="badge visibility-public">public</span></code></li><li><code>stdout: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a><span class="badge visibility-public">public</span></code></li><li><code>stderr: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a><span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#SpawnOptions">SpawnOptions</a><span class="badge visibility-public">public</span></h3><p>Launch settings. An empty directory inherits the current directory.
+The output limit applies separately to stdout and stderr; excess is drained
+and reported as an error on await. Valid limits are 1 through 67108864 bytes.</p>
+<h4>Fields</h4><ul><li><code>directory: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li><li><code>output_limit: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span></code></li></ul><h4>Functions and methods</h4><ul><li><a href="#SpawnOptions.defaults"><code>defaults</code></a><br><small>Inherits the directory and captures up to 16 MiB per output stream.</small></li></ul></article><article class="type-summary"><h3><a href="#ProcessStatus">ProcessStatus</a><span class="badge visibility-public">public</span></h3><p>The direct child is running or has exited; capture may still be draining.</p>
+<h4>Cases</h4><ul><li><code>Running</code></li><li><code>Exited(<a class="type-link" href="#ExitStatus" title="std.process.ExitStatus">ExitStatus</a>)</code></li></ul></article></div></section></div><article id="Arguments"><h2><a class="anchor" href="#Arguments">Arguments</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Arguments = {
+    pub executable: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+    pub values: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>&gt;<span class="badge visibility-public">public</span>
+}</code></pre><p>The command line passed to <code>main</code>.</p>
+<p><code>executable</code> is the path or command used to invoke the program. <code>values</code> contains every
+following argument in order and does not repeat the executable name.
+The invocation name is not necessarily an absolute canonical path.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ExitStatus"><h2><a class="anchor" href="#ExitStatus">ExitStatus</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ExitStatus = {
+    pub success: <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a><span class="badge visibility-public">public</span>
+    pub code: <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>&gt;<span class="badge visibility-public">public</span>
+}</code></pre><p>A child's termination result. Signals may terminate it without an exit code.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Process"><h2><a class="anchor" href="#Process">Process</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Process = &amp; <a class="type-link" href="core-future.html#Future" title="core.future.Future">Future</a>&lt;<a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#ProcessOutput" title="std.process.ProcessOutput">ProcessOutput</a>, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt;&gt; &amp; {
+    token: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
+    identifier: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
+}</code></pre><p>An owned direct child and its completion future. Cannot be copied or fabricated.
+Standard input is closed; environment variables are inherited. Cleanup manages
+the direct child only. Descendants holding output pipes can delay await.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessError"><h2><a class="anchor" href="#ProcessError">ProcessError</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ProcessError = {
+    pub message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+}</code></pre><p>An operating-system or output-capture failure.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessOutput"><h2><a class="anchor" href="#ProcessOutput">ProcessOutput</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ProcessOutput = {
+    pub status: <a class="type-link" href="#ExitStatus" title="std.process.ExitStatus">ExitStatus</a><span class="badge visibility-public">public</span>
+    pub stdout: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a><span class="badge visibility-public">public</span>
+    pub stderr: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a><span class="badge visibility-public">public</span>
+}</code></pre><p>Completed binary-safe output. A nonzero exit code is a normal completion.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SpawnOptions"><h2><a class="anchor" href="#SpawnOptions">SpawnOptions</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SpawnOptions = {
+    pub directory: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+    pub output_limit: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span>
+}</code></pre><p>Launch settings. An empty directory inherits the current directory.
+The output limit applies separately to stdout and stderr; excess is drained
+and reported as an error on await. Valid limits are 1 through 67108864 bytes.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessStatus"><h2><a class="anchor" href="#ProcessStatus">ProcessStatus</a><span class="badge kind">variant</span><span class="badge visibility-public">public</span></h2><pre><code>pub enum ProcessStatus = Running
+    | Exited(<a class="type-link" href="#ExitStatus" title="std.process.ExitStatus">ExitStatus</a>)</code></pre><p>The direct child is running or has exited; capture may still be draining.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Process.deinit"><h2><a class="anchor" href="#Process.deinit">Process.deinit</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func deinit(self: <a class="type-link" href="#Process" title="std.process.Process">Process</a>) -&gt; ()</code></pre><p>Kills and reaps a remaining direct child, including on unwinding.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Process.pid"><h2><a class="anchor" href="#Process.pid">Process.pid</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func pid(self: <a class="type-link" href="#Process" title="std.process.Process">Process</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the OS process identifier. The handle retains its own distinct identity.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Process.poll"><h2><a class="anchor" href="#Process.poll">Process.poll</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func poll(self: <a class="type-link" href="#Process" title="std.process.Process">Process</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#ProcessStatus" title="std.process.ProcessStatus">ProcessStatus</a>, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt; [mut self.token]</code></pre><p>Checks the direct child's state without waiting for completion.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Process.resolve"><h2><a class="anchor" href="#Process.resolve">Process.resolve</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func resolve(self: consume <a class="type-link" href="#Process" title="std.process.Process">Process</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#ProcessOutput" title="std.process.ProcessOutput">ProcessOutput</a>, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt; [suspend]</code></pre><p>Consumes the handle, waits for exit and both output streams, and reaps the child.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Process.terminate"><h2><a class="anchor" href="#Process.terminate">Process.terminate</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func terminate(self: <a class="type-link" href="#Process" title="std.process.Process">Process</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt; [mut self.token]</code></pre><p>Requests immediate termination of a running direct child. Await still collects
+its exit status and captured output. An already exited child is unchanged.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessHost.exchange"><h2><a class="anchor" href="#ProcessHost.exchange">ProcessHost.exchange</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func exchange(operation: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, token: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, executable: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, arguments: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, directory: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, limit: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Exchanges private process-control messages with the operating system.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessHost.release"><h2><a class="anchor" href="#ProcessHost.release">ProcessHost.release</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func release(token: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; ()</code></pre><p>Releases and reaps a direct child; repeated release is harmless.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessHost.reserve"><h2><a class="anchor" href="#ProcessHost.reserve">ProcessHost.reserve</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func reserve() -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Reserves a unique identity without acquiring an operating-system resource.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ProcessHost.wait_step"><h2><a class="anchor" href="#ProcessHost.wait_step">ProcessHost.wait_step</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func wait_step(token: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [suspend]</code></pre><p>Waits briefly for completion, allowing cancellation between calls.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SpawnOptions.defaults"><h2><a class="anchor" href="#SpawnOptions.defaults">SpawnOptions.defaults</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func defaults() -&gt; <a class="type-link" href="#SpawnOptions" title="std.process.SpawnOptions">SpawnOptions</a></code></pre><p>Inherits the directory and captures up to 16 MiB per output stream.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="decimal"><h2><a class="anchor" href="#decimal">decimal</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func decimal(value: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Parses a trusted signed decimal runtime field, including the minimum Int.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="decode_status"><h2><a class="anchor" href="#decode_status">decode_status</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func decode_status(fields: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>&gt;) -&gt; <a class="type-link" href="#ExitStatus" title="std.process.ExitStatus">ExitStatus</a></code></pre><p>Decodes the fixed exit-status fields shared by poll and completion.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="response"><h2><a class="anchor" href="#response">response</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func response(value: consume <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>&gt;, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt;</code></pre><p>Decodes a trusted runtime envelope, preserving operating-system error text.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="spawn"><h2><a class="anchor" href="#spawn">spawn</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func spawn(executable: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, arguments: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>&gt;) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#Process" title="std.process.Process">Process</a>, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt;</code></pre><p>Starts an executable with separate arguments, inherited directory/environment,
+closed stdin, and a 16 MiB limit per captured stream. Does not interpret a shell.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="spawn_with"><h2><a class="anchor" href="#spawn_with">spawn_with</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func spawn_with(executable: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, arguments: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>&gt;, options: <a class="type-link" href="#SpawnOptions" title="std.process.SpawnOptions">SpawnOptions</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#Process" title="std.process.Process">Process</a>, <a class="type-link" href="#ProcessError" title="std.process.ProcessError">ProcessError</a>&gt;</code></pre><p>Starts a direct child with explicit directory and capture settings.
+Arguments preserve empty strings, whitespace, quotes, and Unicode verbatim.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

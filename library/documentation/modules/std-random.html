@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.random — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.random</h1><p>22 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>22 declarations</p><ul><li data-declaration><a href="#RandomError">RandomError <small>type</small></a></li><li data-declaration><a href="#RandomHost">RandomHost <small>type</small></a></li><li data-declaration><a href="#RandomSource">RandomSource <small>type</small></a></li><li data-declaration><a href="#RandomTestSource">RandomTestSource <small>type</small></a></li><li data-declaration><a href="#SeedableRandom">SeedableRandom <small>type</small></a></li><li data-declaration><a href="#SplittableRandom">SplittableRandom <small>type</small></a></li><li data-declaration><a href="#SystemRandom">SystemRandom <small>type</small></a></li><li data-owner="RandomHost" data-declaration><a href="#RandomHost.bytes">RandomHost.bytes <small>function</small></a></li><li data-owner="RandomTestSource" data-declaration><a href="#RandomTestSource.maximum">RandomTestSource.maximum <small>function</small></a></li><li data-owner="RandomTestSource" data-declaration><a href="#RandomTestSource.next">RandomTestSource.next <small>function</small></a></li><li data-owner="SystemRandom" data-declaration><a href="#SystemRandom.bytes">SystemRandom.bytes <small>function</small></a></li><li data-owner="SystemRandom" data-declaration><a href="#SystemRandom.maximum">SystemRandom.maximum <small>function</small></a></li><li data-owner="SystemRandom" data-declaration><a href="#SystemRandom.new">SystemRandom.new <small>function</small></a></li><li data-owner="SystemRandom" data-declaration><a href="#SystemRandom.next">SystemRandom.next <small>function</small></a></li><li data-declaration><a href="#below">below <small>function</small></a></li><li data-declaration><a href="#below_with">below_with <small>function</small></a></li><li data-declaration><a href="#between">between <small>function</small></a></li><li data-declaration><a href="#between_with">between_with <small>function</small></a></li><li data-declaration><a href="#bounded_width">bounded_width <small>function</small></a></li><li data-declaration><a href="#failure">failure <small>function</small></a></li><li data-declaration><a href="#range_width">range_width <small>function</small></a></li><li data-declaration><a href="#sample_below">sample_below <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Random-source contracts and unbiased integer sampling.</p>
+<p><code>Range</code> bounds are half-open. Invalid ranges and source failures return <code>RandomError</code>.
+The requested width must fit the source's advertised range. Use seeded generators
+for reproducibility and <code>SystemRandom</code> for operating-system entropy.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#RandomError">RandomError</a><span class="badge visibility-public">public</span></h3><p>Describes invalid random requests or unavailable host entropy.</p>
+<h4>Fields</h4><ul><li><code>operation: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li><li><code>value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span></code></li><li><code>message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#RandomSource">RandomSource</a><span class="badge visibility-public">public</span></h3><p>A stateful source of uniformly distributed nonnegative integers.</p>
+<p><code>next</code> must return a value in the inclusive range from zero through <code>maximum</code>. Every value in
+that range must be equally likely. Source failure is explicit so host entropy and deterministic
+generators share one contract without hiding environmental errors.</p>
+<h4>Required methods</h4><ul><li><code>next</code><br><small>Returns the next uniformly distributed source value.</small></li><li><code>maximum</code><br><small>Returns the inclusive maximum value produced by `next`.</small></li></ul></article><article class="type-summary"><h3><a href="#SeedableRandom">SeedableRandom</a><span class="badge visibility-public">public</span></h3><p>A random source whose deterministic state can be reset from an integer seed.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a></code></li></ul><h4>Required methods</h4><ul><li><code>reseed</code><br><small>Resets this source to the sequence selected by `seed`.</small></li></ul></article><article class="type-summary"><h3><a href="#SplittableRandom">SplittableRandom</a><span class="badge visibility-public">public</span></h3><p>A random source which can derive another deterministic stream.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a></code></li></ul><h4>Required methods</h4><ul><li><code>split</code><br><small>Advances this source and returns a separately owned derived stream.</small></li></ul></article><article class="type-summary"><h3><a href="#SystemRandom">SystemRandom</a><span class="badge visibility-public">public</span></h3><p>A stateless view of the operating system's secure random source.
+Drawing entropy changes external state, not this Foster value.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a></code></li><li><code><a class="type-link" href="std-random-secure.html#EntropySource" title="std.random.secure.EntropySource">secure::EntropySource</a></code></li></ul><h4>Fields</h4><ul><li><code>marker: <a class="type-link" href="core-symbol.html#Symbol" title="core.symbol.Symbol">Symbol</a><span class="badge visibility-private">private</span></code></li></ul><h4>Functions and methods</h4><ul><li><a href="#SystemRandom.bytes"><code>bytes</code></a><br><small>Returns exactly `count` bytes of operating-system entropy.</small></li><li><a href="#SystemRandom.maximum"><code>maximum</code></a><br><small>Returns the largest value produced by `SystemRandom.next`.</small></li><li><a href="#SystemRandom.new"><code>new</code></a><br><small>Constructs an operating-system-backed random source.</small></li><li><a href="#SystemRandom.next"><code>next</code></a><br><small>Returns a uniformly distributed 31-bit nonnegative integer from operating-system entropy.</small></li></ul></article></div></section></div><article id="RandomError"><h2><a class="anchor" href="#RandomError">RandomError</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type RandomError = {
+    pub operation: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+    pub value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span>
+    pub message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+}</code></pre><p>Describes invalid random requests or unavailable host entropy.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomHost"><h2><a class="anchor" href="#RandomHost">RandomHost</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type RandomHost = {
+
+}</code></pre><p>Private namespace for operating-system entropy.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomSource"><h2><a class="anchor" href="#RandomSource">RandomSource</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type RandomSource = {
+    pub func next(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut self]
+    pub func maximum(self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
+}</code></pre><p>A stateful source of uniformly distributed nonnegative integers.</p>
+<p><code>next</code> must return a value in the inclusive range from zero through <code>maximum</code>. Every value in
+that range must be equally likely. Source failure is explicit so host entropy and deterministic
+generators share one contract without hiding environmental errors.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomTestSource"><h2><a class="anchor" href="#RandomTestSource">RandomTestSource</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type RandomTestSource = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; {
+    value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
+    maximum_value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
+}</code></pre><p>Deterministic source used to exercise generic random operations.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SeedableRandom"><h2><a class="anchor" href="#SeedableRandom">SeedableRandom</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SeedableRandom = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; {
+    pub func reseed(self, seed: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; () [mut self]
+}</code></pre><p>A random source whose deterministic state can be reset from an integer seed.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SplittableRandom"><h2><a class="anchor" href="#SplittableRandom">SplittableRandom</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SplittableRandom = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; {
+    pub func split(self) -&gt; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> [mut self]
+}</code></pre><p>A random source which can derive another deterministic stream.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SystemRandom"><h2><a class="anchor" href="#SystemRandom">SystemRandom</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SystemRandom = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; <a class="type-link" href="std-random-secure.html#EntropySource" title="std.random.secure.EntropySource">secure::EntropySource</a> &amp; {
+    marker: <a class="type-link" href="core-symbol.html#Symbol" title="core.symbol.Symbol">Symbol</a><span class="badge visibility-private">private</span>
+}</code></pre><p>A stateless view of the operating system's secure random source.
+Drawing entropy changes external state, not this Foster value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomHost.bytes"><h2><a class="anchor" href="#RandomHost.bytes">RandomHost.bytes</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func bytes(count: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt;</code></pre><p>Reads bytes from the operating system's secure entropy source.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomTestSource.maximum"><h2><a class="anchor" href="#RandomTestSource.maximum">RandomTestSource.maximum</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func maximum(self: <a class="type-link" href="#RandomTestSource" title="std.random.RandomTestSource">RandomTestSource</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the configured test-source maximum.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomTestSource.next"><h2><a class="anchor" href="#RandomTestSource.next">RandomTestSource.next</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func next(self: <a class="type-link" href="#RandomTestSource" title="std.random.RandomTestSource">RandomTestSource</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut self.value]</code></pre><p>Returns the current test value and advances cyclically.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SystemRandom.bytes"><h2><a class="anchor" href="#SystemRandom.bytes">SystemRandom.bytes</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func bytes(self: <a class="type-link" href="#SystemRandom" title="std.random.SystemRandom">SystemRandom</a>, count: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt;</code></pre><p>Returns exactly <code>count</code> bytes of operating-system entropy.
+Accepts <code>0..1048576</code>, inclusive; invalid sizes or unavailable entropy return <code>RandomError</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SystemRandom.maximum"><h2><a class="anchor" href="#SystemRandom.maximum">SystemRandom.maximum</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func maximum(self: <a class="type-link" href="#SystemRandom" title="std.random.SystemRandom">SystemRandom</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the largest value produced by <code>SystemRandom.next</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SystemRandom.new"><h2><a class="anchor" href="#SystemRandom.new">SystemRandom.new</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func new() -&gt; <a class="type-link" href="#SystemRandom" title="std.random.SystemRandom">SystemRandom</a></code></pre><p>Constructs an operating-system-backed random source.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SystemRandom.next"><h2><a class="anchor" href="#SystemRandom.next">SystemRandom.next</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func next(self: <a class="type-link" href="#SystemRandom" title="std.random.SystemRandom">SystemRandom</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt;</code></pre><p>Returns a uniformly distributed 31-bit nonnegative integer from operating-system entropy.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="below"><h2><a class="anchor" href="#below">below</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func below(count: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt;</code></pre><p>Returns an unbiased operating-system-backed value in <code>[0, count)</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="below_with"><h2><a class="anchor" href="#below_with">below_with</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func below_with(source: <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a>, count: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut source]</code></pre><p>Draws an unbiased integer in <code>[0, count)</code> and advances <code>source</code>.
+Requires <code>1 &lt;= count &lt;= source.maximum() + 1</code> and a representable source capacity.
+Invalid parameters, out-of-contract source values, and source failures return <code>RandomError</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="between"><h2><a class="anchor" href="#between">between</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func between(start: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt;</code></pre><p>Returns an unbiased operating-system-backed value in <code>[start, end)</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="between_with"><h2><a class="anchor" href="#between_with">between_with</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func between_with(source: <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a>, start: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut source]</code></pre><p>Draws an unbiased integer in <code>[start, end)</code> and advances <code>source</code>.
+The range must be nonempty and its width must fit the source capacity.
+Invalid ranges and source failures return <code>RandomError</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="bounded_width"><h2><a class="anchor" href="#bounded_width">bounded_width</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func bounded_width(width: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, capacity: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns <code>width</code> when it fits the source capacity, or minus one otherwise.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="failure"><h2><a class="anchor" href="#failure">failure</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func failure&lt;T&gt;(operation: consume <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, message: consume <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;T, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt;</code></pre><p>Constructs a typed random error for any failed result shape.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="range_width"><h2><a class="anchor" href="#range_width">range_width</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func range_width(start: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, capacity: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Computes a safe positive range width, or minus one when the range is invalid or too wide.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="sample_below"><h2><a class="anchor" href="#sample_below">sample_below</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func sample_below(source: <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a>, count: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, limit: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut source]</code></pre><p>Repeats a source draw when reducing it modulo <code>count</code> would introduce bias.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

@@ -2637,7 +2637,7 @@ func main() -> () { println() }
 #[test]
 fn supports_line_block_and_documentation_comments() {
     let source = r#"
-//! Public values and documentation-comment behavior used by this test.
+//! Public values and docs2-comment behavior used by this test.
 
 /// A named value used by the public API.
 /**
@@ -2660,7 +2660,7 @@ func main() -> Int { value(Named { value: 7 }) }
     let program = foster::parse(source).unwrap();
     assert_eq!(
         program.documentation.as_deref(),
-        Some("Public values and documentation-comment behavior used by this test.")
+        Some("Public values and docs2-comment behavior used by this test.")
     );
     assert_eq!(
         program.records[0].documentation.as_deref(),

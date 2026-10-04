@@ -1,0 +1,195 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.bytes — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.bytes</h1><p>21 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>21 declarations</p><ul><li data-declaration><a href="#Bytes">Bytes <small>type</small></a></li><li data-declaration><a href="#BytesHost">BytesHost <small>type</small></a></li><li data-declaration><a href="#HexError">HexError <small>type</small></a></li><li data-declaration><a href="#RawBytes">RawBytes <small>type</small></a></li><li data-declaration><a href="#Utf8Error">Utf8Error <small>type</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.concat">Bytes.concat <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.copy">Bytes.copy <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.empty">Bytes.empty <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.equal?">Bytes.equal? <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.from">Bytes.from <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.from_hex">Bytes.from_hex <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.hash">Bytes.hash <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.hex">Bytes.hex <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.list">Bytes.list <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.slice">Bytes.slice <small>function</small></a></li><li data-owner="Bytes" data-declaration><a href="#Bytes.utf8_valid?">Bytes.utf8_valid? <small>function</small></a></li><li data-owner="BytesHost" data-declaration><a href="#BytesHost.from_list">BytesHost.from_list <small>function</small></a></li><li data-owner="BytesHost" data-declaration><a href="#BytesHost.to_list">BytesHost.to_list <small>function</small></a></li><li data-declaration><a href="#hex_digit">hex_digit <small>function</small></a></li><li data-declaration><a href="#hex_nibble">hex_nibble <small>function</small></a></li><li data-declaration><a href="#invalid_hex">invalid_hex <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Immutable binary data, hexadecimal encoding, and UTF-8 validation.</p>
+<p>Lengths, indexes, and slice bounds are measured in bytes. <code>Bytes</code> may contain any
+octets; use <code>String</code>.from_utf8 to validate and decode text. Slices are checked,
+half-open ranges and materialize a new byte value. Hex decoding returns <code>HexError</code>.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Bytes">Bytes</a><span class="badge visibility-public">public</span></h3><p>Immutable binary data backed by compact private host storage.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="core-copy.html#Copy" title="core.copy.Copy">Copy</a></code></li><li><code><a class="type-link" href="std-sequence.html#module-overview" title="std.sequence.module-overview">Sequence</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt;</code></li><li><code><a class="type-link" href="std-collections.html#Collection" title="std.collections.Collection">Collection</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt;</code></li><li><code><a class="type-link" href="core-ordering.html#Equality" title="core.ordering.Equality">Equality</a>&lt;<a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>&gt;</code></li><li><code><a class="type-link" href="core-ordering.html#Hashing" title="core.ordering.Hashing">Hashing</a></code></li></ul><h4>Fields</h4><ul><li><code>value: <a class="type-link" href="#RawBytes" title="core.bytes.RawBytes">RawBytes</a><span class="badge visibility-private">private</span></code></li></ul><h4>Required methods</h4><ul><li><code>copy</code><br><small>Returns an independent immutable byte value.</small></li><li><code>concat</code><br><small>Concatenates two immutable byte sequences.</small></li><li><code>slice</code><br><small>Copies bytes in the half-open range `[start, end)`.
+Asserts unless `0 &lt;= start &lt;= end &lt;= length`; bounds are not clamped.</small></li><li><code>list</code><br><small>Expands compact bytes into a Foster list.</small></li><li><code>hex</code><br><small>Encodes bytes as lowercase hexadecimal text.</small></li><li><code>utf8_valid?</code><br><small>Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.</small></li></ul><h4>Functions and methods</h4><ul><li><a href="#Bytes.concat"><code>concat</code></a><br><small>Concatenates two immutable byte sequences.</small></li><li><a href="#Bytes.copy"><code>copy</code></a><br><small>Returns an independent immutable byte value.</small></li><li><a href="#Bytes.empty"><code>empty</code></a><br><small>Creates an empty immutable byte sequence.</small></li><li><a href="#Bytes.equal?"><code>equal?</code></a><br><small>Returns whether two byte sequences contain identical values.</small></li><li><a href="#Bytes.from"><code>from</code></a><br><small>Packs a list of bytes into compact immutable storage.</small></li><li><a href="#Bytes.from_hex"><code>from_hex</code></a><br><small>Decodes pairs of ASCII hexadecimal digits, accepting uppercase and lowercase.</small></li><li><a href="#Bytes.hash"><code>hash</code></a><br><small>Computes a deterministic hash over the byte sequence.</small></li><li><a href="#Bytes.hex"><code>hex</code></a><br><small>Encodes bytes as lowercase hexadecimal text.</small></li><li><a href="#Bytes.list"><code>list</code></a><br><small>Expands compact bytes into a Foster list.</small></li><li><a href="#Bytes.slice"><code>slice</code></a><br><small>Copies bytes in the half-open range `[start, end)`.</small></li><li><a href="#Bytes.utf8_valid?"><code>utf8_valid?</code></a><br><small>Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.</small></li></ul></article><article class="type-summary"><h3><a href="#HexError">HexError</a><span class="badge visibility-public">public</span></h3><p>Describes malformed hexadecimal byte text.
+<code>offset</code> is a zero-based Unicode scalar position in the input. <code>message</code>
+explains the invalid digit or incomplete pair.</p>
+<h4>Fields</h4><ul><li><code>offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span></code></li><li><code>message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#Utf8Error">Utf8Error</a><span class="badge visibility-public">public</span></h3><p>Describes a failed UTF-8 decoding operation.
+<code>offset</code> is a zero-based byte position in the input. <code>message</code> explains the
+invalid sequence; use the result type rather than message text for control flow.</p>
+<h4>Fields</h4><ul><li><code>offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span></code></li><li><code>message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li></ul></article></div></section></div><article id="Bytes"><h2><a class="anchor" href="#Bytes">Bytes</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Bytes = &amp; <a class="type-link" href="core-copy.html#Copy" title="core.copy.Copy">Copy</a> &amp; <a class="type-link" href="std-sequence.html#module-overview" title="std.sequence.module-overview">Sequence</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt; &amp; <a class="type-link" href="std-collections.html#Collection" title="std.collections.Collection">Collection</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt; &amp; <a class="type-link" href="core-ordering.html#Equality" title="core.ordering.Equality">Equality</a>&lt;<a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>&gt; &amp; <a class="type-link" href="core-ordering.html#Hashing" title="core.ordering.Hashing">Hashing</a> &amp; {
+    value: <a class="type-link" href="#RawBytes" title="core.bytes.RawBytes">RawBytes</a><span class="badge visibility-private">private</span>
+    pub func copy(self) -&gt; self [read self]
+    pub func concat(self, other: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a> [read other, read self]
+    pub func slice(self, start: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a> [read end, read self, read start]
+    pub func list(self) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt; [read self]
+    pub func hex(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self]
+    pub func utf8_valid?(self) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [read self]
+}</code></pre><p>Immutable binary data backed by compact private host storage.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BytesHost"><h2><a class="anchor" href="#BytesHost">BytesHost</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type BytesHost = {
+
+}</code></pre><p>Private namespace for host-backed byte operations.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HexError"><h2><a class="anchor" href="#HexError">HexError</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type HexError = {
+    pub offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span>
+    pub message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+}</code></pre><p>Describes malformed hexadecimal byte text.
+<code>offset</code> is a zero-based Unicode scalar position in the input. <code>message</code>
+explains the invalid digit or incomplete pair.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RawBytes"><h2><a class="anchor" href="#RawBytes">RawBytes</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type RawBytes = {
+
+}</code></pre><p>Private host-backed compact byte storage.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Utf8Error"><h2><a class="anchor" href="#Utf8Error">Utf8Error</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Utf8Error = {
+    pub offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span>
+    pub message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
+}</code></pre><p>Describes a failed UTF-8 decoding operation.
+<code>offset</code> is a zero-based byte position in the input. <code>message</code> explains the
+invalid sequence; use the result type rather than message text for control flow.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.concat"><h2><a class="anchor" href="#Bytes.concat">Bytes.concat</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func concat(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>, other: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Concatenates two immutable byte sequences.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.copy"><h2><a class="anchor" href="#Bytes.copy">Bytes.copy</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func copy(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Returns an independent immutable byte value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.empty"><h2><a class="anchor" href="#Bytes.empty">Bytes.empty</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func empty() -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Creates an empty immutable byte sequence.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.equal?"><h2><a class="anchor" href="#Bytes.equal?">Bytes.equal?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func equal?(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>, other: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether two byte sequences contain identical values.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.from"><h2><a class="anchor" href="#Bytes.from">Bytes.from</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func from(values: consume <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt;) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Packs a list of bytes into compact immutable storage.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.from_hex"><h2><a class="anchor" href="#Bytes.from_hex">Bytes.from_hex</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func from_hex(value: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>, <a class="type-link" href="#HexError" title="core.bytes.HexError">HexError</a>&gt;</code></pre><p>Decodes pairs of ASCII hexadecimal digits, accepting uppercase and lowercase.
+Empty input succeeds. Whitespace, prefixes such as <code>0x</code>, odd lengths, and
+non-hexadecimal characters return <code>HexError</code>; offset counts Unicode scalars.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.hash"><h2><a class="anchor" href="#Bytes.hash">Bytes.hash</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func hash(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Computes a deterministic hash over the byte sequence.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.hex"><h2><a class="anchor" href="#Bytes.hex">Bytes.hex</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func hex(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Encodes bytes as lowercase hexadecimal text.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.list"><h2><a class="anchor" href="#Bytes.list">Bytes.list</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func list(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt;</code></pre><p>Expands compact bytes into a Foster list.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.slice"><h2><a class="anchor" href="#Bytes.slice">Bytes.slice</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func slice(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>, start: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Copies bytes in the half-open range <code>[start, end)</code>.
+Asserts unless <code>0 &lt;= start &lt;= end &lt;= length</code>; bounds are not clamped.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Bytes.utf8_valid?"><h2><a class="anchor" href="#Bytes.utf8_valid?">Bytes.utf8_valid?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func utf8_valid?(self: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BytesHost.from_list"><h2><a class="anchor" href="#BytesHost.from_list">BytesHost.from_list</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func from_list(values: consume <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt;) -&gt; <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a></code></pre><p>Packs a Foster byte list into compact storage.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BytesHost.to_list"><h2><a class="anchor" href="#BytesHost.to_list">BytesHost.to_list</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func to_list(values: <a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a>&gt;</code></pre><p>Expands compact storage into a Foster list.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="hex_digit"><h2><a class="anchor" href="#hex_digit">hex_digit</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func hex_digit(value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-byte.html#module-overview" title="core.byte.module-overview">Byte</a></code></pre><p>Encodes one integer nibble as an ASCII byte.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="hex_nibble"><h2><a class="anchor" href="#hex_nibble">hex_nibble</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func hex_nibble(character: <a class="type-link" href="core-code_point.html#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Converts one hexadecimal digit to its integer nibble, or <code>-1</code> when invalid.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="invalid_hex"><h2><a class="anchor" href="#invalid_hex">invalid_hex</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func invalid_hex(offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, character: <a class="type-link" href="core-code_point.html#module-overview" title="core.code_point.module-overview">CodePoint</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="#Bytes" title="core.bytes.Bytes">Bytes</a>, <a class="type-link" href="#HexError" title="core.bytes.HexError">HexError</a>&gt;</code></pre><p>Constructs a hexadecimal decoding error at the supplied character offset.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

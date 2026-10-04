@@ -1,0 +1,183 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.unicode.data — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.unicode.data</h1><p>11 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>11 declarations</p><ul><li data-declaration><a href="#categories">categories <small>function</small></a></li><li data-declaration><a href="#extended_pictographic">extended_pictographic <small>function</small></a></li><li data-declaration><a href="#fold">fold <small>function</small></a></li><li data-declaration><a href="#grapheme_break">grapheme_break <small>function</small></a></li><li data-declaration><a href="#indic_conjunct_break">indic_conjunct_break <small>function</small></a></li><li data-declaration><a href="#lower">lower <small>function</small></a></li><li data-declaration><a href="#properties">properties <small>function</small></a></li><li data-declaration><a href="#simple_lower">simple_lower <small>function</small></a></li><li data-declaration><a href="#simple_title">simple_title <small>function</small></a></li><li data-declaration><a href="#simple_upper">simple_upper <small>function</small></a></li><li data-declaration><a href="#upper">upper <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Data tables that tell Foster about Unicode 17.0.0 text.</p>
+<p>Unicode gives text elements numeric code points. These tables record facts about those
+numbers: whether they are letters, how their case changes, and where text can be split.
+They are lookup data, not fonts or a collection of text to display.</p>
+<p>Most programs should use core.string and core.code_point. This module returns packed
+strings for the core.unicode algorithms; the hexadecimal strings are not user text.
+Public visibility lets those modules share the tables, but their numeric IDs and packing
+are internal details. A missing case mapping leaves the input unchanged.</p>
+<p>A grapheme cluster is a text element that often looks like one character, such as a
+letter plus its accent. It can contain several code points. Foster uses these tables
+to keep those elements together when counting or slicing String values.</p>
+<p>Tables are generated from vendored Unicode files. Regenerate with tools/unicode;
+edit its generator rather than editing table data. See tools/unicode/README.md for maintenance.</p>
+</article></div><article id="categories"><h2><a class="anchor" href="#categories">categories</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func categories() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Classifies code points into broad groups such as letters, numbers, punctuation, and marks.
+The stored numbers identify Foster's GeneralCategory cases. Use CodePoint.category() for named results.</p>
+<p>Returns categories as start(6), end(6), value(2) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="extended_pictographic"><h2><a class="anchor" href="#extended_pictographic">extended_pictographic</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func extended_pictographic() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Marks code points used by the emoji joining rules, including some reserved positions.
+This is an input to grapheme segmentation, not a complete test of whether text is an emoji.</p>
+<p>Returns extended_pictographic as start(6), end(6), value(2) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="fold"><h2><a class="anchor" href="#fold">fold</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func fold() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Maps case variants to a common form for comparisons that ignore case.
+Use String.case_fold(); folding is not display capitalization and does not normalize text.</p>
+<p>Returns full fold source(6), length(1), three targets(18) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="grapheme_break"><h2><a class="anchor" href="#grapheme_break">grapheme_break</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func grapheme_break() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Groups code points by their role in deciding where a text element ends.
+Foster combines these properties with boundary rules so accents and supported emoji sequences stay together.</p>
+<p>Returns grapheme_break as start(6), end(6), value(2) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="indic_conjunct_break"><h2><a class="anchor" href="#indic_conjunct_break">indic_conjunct_break</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func indic_conjunct_break() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Identifies consonants, linking characters, and extending marks used in Indic conjunct boundary rules.
+These rules keep certain connected letter sequences together when Foster splits text into grapheme clusters.</p>
+<p>Returns indic_conjunct_break as start(6), end(6), value(2) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="lower"><h2><a class="anchor" href="#lower">lower</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func lower() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Maps code points to lowercase text. A full mapping can produce more than one code point.
+String.lower() applies these mappings and the contextual Greek final-sigma rule.</p>
+<p>Returns full lower source(6), length(1), three targets(18) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="properties"><h2><a class="anchor" href="#properties">properties</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func properties() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Records additional yes/no facts, such as whether a code point is alphabetic or whitespace.
+Several facts share one numeric bit mask. Prefer CodePoint classification methods to decoding these bits.</p>
+<p>Returns properties as start(6), end(6), value(2) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="simple_lower"><h2><a class="anchor" href="#simple_lower">simple_lower</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_lower() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Maps one code point to one lowercase code point, without expanding it into a string.
+Use CodePoint.simple_lower(). Omitted entries keep their original value.</p>
+<p>Returns simple_lower source(6), target(6) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="simple_title"><h2><a class="anchor" href="#simple_title">simple_title</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_title() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Maps one code point to its single-code-point titlecase form.
+Use CodePoint.simple_title(). This does not capitalize every word in a sentence.</p>
+<p>Returns simple_title source(6), target(6) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="simple_upper"><h2><a class="anchor" href="#simple_upper">simple_upper</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_upper() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Maps one code point to one uppercase code point, without expanding it into a string.
+Use CodePoint.simple_upper(); full String.upper() can give a different result when expansion is needed.</p>
+<p>Returns simple_upper source(6), target(6) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="upper"><h2><a class="anchor" href="#upper">upper</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func upper() -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Maps code points to uppercase text. For example, the full uppercase mapping of sharp s is SS.
+Use String.upper() to convert text; this table is not a list of uppercase characters.</p>
+<p>Returns full upper source(6), length(1), three targets(18) hex records.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

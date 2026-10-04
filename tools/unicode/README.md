@@ -1,7 +1,7 @@
 # Unicode data
 
 For a plain-language introduction and a runnable example, start with
-[Unicode text in Foster](../../docs/unicode.md). This page explains how maintainers
+[Unicode text in Foster](../../documentation/unicode.md). This page explains how maintainers
 rebuild the tables. Applications normally call `String` or `CodePoint` methods;
 they do not need to decode the tables or run the generator.
 

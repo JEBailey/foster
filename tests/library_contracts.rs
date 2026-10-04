@@ -45,7 +45,7 @@ func main() -> Int { let invalid = Invalid { value: 42 }
 fn library_declarations_use_current_type_forms_and_explicit_public_signatures() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("library");
     let mut modules = 0;
-    let audit = include_str!("../docs/library-contract-audit.md");
+    let audit = include_str!("../documentation/library-contract-audit.md");
     for entry in walkdir::WalkDir::new(&root) {
         let entry = entry.unwrap();
         if !entry.file_type().is_file() || entry.path().extension().is_none_or(|ext| ext != "fos") {

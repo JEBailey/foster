@@ -9,7 +9,7 @@ Start with the [core overview](core.fos) for foundational values and contracts,
 or the [standard overview](std.fos) for collections, algorithms, and host services.
 
 For C libraries, use generated bindings backed by `std.ffi`; the
-[C integration guide](../docs/c-integration.md) describes bridge builds, supported
+[C integration guide](../documentation/c-integration.md) describes bridge builds, supported
 wire types, and owning resource wrappers on Windows x86-64.
 
 The `.fos` files here are the authoritative implementation and API documentation.
@@ -84,12 +84,12 @@ share a navigation entry but retain separate signatures and descriptions.
 | Common contracts | [core.copy](core/copy.fos), [core.drop](core/drop.fos), [core.ordering](core/ordering.fos), [core.functions](core/functions.fos) |
 | Files and resource locations | [std.fs](std/fs.fos), [std.path](std/path.fos), [std.uri](std/uri.fos), [std.resource](std/resource.fos) |
 | Streams and TCP | [std.io](std/io.fos), [std.net.tcp](std/net/tcp.fos) |
-| Application-supplied file and network providers | [std.host](std/host.fos), [provider guide](../docs/host-providers.md) |
+| Application-supplied file and network providers | [std.host](std/host.fos), [provider guide](../documentation/host-providers.md) |
 | Futures, subprocesses, and process inputs | [core.future](core/future.fos), [std.process](std/process.fos), [std.env](std/env.fos) |
 | Time and calendars | [std.time](std/time.fos), [civil](std/time/civil.fos), [zone](std/time/zone.fos), [format](std/time/format.fos) |
 | Random values | [std.random](std/random.fos), [generator](std/random/generator.fos), [distribution](std/random/distribution.fos), [secure](std/random/secure.fos), [sequence](std/random/sequence.fos) |
 | Configuration | [std.toml](std/toml.fos) |
-| JSON trees, parsing, and serialization | [std.json](std/json.fos), [usage guide](../docs/json.md) |
+| JSON trees, parsing, and serialization | [std.json](std/json.fos), [usage guide](../documentation/json.md) |
 | SHA-256 digests | [std.crypto.sha256](std/crypto/sha256.fos) |
 
 [core.unicode](core/unicode.fos) and its generated tables support the public text
@@ -135,7 +135,7 @@ func main() -> Int {
 
 ## Text positions and cursors
 
-New to Unicode terminology? [Unicode text in Foster](../docs/unicode.md) explains
+New to Unicode terminology? [Unicode text in Foster](../documentation/unicode.md) explains
 code points, grapheme clusters, bytes, case folding, and the purpose of the data tables.
 
 | API | Position unit | Invalid bounds |
@@ -171,7 +171,7 @@ recognize an offset copied from an unrelated source.
 linear membership searches. Hash collections use caller-supplied hashes and have
 expected constant-time bucket lookup, with a linear worst case. Equal keys must
 have equal hashes, and stored keys' hashes must remain stable. Hash iteration
-order is unspecified. See [hash collections](../docs/hash-collections.md).
+order is unspecified. See [hash collections](../documentation/hash-collections.md).
 
 List and sequence transformations are eager. Iterator adaptors defer work until
 items are requested; terminal operations advance the remaining iterator. Use
@@ -185,7 +185,7 @@ reserved allocation size.
   Text algorithms, collections, calendar arithmetic, parsing, and SHA-256 are Foster code.
   `RuntimeHost` uses the installed runtime provider; applications can instead pass
   their own `FileProvider` or `NetworkProvider`. Rust embedding configuration is
-  described in the [provider guide](../docs/host-providers.md).
+  described in the [provider guide](../documentation/host-providers.md).
 - Whole-file I/O allocates in proportion to input. Stream helpers stop at the
   first error without rolling back earlier I/O. `File.flush` is a no-op, not a
   durability guarantee.

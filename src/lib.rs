@@ -1,4 +1,4 @@
-//! Foster toolchain driver: projects, commands, formatting, documentation, and editor services.
+//! Foster toolchain driver: projects, commands, formatting, docs2, and editor services.
 #![allow(clippy::result_large_err)]
 pub mod archive;
 pub use foster_compiler::ast;

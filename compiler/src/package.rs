@@ -1646,7 +1646,7 @@ fn is_ignored_directory(entry: &DirEntry) -> bool {
     match entry.file_name().to_str() {
         Some(name) if name.starts_with('.') => true,
         Some("target") => true,
-        Some("documentation") => entry.depth() == 1,
+        Some("docs2") => entry.depth() == 1,
         _ => false,
     }
 }

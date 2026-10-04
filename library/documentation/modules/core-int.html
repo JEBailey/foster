@@ -1,0 +1,213 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.int — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.int</h1><p>20 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>20 declarations</p><ul><li data-declaration><a href="#Int">Int <small>type</small></a></li><li data-declaration><a href="#RawInt">RawInt <small>type</small></a></li><li data-owner="Int" data-declaration><a href="#Int.absolute">Int.absolute <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.as_string">Int.as_string <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.between?">Int.between? <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.clamp">Int.clamp <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.compare">Int.compare <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.copy">Int.copy <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.even?">Int.even? <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.maximum">Int.maximum <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.minimum">Int.minimum <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.modulo">Int.modulo <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.odd?">Int.odd? <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.power">Int.power <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.range">Int.range <small>function</small></a></li><li data-owner="Int" data-declaration><a href="#Int.sign">Int.sign <small>function</small></a></li><li data-declaration><a href="#negative_string">negative_string <small>function</small></a></li><li data-declaration><a href="#power_of">power_of <small>function</small></a></li><li data-declaration><a href="#range_into">range_into <small>function</small></a></li><li data-declaration><a href="#unsigned_string">unsigned_string <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Signed integer helpers, decimal formatting, and eager ranges.</p>
+<p>Ranges materialize a <code>List&lt;Int&gt;</code> and exclude the upper endpoint. Arithmetic uses
+Foster's <code>Int</code> operations; these helpers do not provide arbitrary-precision results.
+See individual methods for nonpositive exponents and division preconditions.</p>
+<p>Supports <a href="core-copy.html#Copy">Copy</a>: copying preserves the source and returns an independent scalar value.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Int">Int</a><span class="badge visibility-public">public</span></h3><p>A signed 64-bit integer with private scalar storage.
+The compiler keeps this representation inline, including during arithmetic.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="core-copy.html#Copy" title="core.copy.Copy">Copy</a></code></li></ul><h4>Fields</h4><ul><li><code>value: <a class="type-link" href="#RawInt" title="core.int.RawInt">RawInt</a><span class="badge visibility-private">private</span></code></li></ul><h4>Required methods</h4><ul><li><code>absolute</code><br><small>Returns the distance from zero: negative values become positive; zero and positive values stay the same.
+Leaves `self` unchanged. For example, `(-7).absolute()` returns `7`.
+Do not pass `-9223372036854775808`: its positive counterpart cannot fit in `Int`.</small></li><li><code>minimum</code><br><small>Returns the smaller of `self` and `right`.</small></li><li><code>maximum</code><br><small>Returns the larger of `self` and `right`.</small></li><li><code>clamp</code><br><small>Restricts `self` to the inclusive range `[lower, upper]`.
+Bounds are not validated; when `lower &gt; upper`, the result is `upper`.</small></li><li><code>sign</code><br><small>Returns `-1`, `0`, or `1` according to the sign of `self`.</small></li><li><code>compare</code><br><small>Compares two integers and returns their ordering.</small></li><li><code>between?</code><br><small>Returns whether `self` lies in the inclusive range from `lower` to `upper`.</small></li><li><code>even?</code><br><small>Returns whether `self` is evenly divisible by two.</small></li><li><code>odd?</code><br><small>Returns whether `self` is not evenly divisible by two.</small></li><li><code>power</code><br><small>Raises `self` to `exponent` by repeated multiplication.
+Returns `1` for zero or negative exponents, including `0.power(0)`.
+The result must fit `Int`; this is not arbitrary-precision exponentiation.</small></li><li><code>modulo</code><br><small>Returns the remainder after division truncated toward zero.
+A nonzero remainder has the dividend&#39;s sign; this is not Euclidean modulo.
+`divisor` must be nonzero and the division must be representable in `Int`.</small></li><li><code>range</code><br><small>Materializes consecutive integers in the half-open range `[self, end)`.
+Returns an empty list when `end &lt;= self`; storage grows with the result length.</small></li><li><code>as_string</code><br><small>Formats an integer as decimal text.</small></li></ul><h4>Functions and methods</h4><ul><li><a href="#Int.absolute"><code>absolute</code></a><br><small>Returns the distance from zero, ignoring the sign of this integer.</small></li><li><a href="#Int.as_string"><code>as_string</code></a><br><small>Formats an integer as decimal text.</small></li><li><a href="#Int.between?"><code>between?</code></a><br><small>Returns whether `self` lies in the inclusive range from `lower` to `upper`.</small></li><li><a href="#Int.clamp"><code>clamp</code></a><br><small>Restricts `self` to the inclusive range `[lower, upper]`.</small></li><li><a href="#Int.compare"><code>compare</code></a><br><small>Compares two integers and returns their ordering.</small></li><li><a href="#Int.copy"><code>copy</code></a><br><small>Explicitly copies this scalar value.</small></li><li><a href="#Int.even?"><code>even?</code></a><br><small>Returns whether `self` is evenly divisible by two.</small></li><li><a href="#Int.maximum"><code>maximum</code></a><br><small>Returns the larger of `self` and `right`.</small></li><li><a href="#Int.minimum"><code>minimum</code></a><br><small>Returns the smaller of `self` and `right`.</small></li><li><a href="#Int.modulo"><code>modulo</code></a><br><small>Returns the remainder after division truncated toward zero.</small></li><li><a href="#Int.odd?"><code>odd?</code></a><br><small>Returns whether `self` is not evenly divisible by two.</small></li><li><a href="#Int.power"><code>power</code></a><br><small>Raises `self` to `exponent` by repeated multiplication.</small></li><li><a href="#Int.range"><code>range</code></a><br><small>Materializes consecutive integers in the half-open range `[self, end)`.</small></li><li><a href="#Int.sign"><code>sign</code></a><br><small>Returns `-1`, `0`, or `1` according to the sign of `self`.</small></li></ul></article></div></section></div><article id="Int"><h2><a class="anchor" href="#Int">Int</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Int = &amp; <a class="type-link" href="core-copy.html#Copy" title="core.copy.Copy">Copy</a> &amp; {
+    value: <a class="type-link" href="#RawInt" title="core.int.RawInt">RawInt</a><span class="badge visibility-private">private</span>
+    pub func absolute(self) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self]
+    pub func minimum(self, right: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self, read right]
+    pub func maximum(self, right: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self, read right]
+    pub func clamp(self, lower: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, upper: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self, read lower, read upper]
+    pub func sign(self) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self]
+    pub func compare(self, right: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-ordering.html#Ordering" title="core.ordering.Ordering">Ordering</a> [read self, read right]
+    pub func between?(self, lower: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, upper: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [read self, read lower, read upper]
+    pub func even?(self) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [read self]
+    pub func odd?(self) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [read self]
+    pub func power(self, exponent: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self, read exponent]
+    pub func modulo(self, divisor: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a> [read self, read divisor]
+    pub func range(self, end: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Int" title="core.int.Int">Int</a>&gt; [read self, read end]
+    pub func as_string(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self]
+}</code></pre><p>A signed 64-bit integer with private scalar storage.
+The compiler keeps this representation inline, including during arithmetic.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RawInt"><h2><a class="anchor" href="#RawInt">RawInt</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type RawInt = {
+
+}</code></pre><p>Private signed 64-bit primitive storage.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.absolute"><h2><a class="anchor" href="#Int.absolute">Int.absolute</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func absolute(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Returns the distance from zero, ignoring the sign of this integer.</p>
+<p>Negative values become positive. Zero and positive values stay the same.
+The method returns an <code>Int</code> and leaves <code>self</code> unchanged; no <code>move</code> is needed.</p>
+<pre><code class="language-foster">import core.int
+
+func main() -&gt; Int {
+    let offset = -7
+    assert(offset.absolute() == 7)
+    assert(offset == -7)
+    assert(0.absolute() == 0)
+    assert(7.absolute() == 7)
+    0
+}
+</code></pre>
+<p>Do not pass <code>-9223372036854775808</code>, the smallest signed 64-bit integer.
+Its positive counterpart, <code>9223372036854775808</code>, exceeds the largest <code>Int</code>.
+This method does not return an <code>Option</code> or <code>Result</code> for that case;
+callers must exclude it before calling.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.as_string"><h2><a class="anchor" href="#Int.as_string">Int.as_string</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func as_string(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Formats an integer as decimal text.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.between?"><h2><a class="anchor" href="#Int.between?">Int.between?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func between?(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, lower: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, upper: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether <code>self</code> lies in the inclusive range from <code>lower</code> to <code>upper</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.clamp"><h2><a class="anchor" href="#Int.clamp">Int.clamp</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func clamp(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, lower: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, upper: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Restricts <code>self</code> to the inclusive range <code>[lower, upper]</code>.
+Bounds are not validated; when <code>lower &gt; upper</code>, the result is <code>upper</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.compare"><h2><a class="anchor" href="#Int.compare">Int.compare</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func compare(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, right: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-ordering.html#Ordering" title="core.ordering.Ordering">Ordering</a></code></pre><p>Compares two integers and returns their ordering.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.copy"><h2><a class="anchor" href="#Int.copy">Int.copy</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func copy(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Explicitly copies this scalar value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.even?"><h2><a class="anchor" href="#Int.even?">Int.even?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func even?(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether <code>self</code> is evenly divisible by two.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.maximum"><h2><a class="anchor" href="#Int.maximum">Int.maximum</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func maximum(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, right: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Returns the larger of <code>self</code> and <code>right</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.minimum"><h2><a class="anchor" href="#Int.minimum">Int.minimum</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func minimum(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, right: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Returns the smaller of <code>self</code> and <code>right</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.modulo"><h2><a class="anchor" href="#Int.modulo">Int.modulo</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func modulo(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, divisor: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Returns the remainder after division truncated toward zero.
+A nonzero remainder has the dividend's sign; this is not Euclidean modulo.
+<code>divisor</code> must be nonzero and the division must be representable in <code>Int</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.odd?"><h2><a class="anchor" href="#Int.odd?">Int.odd?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func odd?(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether <code>self</code> is not evenly divisible by two.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.power"><h2><a class="anchor" href="#Int.power">Int.power</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func power(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, exponent: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Raises <code>self</code> to <code>exponent</code> by repeated multiplication.
+Returns <code>1</code> for zero or negative exponents, including <code>0.power(0)</code>.
+The result must fit <code>Int</code>; this is not arbitrary-precision exponentiation.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.range"><h2><a class="anchor" href="#Int.range">Int.range</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func range(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Int" title="core.int.Int">Int</a>&gt;</code></pre><p>Materializes consecutive integers in the half-open range <code>[self, end)</code>.
+Returns an empty list when <code>end &lt;= self</code>; storage grows with the result length.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Int.sign"><h2><a class="anchor" href="#Int.sign">Int.sign</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func sign(self: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Returns <code>-1</code>, <code>0</code>, or <code>1</code> according to the sign of <code>self</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="negative_string"><h2><a class="anchor" href="#negative_string">negative_string</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func negative_string(value: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Formats a known negative integer without negating the signed minimum.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="power_of"><h2><a class="anchor" href="#power_of">power_of</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func power_of(base: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, exponent: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#Int" title="core.int.Int">Int</a></code></pre><p>Multiplies the base for each remaining exponent step.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="range_into"><h2><a class="anchor" href="#range_into">range_into</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func range_into(value: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, end: <a class="type-link" href="#Int" title="core.int.Int">Int</a>, result: consume <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Int" title="core.int.Int">Int</a>&gt;) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Int" title="core.int.Int">Int</a>&gt;</code></pre><p>Appends consecutive integers to the range accumulator.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="unsigned_string"><h2><a class="anchor" href="#unsigned_string">unsigned_string</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func unsigned_string(value: <a class="type-link" href="#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Formats a known nonnegative integer as decimal text.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

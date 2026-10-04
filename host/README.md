@@ -10,4 +10,4 @@ The system provider releases network registry locks before blocking accept
 operations; individual stream operations lock only the selected connection.
 Host operations return errors rather than interpreting Foster values; each backend
 adapts those results to its own representation. See the
-[host-provider guide](../docs/host-providers.md) for injection and readiness contracts.
+[host-provider guide](../documentation/host-providers.md) for injection and readiness contracts.

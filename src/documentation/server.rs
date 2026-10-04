@@ -32,7 +32,7 @@ pub fn serve(directory: impl AsRef<Path>, options: ServeOptions) -> io::Result<(
         options.port,
     ))?;
     let url = format!("http://{}", listener.local_addr()?);
-    println!("serving documentation at {url} (press Ctrl-C to stop)");
+    println!("serving docs2 at {url} (press Ctrl-C to stop)");
     if options.open_browser {
         open_browser(&url)?;
     }
@@ -41,7 +41,7 @@ pub fn serve(directory: impl AsRef<Path>, options: ServeOptions) -> io::Result<(
             Ok(mut stream) => {
                 let _ = respond(&root, &mut stream);
             }
-            Err(error) => eprintln!("warning: documentation request failed: {error}"),
+            Err(error) => eprintln!("warning: docs2 request failed: {error}"),
         }
     }
     Ok(())
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn request_paths_cannot_escape_the_documentation_root() {
-        let root = Path::new("documentation");
+        let root = Path::new("../../docs2");
         assert_eq!(requested_file(root, "/"), Some(root.join("index.html")));
         assert_eq!(
             requested_file(root, "/modules/core.html?x=1"),

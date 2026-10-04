@@ -6,13 +6,13 @@ and the standard library are written in `.fos` files.
 
 ## Before writing Foster
 
-1. Read [Writing Foster](docs/writing-foster.md). Its complete examples are checked
+1. Read [Writing Foster](documentation/writing-foster.md). Its complete examples are checked
    by `tests/agent_documentation.rs`.
 2. Find a nearby `.fos` example and read the declarations of the library methods
    you plan to use. Search `library/` for the exact method and its effects.
-3. Consult [language design](docs/language-design.md) for syntax and
-   [semantics](docs/semantics.md) for the behavioral contract. For moves, references,
-   or mutation, also consult [ownership](docs/ownership.md).
+3. Consult [language design](documentation/language-design.md) for syntax and
+   [semantics](documentation/semantics.md) for the behavioral contract. For moves, references,
+   or mutation, also consult [ownership](documentation/ownership.md).
 
 ## Rules that are easy to get wrong
 
@@ -47,7 +47,7 @@ their `library` package context; compiling `core/int.fos` alone changes its modu
 identity. Check `--help` before guessing command options.
 
 Keep code, examples, tests, and documentation consistent. Follow the
-[development policy](docs/development-policy.md): maintain the current contract,
+[development policy](documentation/development-policy.md): maintain the current contract,
 without compatibility shims for obsolete pre-release behavior. For library API
 comments follow [the documentation standard](library/DOCUMENTATION.md); update
 both required-method and implementation comments when both exist.

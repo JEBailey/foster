@@ -126,6 +126,6 @@ passes all 4, 5, and 6 tests respectively (`target/fixes-final-library-contracts
 Every observed failure has a passing final rerun; the other integration targets and
 doctests passed in the workspace sweep.
 
-Reproduce profiling with the [native profiling command](../../docs/benchmarking.md#native-runtime-profiling).
+Reproduce profiling with the [native profiling command](../../documentation/benchmarking.md#native-runtime-profiling).
 For paired comparisons, preserve the old `*-mode0.exe` files before rebuilding,
 then alternate old/new runs and use their `PROFILE.elapsed_ns` entry timings.

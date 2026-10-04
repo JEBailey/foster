@@ -1,0 +1,184 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std.collections.hash_map — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std.collections.hash_map</h1><p>24 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>24 declarations</p><ul><li data-declaration><a href="#BucketIterator">BucketIterator <small>type</small></a></li><li data-declaration><a href="#HashMap">HashMap <small>type</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.all?">BucketIterator.all? <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.any?">BucketIterator.any? <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.collect">BucketIterator.collect <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.count">BucketIterator.count <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.find">BucketIterator.find <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.fold">BucketIterator.fold <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.for_each">BucketIterator.for_each <small>function</small></a></li><li data-owner="BucketIterator" data-declaration><a href="#BucketIterator.next">BucketIterator.next <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.contains_key?">HashMap.contains_key? <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.empty">HashMap.empty <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.empty?">HashMap.empty? <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.get">HashMap.get <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.iterator">HashMap.iterator <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.keys">HashMap.keys <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.length">HashMap.length <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.put">HashMap.put <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.remove">HashMap.remove <small>function</small></a></li><li data-owner="HashMap" data-declaration><a href="#HashMap.values">HashMap.values <small>function</small></a></li><li data-declaration><a href="#bucket_index">bucket_index <small>function</small></a></li><li data-declaration><a href="#empty_buckets">empty_buckets <small>function</small></a></li><li data-declaration><a href="#find_index">find_index <small>function</small></a></li><li data-declaration><a href="#grow">grow <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Hash-based key-value storage with caller-supplied hashing.</p>
+<p><code>Equal</code> keys must have equal hashes, and hash results must remain stable while
+keys are stored. Queries have expected constant-time bucket lookup and linear
+worst-case lookup. Iteration order is unspecified. get consumes the whole map;
+use contains_key? for a membership query that preserves it.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#HashMap">HashMap</a><span class="badge visibility-public">public</span></h3><p>An unordered associative collection using equality and a caller-supplied hash.
+Equal keys must have equal, stable hashes. Hashes may be any Int, including negatives.
+Updates consume the table; iteration uses a snapshot in unspecified bucket order.
+Lookups are expected O(1), worst-case O(n); growth rehashes all entries.</p>
+<h4>Contracts</h4><ul><li><code><a class="type-link" href="std-collections-map.html#Map" title="std.collections.map.Map">Map</a>&lt;K, V&gt;</code></li></ul><h4>Fields</h4><ul><li><code>buckets: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;&gt;<span class="badge visibility-private">private</span></code></li><li><code>size: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span></code></li><li><code>hasher: func(K) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span></code></li></ul><h4>Required methods</h4><ul><li><code>remove</code><br><small>Removes a key while preserving the table&#39;s hashing strategy and other entries.</small></li></ul><h4>Functions and methods</h4><ul><li><a href="#HashMap.contains_key?"><code>contains_key?</code></a><br><small>Tests membership without consuming the table.</small></li><li><a href="#HashMap.empty"><code>empty</code></a><br><small>Creates an empty table. The hash function must remain stable for stored keys.</small></li><li><a href="#HashMap.empty?"><code>empty?</code></a><br><small>Returns whether the table has no entries.</small></li><li><a href="#HashMap.get"><code>get</code></a><br><small>Consumes the entire table and returns the matching value, or `None`.</small></li><li><a href="#HashMap.iterator"><code>iterator</code></a><br><small>Creates a snapshot iterator over entries in unspecified order.</small></li><li><a href="#HashMap.keys"><code>keys</code></a><br><small>Consumes the table and returns its keys in unspecified order.</small></li><li><a href="#HashMap.length"><code>length</code></a><br><small>Returns the number of distinct keys.</small></li><li><a href="#HashMap.put"><code>put</code></a><br><small>Consumes the table, key, and value and returns the updated table.</small></li><li><a href="#HashMap.remove"><code>remove</code></a><br><small>Removes a key if present, leaving other colliding entries intact.</small></li><li><a href="#HashMap.values"><code>values</code></a><br><small>Consumes the table and returns its values in unspecified order.</small></li></ul></article></div></section></div><article id="BucketIterator"><h2><a class="anchor" href="#BucketIterator">BucketIterator</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type BucketIterator&lt;K, V&gt; = &amp; <a class="type-link" href="std-iter.html#Iterator" title="std.iter.Iterator">Iterator</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt; &amp; {
+    buckets: <a class="type-link" href="std-iter.html#Iterator" title="std.iter.Iterator">Iterator</a>&lt;<a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;&gt;<span class="badge visibility-private">private</span>
+    current: <a class="type-link" href="std-iter.html#Iterator" title="std.iter.Iterator">Iterator</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;<span class="badge visibility-private">private</span>
+}</code></pre><p>Holds a stable bucket snapshot and traverses it without flattening entries.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap"><h2><a class="anchor" href="#HashMap">HashMap</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type HashMap&lt;K, V&gt; = &amp; <a class="type-link" href="std-collections-map.html#Map" title="std.collections.map.Map">Map</a>&lt;K, V&gt; &amp; {
+    buckets: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;&gt;<span class="badge visibility-private">private</span>
+    size: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
+    hasher: func(K) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
+    pub func remove(self, key: K) -&gt; <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt; [mut self.buckets.items, mut self.size, consume self]
+}</code></pre><p>An unordered associative collection using equality and a caller-supplied hash.
+Equal keys must have equal, stable hashes. Hashes may be any Int, including negatives.
+Updates consume the table; iteration uses a snapshot in unspecified bucket order.
+Lookups are expected O(1), worst-case O(n); growth rehashes all entries.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.all?"><h2><a class="anchor" href="#BucketIterator.all?">BucketIterator.all?</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func all?&lt;K, V&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;, predicate: func(<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [mut self]</code></pre><p>Stops pulling as soon as an element fails <code>predicate</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.any?"><h2><a class="anchor" href="#BucketIterator.any?">BucketIterator.any?</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func any?&lt;K, V&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;, predicate: func(<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [mut self]</code></pre><p>Stops pulling as soon as an element satisfies <code>predicate</code>.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.collect"><h2><a class="anchor" href="#BucketIterator.collect">BucketIterator.collect</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func collect&lt;K, V&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt; [mut self]</code></pre><p>Collects the remaining elements into one growing list.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.count"><h2><a class="anchor" href="#BucketIterator.count">BucketIterator.count</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func count&lt;K, V&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a> [mut self]</code></pre><p>Counts every remaining element and leaves the iterator exhausted.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.find"><h2><a class="anchor" href="#BucketIterator.find">BucketIterator.find</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func find&lt;K, V&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;, predicate: func(<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt; [mut self]</code></pre><p>Returns the first match, leaving later elements unconsumed.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.fold"><h2><a class="anchor" href="#BucketIterator.fold">BucketIterator.fold</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func fold&lt;K, V, U&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;, initial: consume U, combine: func(consume U, consume <a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;) -&gt; U) -&gt; U [mut self]</code></pre><p>Reduces every remaining element into one owned accumulator, from left to right.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.for_each"><h2><a class="anchor" href="#BucketIterator.for_each">BucketIterator.for_each</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func for_each&lt;K, V&gt;(self: <a class="type-link" href="std-collections-hash_map.html#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;, action: func(consume <a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;) -&gt; ()) -&gt; () [mut self]</code></pre><p>Calls <code>action</code> once for every remaining element without growing the call stack.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="BucketIterator.next"><h2><a class="anchor" href="#BucketIterator.next">BucketIterator.next</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func next&lt;K, V&gt;(self: <a class="type-link" href="#BucketIterator" title="std.collections.hash_map.BucketIterator">BucketIterator</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt; [mut self.current, mut self.buckets]</code></pre><p>Advances across empty buckets and yields each stored entry once.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.contains_key?"><h2><a class="anchor" href="#HashMap.contains_key?">HashMap.contains_key?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func contains_key?&lt;K, V&gt;(self: <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;, key: K) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests membership without consuming the table.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.empty"><h2><a class="anchor" href="#HashMap.empty">HashMap.empty</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func empty&lt;K, V&gt;(hasher: consume func(K) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;</code></pre><p>Creates an empty table. The hash function must remain stable for stored keys.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.empty?"><h2><a class="anchor" href="#HashMap.empty?">HashMap.empty?</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func empty?&lt;K, V&gt;(self: <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Returns whether the table has no entries.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.get"><h2><a class="anchor" href="#HashMap.get">HashMap.get</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func get&lt;K, V&gt;(self: consume <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;, key: K) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;V&gt;</code></pre><p>Consumes the entire table and returns the matching value, or <code>None</code>.
+All other entries are released. Use <code>contains_key?</code> for a borrowing membership test.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.iterator"><h2><a class="anchor" href="#HashMap.iterator">HashMap.iterator</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func iterator&lt;K, V&gt;(self: <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="std-iter.html#Iterator" title="std.iter.Iterator">Iterator</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;</code></pre><p>Creates a snapshot iterator over entries in unspecified order.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.keys"><h2><a class="anchor" href="#HashMap.keys">HashMap.keys</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func keys&lt;K, V&gt;(self: consume <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;K&gt;</code></pre><p>Consumes the table and returns its keys in unspecified order.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.length"><h2><a class="anchor" href="#HashMap.length">HashMap.length</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func length&lt;K, V&gt;(self: <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the number of distinct keys.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.put"><h2><a class="anchor" href="#HashMap.put">HashMap.put</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func put&lt;K, V&gt;(self: consume <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;, key: consume K, value: consume V) -&gt; <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt; [mut self.size, mut self.buckets.items]</code></pre><p>Consumes the table, key, and value and returns the updated table.
+Replaces an equal key's entry without changing length; new keys may trigger
+rehashing. Replaced entries are released. Iteration order is not preserved.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.remove"><h2><a class="anchor" href="#HashMap.remove">HashMap.remove</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func remove&lt;K, V&gt;(self: consume <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;, key: K) -&gt; <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt; [mut self.buckets.items, mut self.size]</code></pre><p>Removes a key if present, leaving other colliding entries intact.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="HashMap.values"><h2><a class="anchor" href="#HashMap.values">HashMap.values</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func values&lt;K, V&gt;(self: consume <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;V&gt;</code></pre><p>Consumes the table and returns its values in unspecified order.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="bucket_index"><h2><a class="anchor" href="#bucket_index">bucket_index</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func bucket_index(hash: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, capacity: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Normalizes a signed hash without negating Int's minimum value.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="empty_buckets"><h2><a class="anchor" href="#empty_buckets">empty_buckets</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func empty_buckets&lt;K, V&gt;(capacity: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;&gt;</code></pre><p>Allocates independent empty collision chains.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="find_index"><h2><a class="anchor" href="#find_index">find_index</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func find_index&lt;K, V&gt;(entries: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="std-collections-map.html#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;, key: K) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Searches only the selected collision chain using key equality.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="grow"><h2><a class="anchor" href="#grow">grow</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func grow&lt;K, V&gt;(table: consume <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;) -&gt; <a class="type-link" href="#HashMap" title="std.collections.hash_map.HashMap">HashMap</a>&lt;K, V&gt;</code></pre><p>Doubles bucket storage and redistributes entries without recursive insertion.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

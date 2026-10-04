@@ -1,0 +1,174 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>std — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module std</h1><p>0 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>0 declarations</p><ul></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Collections, algorithms, and host services for Foster applications.</p>
+<p><code>std</code> builds on the <a href="core.html#module-overview">core library</a>. It provides
+reusable ways to process values and interact with the outside world: iterate
+a collection, read a file, exchange bytes over TCP, measure elapsed time, or
+generate random values. Many operations are written in Foster; operating-system
+services pass through the runtime's host boundary.</p>
+<h2>Find a module</h2>
+<table><thead><tr><th>Need</th><th>Modules</th></tr></thead><tbody>
+<tr><td>Process items one at a time</td><td><a href="std-iter.html#module-overview">Iterators and lazy pipelines</a>, <a href="std-sequence.html#module-overview">sequence algorithms</a>, <a href="std-cursor.html#module-overview">checkpointable cursors</a></td></tr>
+<tr><td>Choose a collection</td><td><a href="std-collections.html#module-overview">Collection contracts</a>, <a href="std-collections-map.html#module-overview">maps</a>, <a href="std-collections-set.html#module-overview">sets</a>, <a href="std-collections-hash_map.html#module-overview">hash maps</a>, <a href="std-collections-hash_set.html#module-overview">hash sets</a></td></tr>
+<tr><td>Queue or stack values</td><td><a href="std-collections-queue.html#module-overview">Queues</a>, <a href="std-collections-deque.html#module-overview">double-ended queues</a>, <a href="std-collections-stack.html#module-overview">stacks</a></td></tr>
+<tr><td>Read or write data</td><td><a href="std-io.html#module-overview">Streams</a>, <a href="std-fs.html#module-overview">files</a>, <a href="std-net-tcp.html#module-overview">TCP connections</a></td></tr>
+<tr><td>Describe locations and providers</td><td><a href="std-path.html#module-overview">Paths</a>, <a href="std-uri.html#module-overview">URIs</a>, <a href="std-resource.html#module-overview">resources</a>, <a href="std-host.html#module-overview">host providers</a></td></tr>
+<tr><td>Work with dates or elapsed time</td><td><a href="std-time.html#module-overview">Clocks and exact time</a>, <a href="std-time-civil.html#module-overview">civil dates</a>, <a href="std-time-zone.html#module-overview">time zones</a>, <a href="std-time-format.html#module-overview">time formatting</a></td></tr>
+<tr><td>Generate random values</td><td><a href="std-random.html#module-overview">Random sources</a>, <a href="std-random-generator.html#module-overview">seeded generators</a>, <a href="std-random-distribution.html#module-overview">distributions</a>, <a href="std-random-secure.html#module-overview">secure randomness</a>, <a href="std-random-sequence.html#module-overview">random selection and shuffling</a></td></tr>
+<tr><td>Read application inputs</td><td><a href="std-process.html#module-overview">Command arguments</a>, <a href="std-env.html#module-overview">environment</a>, <a href="std-toml.html#module-overview">TOML configuration</a></td></tr>
+<tr><td>Compute a content digest</td><td><a href="std-crypto-sha256.html#module-overview">SHA-256</a></td></tr>
+<tr><td>Parse or serialize JSON</td><td><a href="std-json.html#module-overview">JSON trees and exact numbers</a></td></tr>
+</tbody></table>
+<h2>Choosing an API</h2>
+<p>Import a specific module, such as <code>import std.time</code>; importing <code>std</code> does not
+import all its children. Module functions use <code>module::function(...)</code>, while
+operations on a value use <code>value.method(...)</code>.</p>
+<p>A contract describes what a value can do without choosing its storage. For
+example, <code>Map&lt;K, V&gt;</code> describes map operations; <code>ListMap</code> and <code>HashMap</code> provide
+different implementations. Choose a concrete implementation for construction
+and a contract when an algorithm should accept several implementations.</p>
+<p>Collection operations may borrow their input, consume it, or produce a snapshot.
+Iterator pipelines defer element work until they are advanced. Read the method's
+effects before reusing a collection or retaining references into it.</p>
+<p>Host operations can fail because a file is missing, a connection closes, or a
+provider denies access. Fallible APIs return typed <code>Result</code> values; handle the
+error or propagate it with <code>try</code>. Stream operations can make partial progress
+before failure. A path or URI describes a location without granting access to it.</p>
+<p>Use a wall clock for timestamps and a monotonic clock for elapsed time. Regional
+time-zone data is supplied separately by the optional <code>tzdata</code> package. Use a
+seeded generator for repeatable random sequences and secure randomness for secrets.</p>
+</article></div><p class="empty">This module has no declarations.</p></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>

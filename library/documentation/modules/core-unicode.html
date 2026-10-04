@@ -1,0 +1,168 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>core.unicode — Foster documentation</title><link rel="stylesheet" href="../style.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><header><h1>module core.unicode</h1><p>10 declarations</p></header><main id="main-content" tabindex="-1"><div class="module-layout"><nav id="page-navigation" class="on-this-page" aria-label="On this page"><a class="crumb" href="../index.html">← All modules</a><details open><summary>On this page</summary><a href="#module-overview">Overview</a><label for="declaration-filter">Find a declaration</label><input id="declaration-filter" class="filter" type="search" placeholder="Name or kind…" data-declaration-filter><p class="filter-status" role="status" data-declaration-status>10 declarations</p><ul><li data-declaration><a href="#append_mapping">append_mapping <small>function</small></a></li><li data-declaration><a href="#bit?">bit? <small>function</small></a></li><li data-declaration><a href="#category">category <small>function</small></a></li><li data-declaration><a href="#change_case">change_case <small>function</small></a></li><li data-declaration><a href="#grapheme_end">grapheme_end <small>function</small></a></li><li data-declaration><a href="#hex">hex <small>function</small></a></li><li data-declaration><a href="#lower_bound">lower_bound <small>function</small></a></li><li data-declaration><a href="#property">property <small>function</small></a></li><li data-declaration><a href="#range_value">range_value <small>function</small></a></li><li data-declaration><a href="#simple_case">simple_case <small>function</small></a></li></ul></details></nav><div class="module-content"><div id="module-overview"><h2>Overview</h2><details class="reference-help"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details><article class="module-documentation"><p>Unicode property lookup, case mapping, and grapheme segmentation.</p>
+<p>This module implements the tables and algorithms used by core.code_point and
+core.string. Most applications should use those receiver APIs. Generated
+Unicode 17.0.0 data is maintained separately in core.unicode.data.</p>
+<p>Unicode is a shared numbering system for text. A code point is one number in that
+system; a Unicode scalar is a code point that is not reserved for UTF-16 surrogates.
+A byte is a storage unit: UTF-8 uses one to four bytes for a scalar. A grapheme
+cluster groups scalars into a text element, such as a letter and its accent.
+Those counts are different: an e followed by a combining acute accent uses two
+scalars and three UTF-8 bytes, but String counts it as one grapheme cluster.</p>
+<p>Classification asks questions such as whether a code point is a letter or digit.
+Case mapping changes uppercase and lowercase forms. Case folding prepares text
+for comparisons that ignore case. Segmentation finds boundaries between clusters.
+None of these operations draws text or chooses fonts.</p>
+<p>Use String.length and String.slice for grapheme-based text operations. Use
+String.code_points() or StringCursor when you need individual scalars, and
+String.byte_length() for UTF-8 storage size. Numeric IDs in this module serve
+the library algorithms; CodePoint offers named categories and classification methods.</p>
+</article></div><article id="append_mapping"><h2><a class="anchor" href="#append_mapping">append_mapping</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func append_mapping(output: <a class="type-link" href="core-string.html#StringBuilder" title="core.string.StringBuilder">StringBuilder</a>, table: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, point: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; () [reshape output.value.value.items]</code></pre><p>Appends the mapped scalars, or the original scalar when there is no mapping.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="bit?"><h2><a class="anchor" href="#bit?">bit?</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func bit?(bits: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, mask: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Tests one bit of a Unicode property mask without platform-specific operations.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="category"><h2><a class="anchor" href="#category">category</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func category(point: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the pinned General_Category index used by core.code_point.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="change_case"><h2><a class="anchor" href="#change_case">change_case</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func change_case(text: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, mode: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a></code></pre><p>Applies full lowercase (0), uppercase (1), or default case folding (2).
+Lowercase handles Final_Sigma in linear time; no locale tailoring or normalization.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="grapheme_end"><h2><a class="anchor" href="#grapheme_end">grapheme_end</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func grapheme_end(source: <a class="type-link" href="core-string.html#StringCursor" title="core.string.StringCursor">StringCursor</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a> [mut source.offset]</code></pre><p>Advances a scalar cursor over one extended grapheme cluster and returns its byte end.
+The cursor must start at a grapheme boundary. Implements Unicode 17.0.0
+UAX #29, GB3–GB999, without normalization or locale tailoring.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="hex"><h2><a class="anchor" href="#hex">hex</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func hex(table: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, width: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Reads an unsigned integer from a fixed-width ASCII hexadecimal table field.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="lower_bound"><h2><a class="anchor" href="#lower_bound">lower_bound</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func lower_bound(table: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, point: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, width: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, key_offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Returns the first record whose key is at least point, or the record count.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="property"><h2><a class="anchor" href="#property">property</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func property(point: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, property: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a></code></pre><p>Evaluates a Unicode classification property; property IDs are internal library details.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="range_value"><h2><a class="anchor" href="#range_value">range_value</a><span class="badge kind">function</span><span class="badge visibility-private">private</span></h2><pre><code>func range_value(table: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, point: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a></code></pre><p>Searches sorted inclusive ranges; omitted code points have value zero.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="simple_case"><h2><a class="anchor" href="#simple_case">simple_case</a><span class="badge kind">function</span><span class="badge visibility-public">public</span></h2><pre><code>pub func simple_case(point: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, mode: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-code_point.html#module-overview" title="core.code_point.module-overview">CodePoint</a></code></pre><p>Applies simple lowercase (0), uppercase (1), or titlecase (2) to a valid scalar.</p>
+<a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
+const filter = document.querySelector('[data-module-filter]');
+if (filter) {
+  const modules = [...document.querySelectorAll('[data-module]')];
+  const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const module of modules) {
+      module.hidden = !module.dataset.module.includes(query);
+      if (!module.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
+  });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
+}
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
+      if (!entry.hidden) visible++;
+    }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script></body></html>
