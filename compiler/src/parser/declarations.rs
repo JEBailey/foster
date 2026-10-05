@@ -39,7 +39,7 @@ impl Parser {
             documentation = self.documentation();
         }
         if documentation.is_some() {
-            let error = self.error("docs2 comment must precede a declaration");
+            let error = self.error("documentation comment must precede a declaration");
             diagnostics.push(error);
             recovery_nodes.push(RecoveryNode {
                 kind: RecoveryKind::Declaration,
@@ -90,7 +90,7 @@ impl Parser {
             program.variants.extend(variant);
         } else if self.at(&TokenKind::Test) {
             if documentation.is_some() {
-                return Err(self.error("test declarations do not accept docs2 comments"));
+                return Err(self.error("test declarations do not accept documentation comments"));
             }
             program.tests.push(self.test()?);
         } else {
@@ -165,7 +165,7 @@ impl Parser {
             } else if self.at(&TokenKind::Test) {
                 if documentation.is_some() {
                     return Err(
-                        self.error("test declarations do not accept docs2 comments")
+                        self.error("test declarations do not accept documentation comments")
                     );
                 }
                 tests.push(self.test()?);
@@ -176,7 +176,7 @@ impl Parser {
             documentation = self.documentation();
         }
         if documentation.is_some() {
-            return Err(self.error("docs2 comment must precede a declaration"));
+            return Err(self.error("documentation comment must precede a declaration"));
         }
         self.install_iteration_import(&mut imports);
         Ok(Program {
@@ -454,7 +454,7 @@ impl Parser {
                 continue;
             }
             if documentation.is_some() {
-                return Err(self.error("docs2 inside a type must precede a method"));
+                return Err(self.error("documentation inside a type must precede a method"));
             }
             let public = self.take(&TokenKind::Pub);
             let name = self.expect_ident("expected field name")?;
@@ -1070,7 +1070,7 @@ impl Parser {
             return Ok(Stmt::Function(Box::new(self.function(documentation)?)));
         }
         if documentation.is_some() {
-            return Err(self.error("docs2 comment must precede a declaration"));
+            return Err(self.error("documentation comment must precede a declaration"));
         }
         if self.take(&TokenKind::If) {
             return self.if_statement();

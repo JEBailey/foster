@@ -207,7 +207,7 @@ mod tests {
         workspace.compilations.snapshot_only = true;
         let uri: Uri = "file:///symbols-test.fos".parse().unwrap();
         let source =
-            "/// buildValue docs2\nfunc buildValue() -> Int { 0 }\nfunc unrelated() {}\n";
+            "/// buildValue documentation\nfunc buildValue() -> Int { 0 }\nfunc unrelated() {}\n";
         workspace.open(uri.clone(), source.into(), 1);
         let results = workspace.workspace_symbols("bV");
         assert_eq!(results.len(), 1);

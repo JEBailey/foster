@@ -602,7 +602,7 @@ func main() -> Int {
         .find(|item| item.label == "documented")
         .unwrap();
     let Some(Documentation::MarkupContent(documentation)) = &item.documentation else {
-        panic!("expected markdown completion docs2")
+        panic!("expected markdown completion documentation")
     };
     assert_eq!(documentation.value, "Computes the documented answer.");
 }

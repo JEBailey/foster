@@ -683,12 +683,12 @@ mod tests {
 
     #[test]
     fn missing_import_fix_preserves_documentation_and_line_endings() {
-        let source = "//! Module docs2\r\n\r\n/// Entry docs2\r\nfunc main(arguments: Arguments) -> Int { 0 }\r\n";
+        let source = "//! Module documentation\r\n\r\n/// Entry documentation\r\nfunc main(arguments: Arguments) -> Int { 0 }\r\n";
         let (workspace, params) = actions(source);
         let fixes = workspace.code_actions(&params).unwrap();
         let action = fixes.iter().find(|action| matches!(action, CodeActionOrCommand::CodeAction(action) if action.title == "Import `Arguments` from `std.process`")).expect("import fix");
         let fixed = apply(source, action);
-        assert!(fixed.contains("import std.process.Arguments\r\n/// Entry docs2"));
+        assert!(fixed.contains("import std.process.Arguments\r\n/// Entry documentation"));
         crate::compile(&fixed).unwrap();
     }
 
@@ -722,7 +722,7 @@ mod tests {
 
     #[test]
     fn import_insertion_keeps_trailing_comments_and_ignores_synthetic_imports() {
-        let source = "import core.option // keep this comment\r\n/// Main docs2\r\nfunc main() {}\r\n";
+        let source = "import core.option // keep this comment\r\n/// Main documentation\r\nfunc main() {}\r\n";
         let program = crate::parse(source).unwrap();
         let edit = import_edit(source, &program, "std.process").unwrap();
         assert_eq!(edit.range.start, Position::new(1, 0));
@@ -808,8 +808,8 @@ fn import_edit(source: &str, program: &ast::Program, module: &str) -> Option<Tex
             None => (source.len(), newline),
         }
     } else {
-        // Keep module docs2 and ordinary leading comments in place, but
-        // insert before declaration docs2 so it stays with its declaration.
+        // Keep module documentation and ordinary leading comments in place, but
+        // insert before declaration documentation so it stays with its declaration.
         let tokens = crate::lexer::lex(source).ok()?;
         let token = tokens.iter().find(|token| {
             !matches!(

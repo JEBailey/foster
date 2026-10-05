@@ -3,7 +3,7 @@
 *.pdb
 node_modules/
 .idea/
-docs2/
+docs/
 !/src/documentation/
 !/src/documentation/**
 !/tools/driver/documentation/

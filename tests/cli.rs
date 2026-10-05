@@ -63,8 +63,8 @@ fn help_describes_commands_and_important_options() {
         "Compile Foster source to bytecode or a native executable",
         "Type-check and validate Foster source without running it",
         "Compile and run Foster test declarations",
-        "Generate static API docs2 for Foster source",
-        "Serve an existing generated docs2 directory",
+        "Generate static API documentation for Foster source",
+        "Serve an existing generated documentation directory",
         "Start the Foster language server over standard input/output",
     ] {
         assert!(top_level.contains(description), "{top_level}");
@@ -83,11 +83,11 @@ fn help_describes_commands_and_important_options() {
     assert!(docs.status.success());
     let docs = String::from_utf8(docs.stdout).unwrap();
     assert!(
-        docs.contains("Write generated docs2 to this directory"),
+        docs.contains("Write generated documentation to this directory"),
         "{docs}"
     );
     assert!(
-        docs.contains("Serve the generated docs2 after building it"),
+        docs.contains("Serve the generated documentation after building it"),
         "{docs}"
     );
 }
@@ -1049,7 +1049,7 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     );
     let index = fs::read_to_string(output_directory.join("index.html")).unwrap();
     let module = fs::read_to_string(output_directory.join("modules/main.html")).unwrap();
-    assert!(index.contains("Foster docs2"));
+    assert!(index.contains("Foster documentation"));
     assert!(index.contains("<span>1 module</span>"));
     assert!(index.contains("data-module-filter"));
     assert!(index.contains("declarations</span>"));

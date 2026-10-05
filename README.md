@@ -127,7 +127,7 @@ suitable for CI. The current directory is used when no path is supplied.
 ## Generated documentation
 
 `foster docs [file-or-directory]` type-checks the package and generates a static API site in a
-`docs2` directory within the selected package. The site is built from resolved HIR, so signatures include
+`docs` directory within the selected package. The site is built from resolved HIR, so signatures include
 inferred types and effects. It includes public and private declarations, their visibility, and all
 attached Markdown documentation comments, but omits private types without nonempty documentation.
 The index lists modules alphabetically in collapsible namespace groups, with indentation for nested
@@ -156,7 +156,7 @@ foster serve-docs documentation
 ```
 
 Both serving commands accept `--port <number>` and `--no-open`. The latter is useful on headless
-machines. Generated `docs2` directories are ignored during Foster module discovery.
+machines. Generated `docs` directories are ignored during Foster module discovery.
 
 ## Language snapshot
 

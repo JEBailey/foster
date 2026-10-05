@@ -285,7 +285,7 @@ impl BodyCache {
 
 fn declaration_key(hir: &hir::PackageHir) -> String {
     // Include arena order as well as stable names: cached nominal/callee IDs may be reused only
-    // when declarations have the same identities. Spans and docs2 are presentation data.
+    // when declarations have the same identities. Spans and documentation are presentation data.
     struct DeclarationText(String);
     impl DeclarationText {
         fn push(&mut self, value: std::fmt::Arguments<'_>) {

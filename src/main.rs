@@ -109,14 +109,14 @@ fn cli() -> Command {
     let port = || {
         Arg::new("port")
             .long("port")
-            .help("TCP port for the docs2 server")
+            .help("TCP port for the documentation server")
             .value_parser(value_parser!(u16))
             .default_value("8000")
     };
     let no_open = || {
         Arg::new("no-open")
             .long("no-open")
-            .help("Do not open the docs2 site in a browser")
+            .help("Do not open the documentation site in a browser")
             .action(ArgAction::SetTrue)
     };
 
@@ -253,18 +253,18 @@ fn cli() -> Command {
         )
         .subcommand(
             Command::new("documentation")
-                .about("Generate static API docs2 for Foster source")
+                .about("Generate static API documentation for Foster source")
                 .arg(path())
                 .arg(
                     Arg::new("output")
                         .long("output")
-                        .help("Write generated docs2 to this directory")
+                        .help("Write generated documentation to this directory")
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
                     Arg::new("serve")
                         .long("serve")
-                        .help("Serve the generated docs2 after building it")
+                        .help("Serve the generated documentation after building it")
                         .action(ArgAction::SetTrue),
                 )
                 .arg(no_open().requires("serve"))
@@ -272,12 +272,12 @@ fn cli() -> Command {
         )
         .subcommand(
             Command::new("serve-documentation")
-                .about("Serve an existing generated docs2 directory")
+                .about("Serve an existing generated documentation directory")
                 .arg(
                     Arg::new("directory")
-                        .help("Generated docs2 directory to serve")
+                        .help("Generated documentation directory to serve")
                         .value_parser(value_parser!(PathBuf))
-                        .default_value("docs2"),
+                        .default_value("docs"),
                 )
                 .arg(no_open())
                 .arg(port()),
@@ -751,7 +751,7 @@ fn format_path(path: &Path, check: bool) -> Result<(), Box<dyn Error>> {
                     || !entry.file_type().is_dir()
                     || !matches!(
                         entry.file_name().to_str(),
-                        Some("target" | ".git" | ".foster" | "docs2")
+                        Some("target" | ".git" | ".foster" | "docs")
                     )
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -854,12 +854,12 @@ fn default_package_path(source: &Path) -> PathBuf {
 
 fn default_documentation_directory(source: &Path) -> PathBuf {
     if source.is_dir() {
-        source.join("../docs2")
+        source.join("../docs")
     } else {
         source
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("../docs2")
+            .join("../docs")
     }
 }
 

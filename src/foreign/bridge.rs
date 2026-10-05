@@ -261,13 +261,13 @@ mod tests {
     fn constants_and_parameter_metadata_generate_valid_foster() {
         let manifest = Manifest::parse(r#"{
             "abi":1,"headers":[],
-            "records":[{"name":"Point","c_type":"Point","docs2":"A point.","fields":[{"name":"x","type":"f64","docs2":"Horizontal coordinate."}]}],
+            "records":[{"name":"Point","c_type":"Point","documentation":"A point.","fields":[{"name":"x","type":"f64","documentation":"Horizontal coordinate."}]}],
             "constants":[
                 {"name":"ORIGIN","type":{"record":"Point"},"value":{"x":0}},
                 {"name":"ANSWER","type":"i64","value":42},
                 {"name":"TEXT","type":"string","value":"quote \" and newline\n"}
             ],
-            "operations":[{"name":"names","symbol":"names","parameters":["i32","i32","i32","i32","i32"],"parameter_names":["arguments","value","result","type","c_type"],"result":"void","docs2":"First line.\nSecond line."}]
+            "operations":[{"name":"names","symbol":"names","parameters":["i32","i32","i32","i32","i32"],"parameter_names":["arguments","value","result","type","c_type"],"result":"void","documentation":"First line.\nSecond line."}]
         }"#).unwrap();
         let source = manifest.foster_source(Path::new("unused.dll")).unwrap();
         assert!(
@@ -283,7 +283,7 @@ mod tests {
             r#""constants":[{"name":"N","type":"i64","value":1.5}]"#,
             r#""constants":[{"name":"N","type":"i64","value":"42"}]"#,
             r#""constants":[{"name":"N","type":"bytes","value":42}]"#,
-            r#""constants":[{"name":"N","type":"i64","value":42,"docs2":0}]"#,
+            r#""constants":[{"name":"N","type":"i64","value":42,"documentation":0}]"#,
         ] {
             let input = format!(r#"{{"abi":1,"headers":[],"operations":[],{extra}}}"#);
             assert!(Manifest::parse(&input).is_err(), "{input}");
