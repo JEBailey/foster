@@ -5,31 +5,31 @@ import core.option
 import core.option.Option
 
 type HasNumber = {
-    pub func number(self) -> Int [read self]
+    pub func number(self: Self) -> Int [read self]
 }
 type Duplicable = {
-    pub func copy(self) -> self [read self]
+    pub func copy(self: Self) -> Self [read self]
 }
 type HasValue = {
     pub value: Int
 }
 type Incrementable = {
-    pub func increment(self) -> () [mut self]
+    pub func increment(self: Self) -> () [mut self]
 }
 
 type Item = {
     value: Int
 }
 impl Item {
-    func number(self) -> Int [read self] {
+    func number(self: Self) -> Int [read self] {
         self.value
     }
-    func copy(self) -> self [read self] {
+    func copy(self: Self) -> Self [read self] {
         Item {
             value: self.value
         }
     }
-    func increment(self) -> () [mut self] {
+    func increment(self: Self) -> () [mut self] {
         self.value = self.value + 1
         ()
     }
@@ -39,7 +39,7 @@ type Wrong = {
     value: Int
 }
 impl Wrong {
-    func number(self) -> Bool [read self] {
+    func number(self: Self) -> Bool [read self] {
         true
     }
 }

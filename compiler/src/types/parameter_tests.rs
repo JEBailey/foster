@@ -17,7 +17,7 @@ fn generic_method_partial_application_preserves_consuming_parameter() {
     let source = r#"
 type Receiver = {}
 impl Receiver {
-    func choose<T>(self, label: String, value: T) -> T [consume label, consume value] { value }
+    func choose<T>(self: Self, label: String, value: T) -> T [consume label, consume value] { value }
 }
 func main() -> Int {
     let choose = Receiver {}.choose(_, 42)

@@ -34,24 +34,24 @@ impl HashMap<K, V> {
     }
 
     /// Returns the number of distinct keys.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.size
     }
 
     /// Returns whether the table has no entries.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.size == 0
     }
 
     /// Tests membership without consuming the table.
-    pub func contains_key?(self, key: K) -> Bool {
+    pub func contains_key?(self: Self, key: K) -> Bool {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         find_index(self.buckets[bucket], key) >= 0
     }
 
     /// Borrows the stored value; absent keys return `None`. No `Copy` is required.
     /// The reference permits mutation and cannot outlive or survive reshaping the map.
-    pub func borrow(self, key: K) -> Option<ref[self] V> [read self.buckets, read key] {
+    pub func borrow(self: Self, key: K) -> Option<ref[self] V> [read self.buckets, read key] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
@@ -63,7 +63,7 @@ impl HashMap<K, V> {
     /// Consumes the table, key, and value and returns the updated table.
     /// Replaces an equal key's entry without changing length; new keys may trigger
     /// rehashing. Replaced entries are released. Iteration order is not preserved.
-    pub func put(self, key: K, value: V) -> HashMap<K, V> [mut self(size, buckets.items), consume self, consume key, consume value] {
+    pub func put(self: Self, key: K, value: V) -> HashMap<K, V> [mut self(size, buckets.items), consume self, consume key, consume value] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
@@ -88,7 +88,7 @@ impl HashMap<K, V> {
 
     /// Removes and returns the owned value, leaving other colliding entries and the hasher intact.
     /// An absent key returns `None` and leaves the map unchanged. Values need not support `Copy`.
-    pub func remove(self, key: K) -> Option<V> {
+    pub func remove(self: Self, key: K) -> Option<V> {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
@@ -114,14 +114,14 @@ impl HashMap<K, V> {
     }
 
     /// Creates a snapshot iterator over entries in unspecified order.
-    pub func iterator(self) -> Iterator<Entry<K, V>> {
+    pub func iterator(self: Self) -> Iterator<Entry<K, V>> {
         BucketIterator {
             buckets: self.buckets.iterator(), current: [].iterator()
         }
     }
 
     /// Consumes the table and returns its keys in unspecified order.
-    pub func keys(self) -> List<K> [consume self] {
+    pub func keys(self: Self) -> List<K> [consume self] {
         let result = []
         for entry in self {
             result.push(entry.key)
@@ -130,7 +130,7 @@ impl HashMap<K, V> {
     }
 
     /// Consumes the table and returns its values in unspecified order.
-    pub func values(self) -> List<V> [consume self] {
+    pub func values(self: Self) -> List<V> [consume self] {
         let result = []
         for entry in self {
             result.push(entry.value)
@@ -147,7 +147,7 @@ type BucketIterator<K, V> = & Iterator<Entry<K, V>> & {
 
 impl BucketIterator<K, V> {
     /// Advances across empty buckets and yields each stored entry once.
-    func next(self) -> Option<Entry<K, V>> {
+    func next(self: Self) -> Option<Entry<K, V>> {
         loop {
             branch self.current.next() {
                 Option.Some(entry) -> {

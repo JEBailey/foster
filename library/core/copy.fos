@@ -8,7 +8,7 @@ import core.string
 /// A value that can produce another value of its concrete type without consuming itself.
 pub type Copy = {
     /// Creates an independent value of the concrete receiver type without consuming the source.
-    pub func copy(self) -> self [read self]
+    pub func copy(self: Self) -> Self [read self]
 }
 
 /// Creates an independent copy without consuming the source, including in generic code.

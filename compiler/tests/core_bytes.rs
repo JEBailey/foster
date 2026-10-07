@@ -35,7 +35,7 @@ fn core_bytes_are_read_only_computed_values() {
 #[test]
 fn scalar_byte_properties_do_not_satisfy_method_contracts() {
     let result = foster_compiler::compile(
-        "import core.int.*\nimport core.bytes.*\ntype Encodable = { pub func bytes(self) -> Bytes [read self] }\nfunc encode<T & Encodable>(value: T) -> Bytes [read value] { value.bytes() }\nfunc main() -> Int { encode(42).length }",
+        "import core.int.*\nimport core.bytes.*\ntype Encodable = { pub func bytes(self: Self) -> Bytes [read self] }\nfunc encode<T & Encodable>(value: T) -> Bytes [read value] { value.bytes() }\nfunc main() -> Int { encode(42).length }",
     );
     assert!(
         result.is_err(),

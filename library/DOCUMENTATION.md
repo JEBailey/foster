@@ -85,7 +85,7 @@ run new examples. Verify bounds and failure descriptions against boundary cases.
 Record implementation defects separately rather than silently changing code
 during an editorial pass.
 
-Run `foster docs library` and inspect generated module/type pages for paragraphs,
+Run `foster documentation library --output library/documentation` and inspect generated module/type pages for paragraphs,
 code fences, and duplicate declarations. Run library tests and documentation
 coverage checks as appropriate. Rebuild the compiler to distribute updated
 embedded comments to installed LSP clients; HTML generation does not update an

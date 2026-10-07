@@ -245,16 +245,16 @@ impl Parser {
         if intrinsic && kind == VariantKind::Enum {
             return Err(self.error("an intrinsic declaration must use `type`"));
         }
-        let mut name = self.expect_ident("expected record name")?;
+        let mut name = self.expect_type_binding("expected record name")?;
         while self.take(&TokenKind::Dot) {
             name.push('.');
-            name.push_str(&self.expect_ident("expected child type name")?);
+            name.push_str(&self.expect_type_binding("expected child type name")?);
         }
         let mut parameters = Vec::new();
         if self.take(&TokenKind::Less) {
             self.newlines();
             loop {
-                parameters.push(self.expect_ident("expected type parameter")?);
+                parameters.push(self.expect_type_binding("expected type parameter")?);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
@@ -596,17 +596,17 @@ impl Parser {
         let start = self.peek().range.start;
         self.expect(&TokenKind::Impl, "expected `impl`")?;
         let owner_span = self.peek().range.clone();
-        let mut owner = self.expect_ident("expected type name after `impl`")?;
+        let mut owner = self.expect_type_binding("expected type name after `impl`")?;
         while self.take(&TokenKind::Dot) {
             owner.push('.');
-            owner.push_str(&self.expect_ident("expected child type name")?);
+            owner.push_str(&self.expect_type_binding("expected child type name")?);
         }
         let mut type_parameters = Vec::new();
         let mut constraints = Vec::new();
         if self.take(&TokenKind::Less) {
             self.newlines();
             loop {
-                let parameter = self.expect_ident("expected impl type parameter")?;
+                let parameter = self.expect_type_binding("expected impl type parameter")?;
                 if self.take(&TokenKind::Ampersand) {
                     constraints.push(crate::ast::TypeConstraint {
                         parameter: parameter.clone(),
@@ -707,14 +707,23 @@ impl Parser {
                     self.error("methods with `self` must be declared inside an `impl` block")
                 );
             };
-            if parameters[0].ty.is_none() {
-                parameters[0].ty = Some(TypeExpr::Named(
+            let receiver_type = match parameters[0]
+                .ty
+                .as_mut()
+                .expect("receivers have explicit types")
+            {
+                TypeExpr::Reference { value, .. } => value.as_mut(),
+                annotation => annotation,
+            };
+            if matches!(receiver_type, TypeExpr::Named(name, arguments) if name == "Self" && arguments.is_empty())
+            {
+                *receiver_type = TypeExpr::Named(
                     owner.to_owned(),
                     impl_parameters
                         .iter()
                         .map(|name| TypeExpr::Named(name.clone(), Vec::new()))
                         .collect(),
-                ));
+                );
             }
         }
         self.newlines();
@@ -785,6 +794,9 @@ impl Parser {
         {
             return Err(self.error("`self` is a receiver and must be the first parameter"));
         }
+        if receiver && parameters[0].ty.is_none() {
+            return Err(self.error("receiver `self` needs an explicit type; use `self: Self`"));
+        }
         Ok(receiver)
     }
 
@@ -804,7 +816,7 @@ impl Parser {
         if self.take(&TokenKind::Less) {
             self.newlines();
             loop {
-                let parameter = self.expect_ident("expected type parameter")?;
+                let parameter = self.expect_type_binding("expected type parameter")?;
                 if self.take(&TokenKind::Ampersand) {
                     constraints.push(crate::ast::TypeConstraint {
                         parameter: parameter.clone(),
@@ -910,6 +922,9 @@ impl Parser {
             });
         }
         let mut name = self.expect_ident("expected type name")?;
+        if name == "self" {
+            return Err(self.error("type annotations use `Self`; lowercase `self` names the receiver value or storage group"));
+        }
         while self.take(&TokenKind::DoubleColon) {
             name.push('.');
             name.push_str(&self.expect_ident("expected type name after `::`")?);

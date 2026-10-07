@@ -693,7 +693,7 @@ pub(super) fn escape(value: &str) -> String {
 mod tests {
     #[test]
     fn constrained_signatures_link_requirement_types() {
-        let compilation = crate::compile("pub type Copy = { pub func copy(self) -> self [read self] }\npub type Box<T> = { value: T }\nimpl Box<T & Copy> { pub func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { 42 }").unwrap();
+        let compilation = crate::compile("pub type Copy = { pub func copy(self: Self) -> Self [read self] }\npub type Box<T> = { value: T }\nimpl Box<T & Copy> { pub func copied(self: Self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { 42 }").unwrap();
         let module = compilation.hir.module_named("main").unwrap();
         let method = compilation
             .hir
@@ -738,7 +738,7 @@ import static second.*
 pub type Holder = {
     pub first: one::Box<one::Item>
     pub second: two::Item
-    pub func convert<Item>(self, value: Item) -> Item [read self]
+    pub func convert<Item>(self: Self, value: Item) -> Item [read self]
 }
 pub enum Outcome = Some(one::Item) | None
 type Hidden = { value: Int }
@@ -772,7 +772,7 @@ func main() -> Int { 0 }
             generic.contains("func generic&lt;Item&gt;(value: consume Item) -&gt; Item"),
             "{generic}"
         );
-        assert!(html.contains("func convert&lt;Item&gt;(self, value: Item) -&gt; Item"));
+        assert!(html.contains("func convert&lt;Item&gt;(self: Self, value: Item) -&gt; Item"));
         assert!(!html.contains("href=\"#Hidden\""));
         assert!(!html.contains("&lt;a class="));
         std::fs::remove_dir_all(root).unwrap();

@@ -14,7 +14,7 @@ type MapIterator<T, U> = & Iterator<U> & {
 
 impl MapIterator<T, U> {
     /// Pulls and transforms one value from a mapped iterator.
-    func next(self) -> Option<U> {
+    func next(self: Self) -> Option<U> {
         branch self.source.next() {
             Option.Some(value) -> Option.Some(self.transform(move value))
             Option.None -> Option.None
@@ -26,7 +26,7 @@ impl Iterator<T> {
     /// Consumes this iterator and `transform`; calls the transform once per yielded source item.
     /// Each input is transferred to the callback. Construction does not evaluate the callback.
     /// The callback may mutate borrowed captures; the iterator must not outlive those captures.
-    pub func map<U>(self, transform: func(consume T) -> U [reshape captures]) -> Iterator<U> [consume self, consume transform] {
+    pub func map<U>(self: Self, transform: func(consume T) -> U [reshape captures]) -> Iterator<U> [consume self, consume transform] {
         MapIterator {
             source: move self, transform: move transform
         }

@@ -11,19 +11,31 @@ type StaticServer = {
 }
 
 impl StaticServer {
-    func handle(self, method: String, target: String) -> FileResponse {
+    func handle(self: Self, method: String, target: String) -> FileResponse {
         branch {
-            method != "GET" -> FileResponse { status: 405, reason: "Method Not Allowed" }
-            target == "/../private.txt" -> FileResponse { status: 403, reason: "Forbidden" }
-            target == "/" -> FileResponse { status: 200, reason: "OK" }
-            target == "/assets/site.css" -> FileResponse { status: 200, reason: "OK" }
-            _ -> FileResponse { status: 404, reason: "Not Found" }
+            method != "GET" -> FileResponse {
+                status: 405, reason: "Method Not Allowed"
+            }
+            target == "/../private.txt" -> FileResponse {
+                status: 403, reason: "Forbidden"
+            }
+            target == "/" -> FileResponse {
+                status: 200, reason: "OK"
+            }
+            target == "/assets/site.css" -> FileResponse {
+                status: 200, reason: "OK"
+            }
+            _ -> FileResponse {
+                status: 404, reason: "Not Found"
+            }
         }
     }
 }
 
 func main() -> Int {
-    let server = StaticServer { home: "<h1>Foster</h1>", stylesheet: "body {}" }
+    let server = StaticServer {
+        home: "<h1>Foster</h1>", stylesheet: "body {}"
+    }
     let home = server.handle("GET", "/")
     let stylesheet = server.handle("GET", "/assets/site.css")
     let missing = server.handle("GET", "/missing.txt")

@@ -28,10 +28,10 @@ fn nested_receiver_results_reject_an_unrelated_implementation() {
 import core.option
 import core.option.*
 import static core.option.*
-type Wrapped = { pub func wrap(self) -> Option<self> [consume self] }
+type Wrapped = { pub func wrap(self: Self) -> Option<Self> [consume self] }
 type Invalid = & Wrapped & { value: Int }
 impl Invalid {
-    func wrap(self) -> Option<Int> [consume self] { Option.Some(self.value) }
+    func wrap(self: Self) -> Option<Int> [consume self] { Option.Some(self.value) }
 }
 func main() -> Int { let invalid = Invalid { value: 42 }
     0 }

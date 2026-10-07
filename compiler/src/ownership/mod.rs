@@ -19,7 +19,7 @@ pub use mir::{
 };
 
 /// Current source-language revision; does not select older semantics.
-pub const LANGUAGE_VERSION: u16 = 20;
+pub const LANGUAGE_VERSION: u16 = 21;
 
 /// Current ownership-contract revision; does not select older semantics.
 pub const MODEL_VERSION: u16 = 5;

@@ -13,14 +13,14 @@ pub type Symbol = & Copy & {
     value: String
 
     /// Explicitly copies this immutable identifier.
-    pub func copy(self) -> self [read self]
+    pub func copy(self: Self) -> Self [read self]
 
     // Required public operations; implementations live in impl blocks.
 }
 
 impl Symbol {
     /// Explicitly copies this immutable identifier.
-    pub func copy(self) -> self [read self] {
+    pub func copy(self: Self) -> Self [read self] {
         self
     }
 }

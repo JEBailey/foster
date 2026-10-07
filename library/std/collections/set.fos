@@ -12,11 +12,11 @@ import std.iter.Iterator
 /// Membership borrows the set; updates consume and preserve the concrete implementation.
 pub type Set<T> = & Collection<T> & {
     /// Tests membership without consuming the set.
-    pub func contains?(self, value: T) -> Bool [read self, read value]
+    pub func contains?(self: Self, value: T) -> Bool [read self, read value]
     /// Returns this implementation containing `value`.
-    pub func insert(self, value: T) -> self [mut self, consume self, consume value]
+    pub func insert(self: Self, value: T) -> Self [mut self, consume self, consume value]
     /// Returns this implementation without `value`.
-    pub func remove(self, value: T) -> self [mut self, consume self]
+    pub func remove(self: Self, value: T) -> Self [mut self, consume self]
 }
 
 impl Set {
@@ -51,27 +51,27 @@ impl ListSet<T> {
     }
 
     /// Returns the number of values in the set.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.values.length
     }
 
     /// Returns whether the set contains no values.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator in insertion order.
-    pub func iterator(self) -> Iterator<T> {
+    pub func iterator(self: Self) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns whether `value` is present.
-    pub func contains?(self, value: T) -> Bool {
+    pub func contains?(self: Self, value: T) -> Bool {
         contains_value?(self.values, value)
     }
 
     /// Returns a set containing `value`.
-    pub func insert(self, value: T) -> ListSet<T> [consume self, consume value] {
+    pub func insert(self: Self, value: T) -> ListSet<T> [consume self, consume value] {
         branch {
             self.contains?(value) -> self
             _ -> ListSet {
@@ -81,7 +81,7 @@ impl ListSet<T> {
     }
 
     /// Returns a set without `value`.
-    pub func remove(self, value: T) -> ListSet<T> [consume self] {
+    pub func remove(self: Self, value: T) -> ListSet<T> [consume self] {
         ListSet {
             values: without(move self.values, value, [])
         }

@@ -571,7 +571,7 @@ import std.iter
 import std.iter.*
 import static std.iter.*
 type Box = { text: String }
-impl Box { func copy(self) -> self { Box { text: self.text.copy() } } }
+impl Box { func copy(self: Self) -> Self { Box { text: self.text.copy() } } }
 func crash(kind: String, text: String) -> String {
     let keep = [Box { text: text + "nested" }]
     branch kind {
@@ -647,10 +647,10 @@ func fail(kind: String, borrowed: String, owned: Box) -> String [consume owned, 
 }
 type Worker = { text: String }
 impl Worker {
-    func fail(self, kind: String, owned: Box) -> String [read self.text, consume owned, suspend] {
+    func fail(self: Self, kind: String, owned: Box) -> String [read self.text, consume owned, suspend] {
         fail(kind, self.text, move owned)
     }
-    func echo(self, text: String) -> String [consume text] { text }
+    func echo(self: Self, text: String) -> String [consume text] { text }
 }
 func main(args: Arguments) -> String {
     let kind = args.values[1].copy()
@@ -902,7 +902,7 @@ import std.iter
 import std.iter.*
 import static std.iter.*
 type Box = { text: String }
-impl Box { func deinit(self) -> () { assert(self.text.length >= 0, "nonnegative length in destructor") } }
+impl Box { func deinit(self: Self) -> () { assert(self.text.length >= 0, "nonnegative length in destructor") } }
 type Token = { symbol: Symbol }
 type Echo = { text: String }
 func identity(text: String) -> String { String.from_utf8(text.bytes).unwrap_or("invalid") }

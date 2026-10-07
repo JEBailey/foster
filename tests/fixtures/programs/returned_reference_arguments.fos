@@ -14,7 +14,7 @@ func set(value: ref[value] Int, replacement: Int) -> Int [mut value] {
 
 type Writer = {}
 impl Writer {
-    func set(self, value: ref[value] Int, replacement: Int) -> Int [mut value] {
+    func set(self: Self, value: ref[value] Int, replacement: Int) -> Int [mut value] {
         value = replacement
     }
 }

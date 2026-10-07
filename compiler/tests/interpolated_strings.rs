@@ -30,7 +30,7 @@ fn substitutions_require_visible_string_conversion_and_preserve_effects() {
     for source in [
         "type Item = { value: Int }\nfunc main() { let item = Item { value: 1 }\n\"\"\"%item%\"\"\" }",
         "func main() { \"\"\"%missing%\"\"\" }",
-        "type Item = { value: Int }\nimpl Item { func as_string(self) -> String [mut self] { self.value = 1\n\"item\" } }\nfunc invalid(item: Item) -> String [read item] { \"\"\"%item%\"\"\" }",
+        "type Item = { value: Int }\nimpl Item { func as_string(self: Self) -> String [mut self] { self.value = 1\n\"item\" } }\nfunc invalid(item: Item) -> String [read item] { \"\"\"%item%\"\"\" }",
     ] {
         assert!(foster_compiler::compile(source).is_err(), "{source}");
     }

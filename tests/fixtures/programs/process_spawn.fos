@@ -26,7 +26,7 @@ type Worker = {
     executable: String
 }
 impl Worker {
-    func run(self) -> Int {
+    func run(self: Self) -> Int {
         let child = branch process::spawn(self.executable, ["ok"]) {
             Result.Ok(value) -> value
             Result.Error(_) -> {

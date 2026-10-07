@@ -14,9 +14,9 @@ import core.option.Option
 /// A first-in, first-out collection.
 pub type Queue<T> = & Collection<T> & {
     /// Returns a queue with `value` added at the back.
-    pub func push(self, value: T) -> self [consume self, consume value]
+    pub func push(self: Self, value: T) -> Self [consume self, consume value]
     /// Removes the front value and returns the remaining queue.
-    pub func pop(self) -> Option<QueueItem<T, self>> [consume self]
+    pub func pop(self: Self) -> Option<QueueItem<T, Self>> [consume self]
 }
 
 impl Queue {
@@ -40,29 +40,29 @@ impl ListQueue<T> {
     }
 
     /// Returns the number of queued values.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.values.length
     }
 
     /// Returns whether the queue contains no values.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from front to back.
-    pub func iterator(self) -> Iterator<T> {
+    pub func iterator(self: Self) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns a queue with `value` added at the back.
-    pub func push(self, value: T) -> ListQueue<T> [consume self, consume value] {
+    pub func push(self: Self, value: T) -> ListQueue<T> [consume self, consume value] {
         ListQueue {
             values: self.values.append(value)
         }
     }
 
     /// Removes the front value and returns the remaining queue.
-    pub func pop(self) -> Option<QueueItem<T, ListQueue<T>>> [consume self] {
+    pub func pop(self: Self) -> Option<QueueItem<T, ListQueue<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> Option.Some(QueueItem {

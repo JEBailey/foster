@@ -22,7 +22,7 @@ type Mapping = {
     point: Int, targets: List<Int>
 }
 impl Mapping {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         Mapping {
             point: self.point, targets: self.targets.slice(0, self.targets.length)
         }

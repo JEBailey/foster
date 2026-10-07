@@ -61,90 +61,90 @@ pub type String = & Copy & Sequence<String> & Collection<String> & {
     value: Bytes
 
     /// Returns an independent text value; immutable byte storage may be shared.
-    pub func copy(self) -> self [read self]
+    pub func copy(self: Self) -> Self [read self]
 
     /// Returns the same text as an independent value, borrowing the source.
-    pub func as_string(self) -> String [read self]
+    pub func as_string(self: Self) -> String [read self]
 
     /// Copies nonempty text, or calls `fallback` exactly once when empty.
     /// Borrows both inputs; whitespace is nonempty and the fallback result may be empty.
-    pub func if_empty(self, fallback: Supplier<String>) -> String [read fallback, read self]
+    pub func if_empty(self: Self, fallback: Supplier<String>) -> String [read fallback, read self]
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the first grapheme cluster, or `None` when the string is empty.
-    pub func first(self) -> Option<String> [read self]
+    pub func first(self: Self) -> Option<String> [read self]
     /// Returns the final grapheme cluster, or `None` for an empty string.
-    pub func last(self) -> Option<String> [read self]
+    pub func last(self: Self) -> Option<String> [read self]
     /// Returns the string with its extended grapheme clusters in reverse order.
-    pub func reverse(self) -> String [read self]
+    pub func reverse(self: Self) -> String [read self]
     /// Returns whether the text begins with `prefix`; an empty prefix always matches.
-    pub func starts_with?(self, prefix: String) -> Bool [read prefix, read self]
+    pub func starts_with?(self: Self, prefix: String) -> Bool [read prefix, read self]
     /// Removes one exact leading `prefix`, returning unchanged text if absent or empty.
     /// Borrows both inputs. Matching is case-sensitive without normalization and may split a grapheme cluster.
-    pub func strip_prefix(self, prefix: String) -> String [read prefix, read self]
+    pub func strip_prefix(self: Self, prefix: String) -> String [read prefix, read self]
     /// Returns whether the text ends with `suffix`; an empty suffix always matches.
-    pub func ends_with?(self, suffix: String) -> Bool [read self, read suffix]
+    pub func ends_with?(self: Self, suffix: String) -> Bool [read self, read suffix]
     /// Returns whether `fragment` occurs as an exact substring.
     /// An empty fragment matches. No normalization or case folding is performed.
-    pub func contains?(self, fragment: String) -> Bool [read fragment, read self]
+    pub func contains?(self: Self, fragment: String) -> Bool [read fragment, read self]
     /// Consumes the string and removes leading Unicode whitespace.
-    pub func trim_start(self) -> String [consume self]
+    pub func trim_start(self: Self) -> String [consume self]
     /// Removes trailing Unicode whitespace, copying the retained range once.
-    pub func trim_end(self) -> String [read self]
+    pub func trim_end(self: Self) -> String [read self]
     /// Removes both whitespace boundaries in one Unicode scan.
-    pub func trim(self) -> String [consume self]
+    pub func trim(self: Self) -> String [consume self]
     /// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
-    pub func code_points(self) -> List<CodePoint> [read self]
+    pub func code_points(self: Self) -> List<CodePoint> [read self]
     /// Materializes the text as complete extended grapheme clusters.
-    pub func graphemes(self) -> List<String> [read self]
+    pub func graphemes(self: Self) -> List<String> [read self]
     /// Returns the first Unicode scalar; the string must not be empty.
-    pub func scalar_head(self) -> CodePoint [read self]
+    pub func scalar_head(self: Self) -> CodePoint [read self]
     /// Returns text after the first Unicode scalar, preserving the empty string.
-    pub func scalar_rest(self) -> String [read self]
+    pub func scalar_rest(self: Self) -> String [read self]
     /// Counts Unicode scalar values. Use length for grapheme-cluster counts.
-    pub func scalar_length(self) -> Int [read self]
+    pub func scalar_length(self: Self) -> Int [read self]
     /// Returns the longest prefix whose Unicode scalars satisfy predicate.
-    pub func scalar_take_while(self, predicate: Predicate<CodePoint>) -> String [read predicate, read self]
+    pub func scalar_take_while(self: Self, predicate: Predicate<CodePoint>) -> String [read predicate, read self]
     /// Slices a clamped half-open scalar range; this may split a grapheme cluster.
-    pub func scalar_slice(self, start: Int, end: Int) -> String [read end, read self, read start]
+    pub func scalar_slice(self: Self, start: Int, end: Int) -> String [read end, read self, read start]
     /// Returns the longest prefix whose grapheme clusters satisfy `predicate`.
     /// Calls the predicate once per inspected cluster, stopping at the first false result.
     /// An empty input or a rejected first cluster returns `""`.
-    pub func take_while(self, predicate: Predicate<String>) -> String [read predicate, read self]
+    pub func take_while(self: Self, predicate: Predicate<String>) -> String [read predicate, read self]
     /// Returns the half-open range `[start, end)` measured in extended grapheme clusters.
     /// Bounds are clamped to the available text; reversed or empty ranges return `""`.
     /// This differs from the asserting bounds checks on `List.slice` and `Bytes.slice`.
-    pub func slice(self, start: Int, end: Int) -> String [read end, read self, read start]
+    pub func slice(self: Self, start: Int, end: Int) -> String [read end, read self, read start]
     /// Splits around nonoverlapping separators, preserving empty fields.
     /// An empty separator produces one string per extended grapheme cluster, with no extra empty fields.
     /// Empty input yields `[]` with an empty separator and `[""]` otherwise.
-    pub func split(self, separator: String) -> List<String> [consume self]
+    pub func split(self: Self, separator: String) -> List<String> [consume self]
     /// Returns full Unicode lowercase text, including contextual final sigma.
-    pub func lower(self) -> String [read self]
+    pub func lower(self: Self) -> String [read self]
     /// Returns full Unicode uppercase text, including multi-scalar expansions.
-    pub func upper(self) -> String [read self]
+    pub func upper(self: Self) -> String [read self]
     /// Changes ASCII letters to uppercase, preserving all other scalars.
-    pub func ascii_upper(self) -> String [read self]
+    pub func ascii_upper(self: Self) -> String [read self]
     /// Changes ASCII letters to lowercase, preserving all other scalars.
-    pub func ascii_lower(self) -> String [read self]
+    pub func ascii_lower(self: Self) -> String [read self]
     /// Returns full default Unicode case folding without normalization or locale tailoring.
-    pub func case_fold(self) -> String [read self]
+    pub func case_fold(self: Self) -> String [read self]
     /// Returns the number of bytes required by the UTF-8 encoding.
-    pub func byte_length(self) -> Int [read self.value]
+    pub func byte_length(self: Self) -> Int [read self.value]
 
     // Empty and byte access use builtin storage; length/head/rest are Foster algorithms.
     /// Returns the UTF-8 bytes underlying the text.
-    pub func bytes(self) -> Bytes
+    pub func bytes(self: Self) -> Bytes
 }
 
 impl String {
     /// Returns the same text as an independent value, borrowing the source.
-    pub func as_string(self) -> String [read self] {
+    pub func as_string(self: Self) -> String [read self] {
         self.copy()
     }
 
     /// Returns an independent text value; immutable byte storage may be shared.
-    pub func copy(self) -> self [read self] {
+    pub func copy(self: Self) -> Self [read self] {
         self + ""
     }
 
@@ -161,7 +161,7 @@ impl String {
     }
 
     /// Counts Unicode 17.0.0 extended grapheme clusters without normalization.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         let source = StringCursor.from(self)
         let count = 0
         while !source.empty?() {
@@ -172,7 +172,7 @@ impl String {
     }
 
     /// Returns the first complete grapheme cluster; the string must not be empty.
-    pub func head(self) -> String {
+    pub func head(self: Self) -> String {
         branch GraphemeCursor.from(self).next() {
             Option.Some(cluster) -> cluster
             Option.None -> {
@@ -182,14 +182,14 @@ impl String {
     }
 
     /// Returns all text after the first grapheme cluster; empty text stays empty.
-    pub func rest(self) -> String {
+    pub func rest(self: Self) -> String {
         let source = StringCursor.from(self)
         unicode::grapheme_end(source)
         source.remaining()
     }
 
     /// Materializes the text as complete extended grapheme clusters.
-    pub func graphemes(self) -> List<String> {
+    pub func graphemes(self: Self) -> List<String> {
         let output = []
         for cluster in self {
             output.push(cluster)
@@ -198,20 +198,20 @@ impl String {
     }
 
     /// Returns the first Unicode scalar; the string must not be empty.
-    pub func scalar_head(self) -> CodePoint {
+    pub func scalar_head(self: Self) -> CodePoint {
         assert(!self.empty?, "cannot take scalar_head of an empty string")
         cursor(self).next_scalar()
     }
 
     /// Returns text after the first Unicode scalar, preserving the empty string.
-    pub func scalar_rest(self) -> String {
+    pub func scalar_rest(self: Self) -> String {
         let source = cursor(self)
         source.next()
         source.remaining()
     }
 
     /// Counts Unicode scalar values. Use length for grapheme-cluster counts.
-    pub func scalar_length(self) -> Int {
+    pub func scalar_length(self: Self) -> Int {
         let source = cursor(self)
         let count = 0
         while !source.empty?() {
@@ -222,7 +222,7 @@ impl String {
     }
 
     /// Returns the longest prefix whose Unicode scalars satisfy predicate.
-    pub func scalar_take_while(self, predicate: Predicate<CodePoint>) -> String {
+    pub func scalar_take_while(self: Self, predicate: Predicate<CodePoint>) -> String {
         let source = cursor(self)
         let end = 0
         while !source.empty?() {
@@ -233,7 +233,7 @@ impl String {
     }
 
     /// Slices a clamped half-open scalar range; this may split a grapheme cluster.
-    pub func scalar_slice(self, start: Int, end: Int) -> String {
+    pub func scalar_slice(self: Self, start: Int, end: Int) -> String {
         return "" if end <= 0 || end <= start
         let source = cursor(self)
         let index = 0
@@ -250,12 +250,12 @@ impl String {
     }
 
     /// Creates an independent iterator yielding whole grapheme clusters as strings.
-    pub func iterator(self) -> Iterator<String> [read self] {
+    pub func iterator(self: Self) -> Iterator<String> [read self] {
         GraphemeCursor.from(self)
     }
 
     /// Returns the first grapheme cluster, or `None` when the string is empty.
-    pub func first(self) -> Option<String> {
+    pub func first(self: Self) -> Option<String> {
         branch {
             self.empty? -> Option.None
             _ -> Option.Some(self.head)
@@ -263,7 +263,7 @@ impl String {
     }
 
     /// Returns the final grapheme cluster, or `None` for an empty string.
-    pub func last(self) -> Option<String> {
+    pub func last(self: Self) -> Option<String> {
         let last = Option.None
         for cluster in self {
             last = Option.Some(cluster)
@@ -272,7 +272,7 @@ impl String {
     }
 
     /// Returns the string with its extended grapheme clusters in reverse order.
-    pub func reverse(self) -> String {
+    pub func reverse(self: Self) -> String {
         let clusters = self.graphemes()
         let output = StringBuilder.empty()
         let index = clusters.length
@@ -284,13 +284,13 @@ impl String {
     }
 
     /// Returns whether the text begins with `prefix`; an empty prefix always matches.
-    pub func starts_with?(self, prefix: String) -> Bool {
+    pub func starts_with?(self: Self, prefix: String) -> Bool {
         matches_at(self.bytes, prefix.bytes, 0)
     }
 
     /// Removes one exact leading `prefix`, returning unchanged text if absent or empty.
     /// Borrows both inputs. Matching is case-sensitive without normalization and may split a grapheme cluster.
-    pub func strip_prefix(self, prefix: String) -> String {
+    pub func strip_prefix(self: Self, prefix: String) -> String {
         return self.copy() if prefix.empty? || !self.starts_with?(prefix)
         let data = self.bytes
         decode_bytes(data.slice(prefix.byte_length(), data.length))
@@ -298,7 +298,7 @@ impl String {
 
     /// Copies nonempty text, or calls `fallback` exactly once when empty.
     /// Borrows both inputs; whitespace is nonempty and the fallback result may be empty.
-    pub func if_empty(self, fallback: Supplier<String>) -> String {
+    pub func if_empty(self: Self, fallback: Supplier<String>) -> String {
         branch {
             self.empty? -> fallback()
             _ -> self.copy()
@@ -306,7 +306,7 @@ impl String {
     }
 
     /// Returns whether the text ends with `suffix`; an empty suffix always matches.
-    pub func ends_with?(self, suffix: String) -> Bool {
+    pub func ends_with?(self: Self, suffix: String) -> Bool {
         let data = self.bytes
         let pattern = suffix.bytes
         return false if pattern.length > data.length
@@ -315,7 +315,7 @@ impl String {
 
     /// Returns whether `fragment` occurs as an exact substring.
     /// An empty fragment matches. No normalization or case folding is performed.
-    pub func contains?(self, fragment: String) -> Bool {
+    pub func contains?(self: Self, fragment: String) -> Bool {
         let data = self.bytes
         let pattern = fragment.bytes
         return true if pattern.empty?
@@ -328,7 +328,7 @@ impl String {
     }
 
     /// Consumes the string and removes leading Unicode whitespace.
-    pub func trim_start(self) -> String [consume self] {
+    pub func trim_start(self: Self) -> String [consume self] {
         let source = cursor(self)
         let start = 0
         while source.offset < source.data.length {
@@ -339,7 +339,7 @@ impl String {
     }
 
     /// Removes trailing Unicode whitespace, copying the retained range once.
-    pub func trim_end(self) -> String {
+    pub func trim_end(self: Self) -> String {
         let source = cursor(self)
         let end = 0
         while source.offset < source.data.length {
@@ -349,7 +349,7 @@ impl String {
     }
 
     /// Removes both whitespace boundaries in one Unicode scan.
-    pub func trim(self) -> String [consume self] {
+    pub func trim(self: Self) -> String [consume self] {
         let source = cursor(self)
         let start = 0
         let end = 0
@@ -374,7 +374,7 @@ impl String {
     }
 
     /// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
-    pub func code_points(self) -> List<CodePoint> {
+    pub func code_points(self: Self) -> List<CodePoint> {
         let source = cursor(self)
         let output = []
         while source.offset < source.data.length {
@@ -406,7 +406,7 @@ impl String {
     /// Returns the longest prefix whose grapheme clusters satisfy `predicate`.
     /// Calls the predicate once per inspected cluster, stopping at the first false result.
     /// An empty input or a rejected first cluster returns `""`.
-    pub func take_while(self, predicate: Predicate<String>) -> String {
+    pub func take_while(self: Self, predicate: Predicate<String>) -> String {
         let output = StringBuilder.empty()
         for cluster in self {
             break if !predicate(cluster)
@@ -418,7 +418,7 @@ impl String {
     /// Returns the half-open range `[start, end)` measured in extended grapheme clusters.
     /// Bounds are clamped to the available text; reversed or empty ranges return `""`.
     /// This differs from the asserting bounds checks on `List.slice` and `Bytes.slice`.
-    pub func slice(self, start: Int, end: Int) -> String {
+    pub func slice(self: Self, start: Int, end: Int) -> String {
         return "" if end <= 0 || end <= start
         let source = StringCursor.from(self)
         let index = 0
@@ -437,7 +437,7 @@ impl String {
     /// Splits around nonoverlapping separators, preserving empty fields.
     /// An empty separator produces one string per extended grapheme cluster, with no extra empty fields.
     /// Empty input yields `[]` with an empty separator and `[""]` otherwise.
-    pub func split(self, separator: String) -> List<String> [consume self] {
+    pub func split(self: Self, separator: String) -> List<String> [consume self] {
         return self.graphemes() if separator.empty?
         let data = self.bytes
         let pattern = separator.bytes
@@ -463,32 +463,32 @@ impl String {
     }
 
     /// Returns full Unicode lowercase text, including contextual final sigma.
-    pub func lower(self) -> String {
+    pub func lower(self: Self) -> String {
         unicode::change_case(self, 0)
     }
 
     /// Returns full default Unicode case folding without normalization or locale tailoring.
-    pub func case_fold(self) -> String {
+    pub func case_fold(self: Self) -> String {
         unicode::change_case(self, 2)
     }
 
     /// Changes ASCII letters to lowercase, preserving all other scalars.
-    pub func ascii_lower(self) -> String {
+    pub func ascii_lower(self: Self) -> String {
         ascii_case(self, true)
     }
 
     /// Changes ASCII letters to uppercase, preserving all other scalars.
-    pub func ascii_upper(self) -> String {
+    pub func ascii_upper(self: Self) -> String {
         ascii_case(self, false)
     }
 
     /// Returns full Unicode uppercase text, including multi-scalar expansions.
-    pub func upper(self) -> String {
+    pub func upper(self: Self) -> String {
         unicode::change_case(self, 1)
     }
 
     /// Returns the number of bytes required by the UTF-8 encoding.
-    pub func byte_length(self) -> Int {
+    pub func byte_length(self: Self) -> Int {
         self.value.length
     }
 }
@@ -499,11 +499,11 @@ pub type StringBuilder = {
 
     // Required public operations; implementations live in impl blocks.
     /// Appends validated text to this builder.
-    pub func append(self, text: String) -> () [reshape self.value.value.items]
+    pub func append(self: Self, text: String) -> () [reshape self.value.value.items]
     /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
-    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items]
+    pub func push(self: Self, character: CodePoint) -> () [reshape self.value.value.items]
     /// Consumes the builder and constructs one validated immutable String.
-    pub func finish(self) -> String [consume self]
+    pub func finish(self: Self) -> String [consume self]
 }
 
 impl StringBuilder {
@@ -515,12 +515,12 @@ impl StringBuilder {
     }
 
     /// Appends validated text to this builder.
-    pub func append(self, text: String) -> () [reshape self.value.value.items] {
+    pub func append(self: Self, text: String) -> () [reshape self.value.value.items] {
         self.value.extend(text.bytes)
     }
 
     /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
-    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items] {
+    pub func push(self: Self, character: CodePoint) -> () [reshape self.value.value.items] {
         let scalar = character.as_int()
         branch {
             scalar < 128 -> self.value.push(Byte.unchecked(scalar))
@@ -543,7 +543,7 @@ impl StringBuilder {
     }
 
     /// Consumes the builder and constructs one validated immutable String.
-    pub func finish(self) -> String [consume self] {
+    pub func finish(self: Self) -> String [consume self] {
         decode_bytes((move self.value).freeze())
     }
 }
@@ -564,11 +564,11 @@ pub type StringCursor = & Cursor<CodePoint> & {
     offset: Int
 
     /// Copies text between scalar-aligned byte offsets without moving the cursor.
-    pub func text_span(self, start: Int, end: Int) -> Option<String> [read self]
+    pub func text_span(self: Self, start: Int, end: Int) -> Option<String> [read self]
     /// Copies the text from the current position to the end.
-    pub func remaining(self) -> String [read self]
+    pub func remaining(self: Self) -> String [read self]
     /// Reports whether the reader has reached the end.
-    pub func empty?(self) -> Bool [read self]
+    pub func empty?(self: Self) -> Bool [read self]
 }
 
 /// A forward iterator over extended grapheme clusters in a stable UTF-8 snapshot.
@@ -586,7 +586,7 @@ impl GraphemeCursor {
     }
 
     /// Returns the next complete cluster, or None at the end of the text.
-    pub func next(self) -> Option<String> {
+    pub func next(self: Self) -> Option<String> {
         return Option.None if self.source.empty?()
         let start = self.source.checkpoint()
         let end = unicode::grapheme_end(self.source)
@@ -609,11 +609,11 @@ impl StringCursor {
         cursor(text)
     }
     /// Returns the current UTF-8 byte offset.
-    pub func checkpoint(self) -> Int {
+    pub func checkpoint(self: Self) -> Int {
         self.offset
     }
     /// Reads the next scalar without changing the position.
-    pub func peek(self) -> Option<CodePoint> {
+    pub func peek(self: Self) -> Option<CodePoint> {
         branch {
             self.offset >= self.data.length -> Option.None _ -> Option.Some(self.scalar())
         }
@@ -621,13 +621,13 @@ impl StringCursor {
     /// Moves to a scalar-aligned UTF-8 byte offset in `[0, byte_length]`.
     /// Returns false for an invalid boundary or out-of-range offset without moving.
     /// Offsets do not encode source identity; use checkpoints from this snapshot.
-    pub func restore(self, position: Int) -> Bool {
+    pub func restore(self: Self, position: Int) -> Bool {
         return false if !self.boundary?(position)
         self.offset = position
         true
     }
     /// Copies scalars between two valid byte checkpoints into an item list.
-    pub func span(self, start: Int, end: Int) -> Option<List<CodePoint>> {
+    pub func span(self: Self, start: Int, end: Int) -> Option<List<CodePoint>> {
         branch self.text_span(start, end) {
             Option.None -> Option.None
             Option.Some(text) -> Option.Some(text.code_points())
@@ -635,20 +635,20 @@ impl StringCursor {
     }
     /// Copies text between scalar-aligned byte offsets `[start, end)` without moving.
     /// Returns `None` for reversed bounds, out-of-range offsets, or split UTF-8 scalars.
-    pub func text_span(self, start: Int, end: Int) -> Option<String> {
+    pub func text_span(self: Self, start: Int, end: Int) -> Option<String> {
         return Option.None if end < start || !self.boundary?(start) || !self.boundary?(end)
         Option.Some(decode_bytes(self.data.slice(start, end)))
     }
     /// Copies the text from the current position to the end.
-    pub func remaining(self) -> String {
+    pub func remaining(self: Self) -> String {
         decode_bytes(self.data.slice(self.offset, self.data.length))
     }
     /// Reports whether the reader has reached the end.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.offset == self.data.length
     }
     /// Checks that an offset does not split a UTF-8 encoding.
-    func boundary?(self, position: Int) -> Bool {
+    func boundary?(self: Self, position: Int) -> Bool {
         return false if position < 0 || position > self.data.length
         return true if position == self.data.length
         let first = self.data[position].int
@@ -656,7 +656,7 @@ impl StringCursor {
     }
 
     /// Returns the next complete Unicode scalar, or None after exhaustion.
-    pub func next(self) -> Option<CodePoint> {
+    pub func next(self: Self) -> Option<CodePoint> {
         branch {
             self.offset >= self.data.length -> Option.None
             _ -> Option.Some(self.next_scalar())
@@ -664,14 +664,14 @@ impl StringCursor {
     }
 
     /// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
-    func next_scalar(self) -> CodePoint {
+    func next_scalar(self: Self) -> CodePoint {
         let value = self.scalar()
         self.offset = self.offset + scalar_width(self.data[self.offset].int)
         value
     }
 
     /// Decodes the scalar at the current nonempty position without advancing.
-    func scalar(self) -> CodePoint {
+    func scalar(self: Self) -> CodePoint {
         let first = self.data[self.offset].int
         let width = scalar_width(first)
         let scalar = branch {

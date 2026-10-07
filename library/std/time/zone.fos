@@ -36,7 +36,7 @@ pub type Offset = & Ordered<Offset> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns seconds east of UTC.
-    pub func seconds(self) -> Int [read self.seconds_value]
+    pub func seconds(self: Self) -> Int [read self.seconds_value]
 }
 
 impl Offset {
@@ -60,19 +60,19 @@ impl Offset {
     }
 
     /// Returns seconds east of UTC.
-    pub func seconds(self) -> Int {
+    pub func seconds(self: Self) -> Int {
         self.seconds_value
     }
 
     /// Compares two offsets.
-    pub func compare(self, other: Offset) -> Ordering {
+    pub func compare(self: Self, other: Offset) -> Ordering {
         branch {
             self.seconds_value < other.seconds_value -> Ordering.Less self.seconds_value > other.seconds_value -> Ordering.Greater _ -> Ordering.Equal
         }
     }
 
     /// Returns whether two offsets are equal.
-    pub func equal?(self, other: Offset) -> Bool {
+    pub func equal?(self: Self, other: Offset) -> Bool {
         self.seconds_value == other.seconds_value
     }
 }
@@ -84,9 +84,9 @@ pub type AmbiguousLocalTime = {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the earlier possible instant.
-    pub func earlier(self) -> Instant [read self.earlier_value]
+    pub func earlier(self: Self) -> Instant [read self.earlier_value]
     /// Returns the later possible instant.
-    pub func later(self) -> Instant [read self.later_value]
+    pub func later(self: Self) -> Instant [read self.later_value]
 }
 
 impl AmbiguousLocalTime {
@@ -98,11 +98,11 @@ impl AmbiguousLocalTime {
     }
 
     /// Returns the earlier possible instant.
-    pub func earlier(self) -> Instant {
+    pub func earlier(self: Self) -> Instant {
         clone_instant(self.earlier_value)
     }
     /// Returns the later possible instant.
-    pub func later(self) -> Instant {
+    pub func later(self: Self) -> Instant {
         clone_instant(self.later_value)
     }
 }
@@ -114,9 +114,9 @@ pub type SkippedLocalTime = {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the last representable instant before the gap.
-    pub func before(self) -> Instant [read self.before_value]
+    pub func before(self: Self) -> Instant [read self.before_value]
     /// Returns the first representable instant after the gap.
-    pub func after(self) -> Instant [read self.after_value]
+    pub func after(self: Self) -> Instant [read self.after_value]
 }
 
 impl SkippedLocalTime {
@@ -128,11 +128,11 @@ impl SkippedLocalTime {
     }
 
     /// Returns the last representable instant before the gap.
-    pub func before(self) -> Instant {
+    pub func before(self: Self) -> Instant {
         clone_instant(self.before_value)
     }
     /// Returns the first representable instant after the gap.
-    pub func after(self) -> Instant {
+    pub func after(self: Self) -> Instant {
         clone_instant(self.after_value)
     }
 }
@@ -146,11 +146,11 @@ pub enum LocalResolution = Unique(Instant)
 /// zero, one, or two exact instants.
 pub type TimeZone = {
     /// Returns the stable zone identifier.
-    pub func id(self) -> String
+    pub func id(self: Self) -> String
     /// Returns the offset active at an exact instant.
-    pub func offset_at(self, instant: Instant) -> Offset
+    pub func offset_at(self: Self, instant: Instant) -> Offset
     /// Resolves a civil date-time without silently discarding gaps or overlaps.
-    pub func resolve(self, local: DateTime) -> LocalResolution
+    pub func resolve(self: Self, local: DateTime) -> LocalResolution
 }
 
 /// A contract for providers of named time-zone rule sets.
@@ -158,7 +158,7 @@ pub type TimeZone = {
 /// this contract with a pinned IANA release. Fixed offsets need no database dependency.
 pub type TimeZoneDatabase = {
     /// Looks up a time zone by stable identifier.
-    pub func find(self, identifier: String) -> Result<TimeZone, ZoneError>
+    pub func find(self: Self, identifier: String) -> Result<TimeZone, ZoneError>
 }
 
 /// A time zone whose offset never changes.
@@ -183,17 +183,17 @@ impl FixedOffsetZone {
     }
 
     /// Returns the fixed zone identifier.
-    pub func id(self) -> String {
+    pub func id(self: Self) -> String {
         self.identifier_value.slice(0, self.identifier_value.length)
     }
 
     /// Returns the zone's constant offset.
-    pub func offset_at(self, instant: Instant) -> Offset {
+    pub func offset_at(self: Self, instant: Instant) -> Offset {
         offset_from_valid_seconds(self.offset_value.seconds())
     }
 
     /// Resolves every valid civil value uniquely under the constant offset.
-    pub func resolve(self, local: DateTime) -> LocalResolution {
+    pub func resolve(self: Self, local: DateTime) -> LocalResolution {
         LocalResolution.Unique(instant_from_local(local, self.offset_value))
     }
 }
@@ -205,13 +205,13 @@ pub type OffsetDateTime = & Ordered<OffsetDateTime> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the exact instant.
-    pub func instant(self) -> Instant [read self.instant_value]
+    pub func instant(self: Self) -> Instant [read self.instant_value]
     /// Returns the fixed offset.
-    pub func offset(self) -> Offset [read self.offset_value.seconds_value]
+    pub func offset(self: Self) -> Offset [read self.offset_value.seconds_value]
     /// Returns the corresponding civil date-time.
-    pub func local(self) -> DateTime [read self(instant_value, offset_value)]
+    pub func local(self: Self) -> DateTime [read self(instant_value, offset_value)]
     /// Advances the exact instant while preserving the offset.
-    pub func add(self, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)]
+    pub func add(self: Self, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)]
 }
 
 impl OffsetDateTime {
@@ -230,32 +230,32 @@ impl OffsetDateTime {
     }
 
     /// Returns the exact instant.
-    pub func instant(self) -> Instant {
+    pub func instant(self: Self) -> Instant {
         clone_instant(self.instant_value)
     }
     /// Returns the fixed offset.
-    pub func offset(self) -> Offset {
+    pub func offset(self: Self) -> Offset {
         offset_from_valid_seconds(self.offset_value.seconds())
     }
     /// Returns the corresponding civil date-time.
-    pub func local(self) -> DateTime {
+    pub func local(self: Self) -> DateTime {
         local_from_instant(self.instant_value, self.offset_value)
     }
 
     /// Advances the exact instant while preserving the offset.
-    pub func add(self, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)] {
+    pub func add(self: Self, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)] {
         OffsetDateTime {
             instant_value: self.instant_value.add(duration), offset_value: self.offset_value
         }
     }
 
     /// Compares offset date-times by exact instant.
-    pub func compare(self, other: OffsetDateTime) -> Ordering {
+    pub func compare(self: Self, other: OffsetDateTime) -> Ordering {
         self.instant_value.compare(other.instant_value)
     }
 
     /// Returns whether two offset date-times identify the same exact instant.
-    pub func equal?(self, other: OffsetDateTime) -> Bool {
+    pub func equal?(self: Self, other: OffsetDateTime) -> Bool {
         self.instant_value.equal?(other.instant_value)
     }
 }
@@ -267,21 +267,21 @@ pub type ZonedDateTime = & Ordered<ZonedDateTime> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the exact instant.
-    pub func instant(self) -> Instant [read self.instant_value]
+    pub func instant(self: Self) -> Instant [read self.instant_value]
     /// Returns the time-zone identifier.
-    pub func zone_id(self) -> String
+    pub func zone_id(self: Self) -> String
     /// Returns the offset active at this instant.
-    pub func offset(self) -> Offset [read self.instant_value]
+    pub func offset(self: Self) -> Offset [read self.instant_value]
     /// Returns the corresponding civil date-time.
-    pub func local(self) -> DateTime [read self.instant_value]
+    pub func local(self: Self) -> DateTime [read self.instant_value]
     /// Reinterprets the same exact instant in another time zone.
-    pub func with_zone(self, zone: TimeZone) -> ZonedDateTime [consume self.instant_value, consume zone]
+    pub func with_zone(self: Self, zone: TimeZone) -> ZonedDateTime [consume self.instant_value, consume zone]
     /// Returns a fixed-offset view at the offset active for this instant.
-    pub func as_offset(self) -> OffsetDateTime [consume self.instant_value]
+    pub func as_offset(self: Self) -> OffsetDateTime [consume self.instant_value]
     /// Adds an exact elapsed duration on the time line.
-    pub func add_duration(self, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)]
+    pub func add_duration(self: Self, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)]
     /// Adds a calendar-aware span in local time, then resolves the result explicitly.
-    pub func add_span(self, span: Span, overflow: Overflow, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> [consume self.zone_value, read disambiguation, read overflow, read self.instant_value, read span]
+    pub func add_span(self: Self, span: Span, overflow: Overflow, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> [consume self.zone_value, read disambiguation, read overflow, read self.instant_value, read span]
 }
 
 impl ZonedDateTime {
@@ -298,47 +298,47 @@ impl ZonedDateTime {
     }
 
     /// Returns the exact instant.
-    pub func instant(self) -> Instant {
+    pub func instant(self: Self) -> Instant {
         clone_instant(self.instant_value)
     }
 
     /// Returns the time-zone identifier.
-    pub func zone_id(self) -> String {
+    pub func zone_id(self: Self) -> String {
         self.zone_value.id()
     }
 
     /// Returns the offset active at this instant.
-    pub func offset(self) -> Offset {
+    pub func offset(self: Self) -> Offset {
         self.zone_value.offset_at(self.instant_value)
     }
 
     /// Returns the corresponding civil date-time.
-    pub func local(self) -> DateTime {
+    pub func local(self: Self) -> DateTime {
         local_from_instant(self.instant_value, self.offset())
     }
 
     /// Reinterprets the same exact instant in another time zone.
-    pub func with_zone(self, zone: TimeZone) -> ZonedDateTime [consume self.instant_value, consume zone] {
+    pub func with_zone(self: Self, zone: TimeZone) -> ZonedDateTime [consume self.instant_value, consume zone] {
         ZonedDateTime {
             instant_value: self.instant_value, zone_value: zone
         }
     }
 
     /// Returns a fixed-offset view at the offset active for this instant.
-    pub func as_offset(self) -> OffsetDateTime [consume self.instant_value] {
+    pub func as_offset(self: Self) -> OffsetDateTime [consume self.instant_value] {
         let offset = self.offset()
         OffsetDateTime.from_instant(move self.instant_value, move offset)
     }
 
     /// Adds an exact elapsed duration on the time line.
-    pub func add_duration(self, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)] {
+    pub func add_duration(self: Self, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)] {
         ZonedDateTime {
             instant_value: self.instant_value.add(duration), zone_value: self.zone_value
         }
     }
 
     /// Adds a calendar-aware span in local time, then resolves the result explicitly.
-    pub func add_span(self, span: Span, overflow: Overflow, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> [consume self.zone_value, read disambiguation, read overflow, read self.instant_value, read span] {
+    pub func add_span(self: Self, span: Span, overflow: Overflow, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> [consume self.zone_value, read disambiguation, read overflow, read self.instant_value, read span] {
         branch self.local().add(span, overflow) {
             Result.Error(error) -> Result.Error(ZoneError {
                 zone: self.zone_value.id(), message: error.message
@@ -348,12 +348,12 @@ impl ZonedDateTime {
     }
 
     /// Compares zoned values by exact instant.
-    pub func compare(self, other: ZonedDateTime) -> Ordering {
+    pub func compare(self: Self, other: ZonedDateTime) -> Ordering {
         self.instant_value.compare(other.instant_value)
     }
 
     /// Returns whether two zoned values identify the same exact instant.
-    pub func equal?(self, other: ZonedDateTime) -> Bool {
+    pub func equal?(self: Self, other: ZonedDateTime) -> Bool {
         self.instant_value.equal?(other.instant_value)
     }
 }

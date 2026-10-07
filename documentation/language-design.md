@@ -554,8 +554,8 @@ Required callable members can be declared directly in a structural type:
 
 ```foster
 type Identified = {
-    pub func id(self) -> Int [read self]
-    pub func offset(self, amount: Int) -> Int [read self]
+    pub func id(self: Self) -> Int [read self]
+    pub func offset(self: Self, amount: Int) -> Int [read self]
 }
 ```
 
@@ -564,9 +564,14 @@ compiler checks parameter ownership modes, result types, effects, suspension, an
 Naming a contract is not required for conformance: another type with matching accessible fields and
 methods is accepted structurally.
 
-Method result annotations may use `self`, including inside a generic result such as
-`Option<self>` or `Option<QueueItem<T, self>>`. It denotes the implementing receiver type;
+Method signatures may use `Self`, including inside a generic result such as
+`Option<Self>` or `Option<QueueItem<T, Self>>`. It denotes the implementing value type;
 adapting a value to a structural contract presents that result through the contract view.
+Required methods use `Self` only for the receiver and result. Other parameters
+must use a concrete type or type parameter; a structural contract can be implemented
+by different concrete types, so it cannot promise that another contract value has
+the receiver's concrete type. Implementation-only methods may use `Self` in other
+parameter annotations because calls retain their concrete receiver type.
 
 The declarations inside `type` define what is required; the bodies inside `impl` define what is
 implemented. An additional public function written only in `impl` is available on that concrete
@@ -578,7 +583,7 @@ Required functions can introduce their own type parameters, independently of the
 
 ```foster
 type Transform<T> = {
-    pub func map<U>(self, transform: func(T) -> U) -> List<U>
+    pub func map<U>(self: Self, transform: func(T) -> U) -> List<U>
 }
 ```
 
@@ -640,7 +645,12 @@ field bindings, `_`, or nested record patterns.
 
 Methods and associated functions are declared inside `impl Type { ... }` blocks. The block
 supplies the owning type; member names are unqualified. A first `self` parameter makes a member
-an instance method. Its type may be omitted when the block supplies the complete receiver type.
+an instance method and must have an explicit type, normally `self: Self`.
+`Self` denotes the implemented value type with its generic arguments, even when the
+receiver is a reference. Borrowed receivers and results use `ref[self] Self`.
+Associated functions can return `Self` without taking a receiver. Lowercase `self`
+is a value and storage-group name, never a type annotation. `Self` is reserved and
+cannot be declared as a type or generic parameter.
 A record member without `self` is an associated function, called through the type:
 
 ```foster
@@ -648,8 +658,8 @@ pub type Box<T> = { value: T }
 
 impl Box<T> {
     pub func new(value: T) -> Box<T> { Box { value } }
-    pub func get(self) -> T { self.value }
-    pub func map<U>(self, transform: func(T) -> U) -> Box<U> {
+    pub func get(self: Self) -> T { self.value }
+    pub func map<U>(self: Self, transform: func(T) -> U) -> Box<U> {
         Box { value: transform(self.value) }
     }
 }
@@ -668,7 +678,7 @@ makes its members available when `T` has the accessible members required by `Cop
 contract value. Bodies can use the required members. Combine requirements with `&`,
 including parameterized contracts, as in `impl Map<K, V & Copy & Display>`.
 No nominal conformance declaration is needed. Parameter types, ownership modes,
-return types (including `self`), effects, and suspension must match the requirements.
+return types (including `Self`), effects, and suspension must match the requirements.
 Constraints also apply to associated functions and function values. They do not
 introduce specialization priority: otherwise identical signatures remain duplicates.
 A conditional member cannot fulfill an unconditional requirement for all type arguments.
@@ -743,7 +753,7 @@ enum Foo = Bar(String)
     | What
     & SomeContract
     & {
-        pub func describe(self) -> String
+        pub func describe(self: Self) -> String
     }
 ```
 
@@ -751,7 +761,7 @@ The trailing intersection applies to the enum value itself, independent of which
 it. Consequently, every `Foo` value satisfies `SomeContract` and provides `describe`. The defining
 module implements a shared requirement with an
 ordinary instance function whose receiver is the enum type, such as
-`func describe(self) -> String` inside `impl Foo { ... }`. Its body may branch on `self` when cases need
+`func describe(self: Self) -> String` inside `impl Foo { ... }`. Its body may branch on `self` when cases need
 different behavior. An enum can be structurally adapted to the method-only contracts it satisfies,
 and calls through such a contract dispatch to the original enum value.
 
@@ -918,7 +928,7 @@ shift, and arithmetic operators. Parentheses can make a different grouping expli
 ## Futures and subprocesses
 
 `Future<T>` names the structural contract in `core.future`: a public, consuming
-`resolve(self) -> T [consume self, suspend]` method. Compose it using
+`resolve(self: Self) -> T [consume self, suspend]` method. Compose it using
 `type Task = & Future<Int> & { ... }`, accept `Future<Int>` as a parameter, or use
 it as a generic constraint. `await task` consumes the receiver and calls its
 `resolve()` implementation. An immediately ready implementation may omit `suspend`.
@@ -946,7 +956,7 @@ and `core.remote_error` to name these variants. Domain Result errors remain insi
 
 ```foster
 impl Counter {
-    func increment(self, amount: Int) -> Int {
+    func increment(self: Self, amount: Int) -> Int {
         self.value = self.value + amount
         self.value
     }
@@ -1170,16 +1180,16 @@ overload, the rightmost compatible implementation wins. A method supplied by the
 type's own `impl` block has final precedence:
 
 ```foster
-pub type Bar = { pub func fighter(self) -> Int }
-pub type Monkey = { pub func fighter(self) -> Int }
-impl Bar { pub func fighter(self) -> Int { 1 } }
-impl Monkey { pub func fighter(self) -> Int { 2 } }
+pub type Bar = { pub func fighter(self: Self) -> Int }
+pub type Monkey = { pub func fighter(self: Self) -> Int }
+impl Bar { pub func fighter(self: Self) -> Int { 1 } }
+impl Monkey { pub func fighter(self: Self) -> Int { 2 } }
 type Foo = & Bar & Monkey & {}
 
 func main() -> Int { Foo {}.fighter() } // 2
 ```
 
-An additional declaration such as `pub func fighter(self) -> Int` adds a requirement without
+An additional declaration such as `pub func fighter(self: Self) -> Int` adds a requirement without
 replacing an existing body. Distinct overloads remain available; precedence selects between
 implementations with the same parameter signature. Overlapping fields must retain compatible
 types, and overlapping implementations must preserve return types, ownership modes, visibility,
@@ -1209,11 +1219,11 @@ import core.option
 
 
 pub type Iterator<T> = {
-    pub func next(self) -> Option<T> [mut self]
+    pub func next(self: Self) -> Option<T> [mut self]
 }
 
 pub type Iterable<T> = {
-    pub func iterator(self) -> Iterator<T>
+    pub func iterator(self: Self) -> Iterator<T>
 }
 ```
 
@@ -1297,7 +1307,7 @@ concrete identifier kind instead of erasing it:
 
 ```foster
 pub type ResourceIdentifier = {
-    pub func resource_id(self) -> String [read self]
+    pub func resource_id(self: Self) -> String [read self]
 }
 
 pub type Resource<L> = {
@@ -1325,12 +1335,12 @@ Stateful, positioned stream behavior remains expressed with generic structural c
 
 ```foster
 pub type Reader<E> = {
-    pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
+    pub func read(self: Self, maximum: Int) -> Result<Bytes, E> [mut self]
 }
 
 pub type Writer<E> = {
-    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
-    pub func flush(self) -> Result<(), E> [mut self]
+    pub func write(self: Self, contents: Bytes) -> Result<Int, E> [mut self]
+    pub func flush(self: Self) -> Result<(), E> [mut self]
 }
 ```
 
@@ -1350,15 +1360,15 @@ borrow behavior.
 
 ```foster
 pub type Equality<T> = {
-    pub func equal?(self, other: T) -> Bool
+    pub func equal?(self: Self, other: T) -> Bool
 }
 
 pub type Ordered<T> = & Equality<T> & {
-    pub func compare(self, other: T) -> Ordering
+    pub func compare(self: Self, other: T) -> Ordering
 }
 
 pub type Hashing = {
-    pub func hash(self) -> Int
+    pub func hash(self: Self) -> Int
 }
 ```
 
@@ -1437,8 +1447,8 @@ enqueue(move pending_job)
 ```
 
 Explicit user-defined copying is available through `core.copy.Copy`, whose method is
-`func copy(self) -> self`. The return type `self` means the concrete receiver type. The separate
-`core.drop.Drop` contract declares `func deinit(self) -> ()`, called automatically at ownership
+`func copy(self: Self) -> Self`. The return type `Self` means the concrete receiver type. The separate
+`core.drop.Drop` contract declares `func deinit(self: Self) -> ()`, called automatically at ownership
 end before child values are released. Copies create independent owners; moves transfer ownership
 and its cleanup obligation. Neither protocol changes implicit scalar copy classification.
 
@@ -1486,7 +1496,7 @@ and VM lowering retain the contract without source-level suffixes:
 
 ```foster
 impl Inventory {
-    func restock(self, amount: Int) -> Int {
+    func restock(self: Self, amount: Int) -> Int {
         self.count = self.count + amount
         self.count
     }

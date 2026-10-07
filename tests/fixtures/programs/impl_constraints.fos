@@ -7,7 +7,7 @@ pub type Item = {
 }
 
 impl Item {
-    pub func copy(self) -> self [read self] {
+    pub func copy(self: Self) -> Self [read self] {
         Item {
             value: self.value
         }
@@ -19,7 +19,7 @@ type Box<T> = {
 }
 
 impl Box<T & Copy> {
-    func copied(self) -> T [read self] {
+    func copied(self: Self) -> T [read self] {
         self.value.copy()
     }
 }

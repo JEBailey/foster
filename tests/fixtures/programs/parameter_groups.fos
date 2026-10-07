@@ -24,7 +24,7 @@ func element(list_people: List<Person>) -> Option<ref[list_people] Person> {
 }
 type Reader = {}
 impl Reader {
-    func from_argument(self, person: Person) -> ref[person] Person {
+    func from_argument(self: Self, person: Person) -> ref[person] Person {
         ref person
     }
 }

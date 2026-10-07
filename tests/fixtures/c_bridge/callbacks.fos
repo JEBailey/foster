@@ -2,7 +2,7 @@ pub type Counter = {
     count: Int, seen: List<Int>
 }
 impl Counter {
-    pub func visit(self, value: Int) -> Int [mut self.count, reshape self.seen] {
+    pub func visit(self: Self, value: Int) -> Int [mut self.count, reshape self.seen] {
         let active = branch live() {
             Result.Ok(value) -> value Result.Error(error) -> panic(error.message)
         }
@@ -12,12 +12,12 @@ impl Counter {
         self.count = self.count + value
         self.count
     }
-    func deinit(self) -> () {
+    func deinit(self: Self) -> () {
         branch note_drop(self.count) {
             Result.Ok(_) -> () Result.Error(error) -> panic(error.message)
         }
     }
-    pub func event(self, value: Int) -> () [mut self.count, reshape self.seen] {
+    pub func event(self: Self, value: Int) -> () [mut self.count, reshape self.seen] {
         self.seen.push(value)
         assert(self.seen[0] == 20, "queued managed state")
         self.count = self.count + value
@@ -26,13 +26,13 @@ impl Counter {
 }
 pub type Broken = {}
 impl Broken {
-    pub func visit(self, value: Int) -> Int {
+    pub func visit(self: Self, value: Int) -> Int {
         panic("callback failure")
     }
 }
 pub type TooLarge = {}
 impl TooLarge {
-    pub func visit(self, value: Int) -> Int {
+    pub func visit(self: Self, value: Int) -> Int {
         2147483648
     }
 }

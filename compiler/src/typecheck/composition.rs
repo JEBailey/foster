@@ -676,12 +676,15 @@ impl Checker<'_> {
                 owner_name, requirement.name
             )));
         };
-        if !requirement.receiver || receiver.ty.is_some() {
+        if !requirement.receiver
+            || !matches!(receiver.ty.as_ref(), Some(crate::ast::TypeExpr::Named(name, arguments)) if name == "Self" && arguments.is_empty())
+        {
             return Err(FosterError::runtime(format!(
-                "required method `{}.{}` must begin with an untyped `self` parameter",
+                "required method `{}.{}` must begin with `self: Self`",
                 owner_name, requirement.name
             )));
         }
+        generics.insert("Self".into(), Ty::Generic("$receiver".into()));
         let parameters = requirement
             .parameters
             .iter()
@@ -694,6 +697,12 @@ impl Checker<'_> {
                     ))
                 })?;
                 let ty = self.annotation_type(owner_module, annotation, &generics)?;
+                if uses_self_type(annotation) {
+                    return Err(FosterError::runtime(format!(
+                        "required method `{owner_name}.{}` may use Self only for its receiver and result; other parameters need a concrete type or type parameter",
+                        requirement.name
+                    )));
+                }
                 let mode = if requirement.effects.iter().any(|effect| {
                     effect.kind == crate::ast::EffectKind::Consume
                         && effect.target.root == parameter.name
@@ -717,9 +726,7 @@ impl Checker<'_> {
             })
             .collect::<Result<Vec<_>, FosterError>>()?;
         let returns_self = matches!(requirement.return_type.as_ref(),
-            Some(crate::ast::TypeExpr::Named(name, arguments)) if name == "self" && arguments.is_empty());
-        // Only result annotations bind `self`; it is not a user-declared generic.
-        generics.insert("self".into(), Ty::Generic("$receiver".into()));
+            Some(crate::ast::TypeExpr::Named(name, arguments)) if name == "Self" && arguments.is_empty());
         let result = requirement
             .return_type
             .as_ref()

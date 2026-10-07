@@ -109,12 +109,12 @@ type Cursor = {
     data: Bytes, position: Int
 }
 impl Cursor {
-    func peek(self) -> Int {
+    func peek(self: Self) -> Int {
         branch {
             self.position < self.data.length -> self.data[self.position].int _ -> -1
         }
     }
-    func name(self) -> () [read self.data, mut self.position] {
+    func name(self: Self) -> () [read self.data, mut self.position] {
         let count = 0
         branch {
             self.peek() == 60 -> {
@@ -135,7 +135,7 @@ impl Cursor {
         }
         assert(count >= 3, "short zone abbreviation")
     }
-    func clock(self) -> Int [read self.data, mut self.position] {
+    func clock(self: Self) -> Int [read self.data, mut self.position] {
         let start = self.position
         if self.peek() == 43 || self.peek() == 45 self.position = self.position + 1
         while (self.peek() >= 48 && self.peek() <= 57) || self.peek() == 58 {

@@ -837,12 +837,20 @@ func main() { 0 }
 fn discovers_implicit_and_companion_modules() {
     let compilation = foster::check_package(Path::new("tests/fixtures/modules")).unwrap();
     let package = &compilation.package;
-    assert_eq!(package.modules.len(), 18);
+    // The checked-in documentation directories also create implicit namespaces.
+    assert_eq!(package.modules.len(), 20);
     assert_eq!(package.explicit_module_count(), 15);
-    assert_eq!(package.implicit_module_count(), 3);
-    assert_eq!(package.input_module_count(), 6);
+    assert_eq!(package.implicit_module_count(), 5);
+    assert_eq!(package.input_module_count(), 8);
     assert_eq!(package.input_explicit_module_count(), 4);
-    assert_eq!(package.input_implicit_module_count(), 2);
+    assert_eq!(package.input_implicit_module_count(), 4);
+    assert!(package.module("documentation").unwrap().is_implicit());
+    assert!(
+        package
+            .module("documentation.modules")
+            .unwrap()
+            .is_implicit()
+    );
     assert!(!package.module("json").unwrap().is_implicit());
     assert!(package.module("json").unwrap().is_input());
     assert!(!package.module("core.bytes").unwrap().is_input());
@@ -3016,7 +3024,7 @@ fn arithmetic_failure_cleans_staged_arguments_before_invocation() {
     let source = r#"
 type Receiver = {}
 impl Receiver {
-    func receive(self, value: String, number: Int) -> Int [consume self, consume value] { number }
+    func receive(self: Self, value: String, number: Int) -> Int [consume self, consume value] { number }
 }
 func checked(borrowed: String, numerator: Int, denominator: Int) -> Int {
     let owned = "owned"
@@ -3072,7 +3080,7 @@ fn bounds_failures_have_cleanup_edges_before_transfer_and_result_initialization(
         r#"
 type Receiver = {}
 impl Receiver {
-    func receive(self, value: String, number: Int) -> Int [consume self, consume value] { number }
+    func receive(self: Self, value: String, number: Int) -> Int [consume self, consume value] { number }
 }
 func checked(borrowed: List<Int>, index: Int) -> Int {
     let owned = "owned"
@@ -3144,10 +3152,10 @@ func main() -> Int { checked([42], 0) }
 fn ownership_mir_distinguishes_abrupt_host_failures_from_result_errors() {
     use foster::intrinsics::Builtin;
     use foster::ownership::{FailureOperation, Terminator};
-    let compilation = foster::compile(
-        "import std.fs\nimport std.fs.*\nimport static std.fs.*\nimport std.time\nimport std.time.*\nimport static std.time.*\nimport std.net.tcp\nimport std.net.tcp.*\nimport static std.net.tcp.*\nfunc main() -> Int { 0 }",
-    )
-    .unwrap();
+    // Inspect the source implementations: imported bundles retain execution
+    // contracts but do not materialize library bodies in the consumer's MIR.
+    let compilation =
+        foster::check_package(Path::new(env!("CARGO_MANIFEST_DIR")).join("library")).unwrap();
     let mut hosts = Vec::new();
     for function in compilation.ownership.functions.values() {
         for block in &function.blocks {
@@ -3234,7 +3242,7 @@ import core.result.*
 import static core.result.*
 
 type Worker = {}
-impl Worker { func value(self) -> Int { 42 } }
+impl Worker { func value(self: Self) -> Int { 42 } }
 func main() -> Int {
     let worker = remote Worker {}
     await worker.value()

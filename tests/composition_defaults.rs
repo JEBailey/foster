@@ -15,7 +15,7 @@ fn rightmost_defaults_and_local_implementations_win() {
 fn conflicting_fields_and_return_types_are_rejected() {
     for source in [
         "type A = { pub value: Int } type B = { pub value: String } type C = & A & B & {} func main() {}",
-        "pub type A = {} pub type B = {} impl A { pub func value(self) -> Int { 1 } } impl B { pub func value(self) -> String { \"bad\" } } type C = & A & B & {} func main() { C {}.value() }",
+        "pub type A = {} pub type B = {} impl A { pub func value(self: Self) -> Int { 1 } } impl B { pub func value(self: Self) -> String { \"bad\" } } type C = & A & B & {} func main() { C {}.value() }",
     ] {
         let error = foster::compile(source).unwrap_err().to_string();
         assert!(error.contains("incompatible"), "{error}");
@@ -35,14 +35,14 @@ fn defaults_specialize_generics_and_preserve_overloads() {
 #[test]
 fn incompatible_effects_and_ownership_are_rejected() {
     for implementation in [
-        "pub func action(self, value: Int) -> Int [mut self.value] { self.value = value\nself.value }",
-        "pub func action(self, value: Int) -> Int [consume value] { value }",
+        "pub func action(self: Self, value: Int) -> Int [mut self.value] { self.value = value\nself.value }",
+        "pub func action(self: Self, value: Int) -> Int [consume value] { value }",
     ] {
         let source = format!(
             r#"
 pub type A = {{ pub value: Int }}
 pub type B = {{ pub value: Int }}
-impl A {{ pub func action(self, value: Int) -> Int [read self.value, read value] {{ self.value + value }} }}
+impl A {{ pub func action(self: Self, value: Int) -> Int [read self.value, read value] {{ self.value + value }} }}
 impl B {{ {implementation} }}
 type C = & A & B & {{}}
 func main() {{ C {{ value: 1 }}.action(2) }}
@@ -64,10 +64,10 @@ fn defaults_keep_lexical_scope_across_modules() {
 fn a_purer_default_does_not_narrow_a_declared_contract() {
     assert_eq!(
         run(r#"
-pub type A = { pub value: Int, pub func get(self) -> Int [read self] }
-pub type B = { pub value: Int, pub func get(self) -> Int [read self] }
-impl A { pub func get(self) -> Int { 0 } }
-impl B { pub func get(self) -> Int { self.value } }
+pub type A = { pub value: Int, pub func get(self: Self) -> Int [read self] }
+pub type B = { pub value: Int, pub func get(self: Self) -> Int [read self] }
+impl A { pub func get(self: Self) -> Int { 0 } }
+impl B { pub func get(self: Self) -> Int { self.value } }
 type C = & A & B & {}
 func main() -> Int { C { value: 42 }.get() }
 "#),

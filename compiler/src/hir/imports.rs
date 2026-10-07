@@ -320,7 +320,7 @@ mod tests {
             Some(crate::parse(&format!("{imports}\nfunc main() -> Int {{ {body} }}")).unwrap());
         package.modules.insert("items".into(), Module {
             name: "items".into(), source_path: None, source: None, origin: ModuleOrigin::Dependency,
-            program: Some(crate::parse("pub type Foo = { pub value: Int }\npub type Foo.Child = { pub value: Int }\ntype Hidden = {}\npub const ANSWER = 42\npub const Foo.ANSWER = 42\npub enum Foo.Choice = Value(Int) | Empty\nimpl Foo.Child { pub func create() -> Foo::Child { Foo.Child { value: 42 } } }\npub func answer() -> Int { 42 }\nimpl Foo {\npub func create() -> Foo { Foo { value: 42 } }\npub func read(self) -> Int [read self] { self.value }\n}\n").unwrap()),
+            program: Some(crate::parse("pub type Foo = { pub value: Int }\npub type Foo.Child = { pub value: Int }\ntype Hidden = {}\npub const ANSWER = 42\npub const Foo.ANSWER = 42\npub enum Foo.Choice = Value(Int) | Empty\nimpl Foo.Child { pub func create() -> Foo::Child { Foo.Child { value: 42 } } }\npub func answer() -> Int { 42 }\nimpl Foo {\npub func create() -> Foo { Foo { value: 42 } }\npub func read(self: Self) -> Int [read self] { self.value }\n}\n").unwrap()),
         });
         compiler::check(package)
     }

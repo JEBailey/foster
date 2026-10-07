@@ -163,7 +163,7 @@ impl Pair<
     , U
 > {
     func pick(
-        self
+        self: Self
         , input: T
     ) -> T [
         read self
@@ -175,7 +175,7 @@ type Contract = {
         T
         , U
     > (
-        self
+        self: Self
         , value: Pair<
             T
             , U

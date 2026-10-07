@@ -12,8 +12,8 @@ import std.iter.Iterable
 /// cursor over the collection's read-only value view.
 pub type Collection<T> = & Iterable<T> & {
     /// Returns the number of elements in this collection.
-    pub func length(self) -> Int
+    pub func length(self: Self) -> Int
 
     /// Returns whether this collection contains no elements.
-    pub func empty?(self) -> Bool
+    pub func empty?(self: Self) -> Bool
 }

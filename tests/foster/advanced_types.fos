@@ -17,7 +17,7 @@ type Profile = {
 }
 
 type Scored = {
-    pub func score(self) -> Int
+    pub func score(self: Self) -> Int
 }
 
 enum ScoredChoice = Number(Int)
@@ -54,7 +54,9 @@ test "enum alternatives use explicit case construction" {
 }
 
 test "records adapt structurally to public field contracts" {
-    let profile = Profile { name: "Jason", location: "Boston", email: "jason@example.com" }
+    let profile = Profile {
+        name: "Jason", location: "Boston", email: "jason@example.com"
+    }
     assert(name_size(profile) * 100 + label_size(profile) == 511)
 }
 

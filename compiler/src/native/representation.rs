@@ -133,7 +133,7 @@ pub(super) fn native_type(
             record,
             ref arguments,
         } if Some(record) == compilation.types.core.list && arguments.len() == 1 => {
-            let element = specialized_executable_type(compilation, arguments[0], substitutions, 1)?;
+            let element = aggregate_argument_type(compilation, arguments[0], substitutions)?;
             let concrete = crate::codegen::types::ExecutableType::List(Box::new(element));
             layouts.instantiate_type(&concrete)?;
             layouts
@@ -147,7 +147,7 @@ pub(super) fn native_type(
         } => {
             let arguments = arguments
                 .iter()
-                .map(|ty| specialized_executable_type(compilation, *ty, substitutions, 1))
+                .map(|ty| aggregate_argument_type(compilation, *ty, substitutions))
                 .collect::<Result<Vec<_>, _>>()?;
             let concrete = crate::codegen::types::ExecutableType::Record {
                 record,
@@ -179,7 +179,7 @@ pub(super) fn native_type(
         } => {
             let arguments = arguments
                 .iter()
-                .map(|ty| specialized_executable_type(compilation, *ty, substitutions, 1))
+                .map(|ty| aggregate_argument_type(compilation, *ty, substitutions))
                 .collect::<Result<Vec<_>, _>>()?;
             let concrete = crate::codegen::types::ExecutableType::Variant {
                 variant,
@@ -208,6 +208,27 @@ pub(super) fn native_type(
             compilation.types.display(ty)
         ))
         .with_help("use `foster build` without `--native` for the complete VM language")),
+    }
+}
+
+// Aggregate constructors retain the shared schema's payload identities. Their ABI
+// must use those same arguments, including a concrete Self in an inherited default;
+// erasing a nested contract here would select a different aggregate layout.
+fn aggregate_argument_type(
+    compilation: &Compilation,
+    ty: TypeId,
+    substitutions: &crate::codegen::types::Specialization,
+) -> Result<crate::codegen::types::ExecutableType, FosterError> {
+    specialized_executable_type(compilation, ty, substitutions, 1)?;
+    match crate::codegen::type_conversion::convert::<crate::codegen::type_conversion::Bytecode>(
+        &compilation.hir,
+        &compilation.types,
+        ty,
+        substitutions,
+        0,
+    ) {
+        Ok(ty) => Ok(ty),
+        Err(never) => match never {},
     }
 }
 

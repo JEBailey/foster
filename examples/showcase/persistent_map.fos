@@ -14,7 +14,9 @@ enum Lookup = Found(Int)
 
 impl Map {
     pub func empty() -> Map {
-        Map { entries: [] }
+        Map {
+            entries: []
+        }
     }
 }
 
@@ -27,22 +29,28 @@ func lookup_entries(entries: List<Entry>, key: Symbol) -> Lookup {
 }
 
 impl Map {
-    func lookup(self, key: Symbol) -> Lookup {
+    func lookup(self: Self, key: Symbol) -> Lookup {
         lookup_entries(self.entries, key)
     }
 }
 
 func put_entries(entries: List<Entry>, key: Symbol, value: Int) -> List<Entry> {
     branch {
-        entries.empty? -> [Entry { key, value }]
-        entries.head.key == key -> entries.rest.append(Entry { key, value })
+        entries.empty? -> [Entry {
+            key, value
+        }]
+        entries.head.key == key -> entries.rest.append(Entry {
+            key, value
+        })
         _ -> put_entries(entries.rest, key, value).append(entries.head)
     }
 }
 
 impl Map {
-    func put(self, key: Symbol, value: Int) -> Map {
-        Map { entries: put_entries(move self.entries, key, value) }
+    func put(self: Self, key: Symbol, value: Int) -> Map {
+        Map {
+            entries: put_entries(move self.entries, key, value)
+        }
     }
 }
 

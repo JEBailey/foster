@@ -120,13 +120,13 @@ import std.path.*
 import static std.path.*
 type Memory = & FileProvider<Bytes> & NetworkProvider<Int, Int> & {}
 impl Memory {
-    func file(self, location: paths::Path) -> Result<Bytes, IoError> [read self, consume location] {
+    func file(self: Self, location: paths::Path) -> Result<Bytes, IoError> [read self, consume location] {
         Result.Ok(location.as_string().bytes)
     }
-    func connect(self, address: String, port: Int) -> Result<Int, NetworkError> [read self, consume address] {
+    func connect(self: Self, address: String, port: Int) -> Result<Int, NetworkError> [read self, consume address] {
         Result.Ok(port)
     }
-    func listen(self, address: String, port: Int) -> Result<Int, NetworkError> [read self, consume address] {
+    func listen(self: Self, address: String, port: Int) -> Result<Int, NetworkError> [read self, consume address] {
         Result.Ok(port + 1)
     }
 }

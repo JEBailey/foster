@@ -497,7 +497,8 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
 
 pub(super) fn definition_location(builtin: Builtin) -> Option<Location> {
     let info = info(builtin);
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../documentation/core-library.md");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("documentation/core-library.md");
     let source = fs::read_to_string(&path).ok()?;
     let marker = format!("`{}`", info.name);
     let marker_start = source.find(&marker)?;

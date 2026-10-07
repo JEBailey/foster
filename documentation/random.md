@@ -59,8 +59,8 @@ modulo bias and draw again.
 
 ```foster
 pub type RandomSource = {
-    pub func next(self) -> Result<Int, RandomError> [mut self]
-    pub func maximum(self) -> Int
+    pub func next(self: Self) -> Result<Int, RandomError> [mut self]
+    pub func maximum(self: Self) -> Int
 }
 ```
 
@@ -182,6 +182,12 @@ func weighted_choice() -> Result<Int, RandomError> {
 `UniformFloat` maps one discrete source draw into a binary64 interval. It guarantees the documented
 bounds, not a continuous mathematical distribution or every representable float with equal
 probability.
+
+Finite opposite-sign bounds are interpolated without forming an overflowing width.
+Binary64 rounding is corrected to keep samples inside the half-open interval, even
+when the bounds are adjacent representable values. Large source capacities cannot
+round a unit sample up to `1.0`; the largest rounded unit sample is the binary64
+value immediately below one. The same unit conversion is used by `Bernoulli`.
 
 ## Security-oriented randomness
 

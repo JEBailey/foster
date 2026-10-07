@@ -5,6 +5,7 @@
 //! `RandomSource`, allowing repeatable sampling with a seeded generator.
 
 import core.int.Int
+import core.float
 
 import core.result.Result
 
@@ -17,7 +18,7 @@ import std.random.generator.LehmerRandom
 /// A typed distribution which transforms uniform source values into samples.
 pub type Distribution<T> = {
     /// Draws one value while advancing `source`.
-    pub func sample(self, source: RandomSource) -> Result<T, RandomError> [read self, mut source]
+    pub func sample(self: Self, source: RandomSource) -> Result<T, RandomError> [read self, mut source]
 }
 
 /// A uniform integer distribution over one half-open range.
@@ -27,9 +28,9 @@ pub type UniformInt = & Distribution<Int> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the inclusive lower bound.
-    pub func start(self) -> Int [read self.start_value]
+    pub func start(self: Self) -> Int [read self.start_value]
     /// Returns the exclusive upper bound.
-    pub func end(self) -> Int [read self.end_value]
+    pub func end(self: Self) -> Int [read self.end_value]
 }
 
 impl UniformInt {
@@ -42,17 +43,17 @@ impl UniformInt {
     }
 
     /// Returns the inclusive lower bound.
-    pub func start(self) -> Int {
+    pub func start(self: Self) -> Int {
         self.start_value
     }
 
     /// Returns the exclusive upper bound.
-    pub func end(self) -> Int {
+    pub func end(self: Self) -> Int {
         self.end_value
     }
 
     /// Draws one uniformly distributed integer in this distribution's range.
-    pub func sample(self, source: RandomSource) -> Result<Int, RandomError> [read self(start_value, end_value), mut source] {
+    pub func sample(self: Self, source: RandomSource) -> Result<Int, RandomError> [read self(start_value, end_value), mut source] {
         random::between_with(source, self.start_value, self.end_value)
     }
 }
@@ -64,9 +65,9 @@ pub type UniformFloat = & Distribution<Float> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the inclusive floating-point lower bound.
-    pub func start(self) -> Float [read self.start_value]
+    pub func start(self: Self) -> Float [read self.start_value]
     /// Returns the exclusive floating-point upper bound.
-    pub func end(self) -> Float [read self.end_value]
+    pub func end(self: Self) -> Float [read self.end_value]
 }
 
 impl UniformFloat {
@@ -79,21 +80,27 @@ impl UniformFloat {
     }
 
     /// Returns the inclusive floating-point lower bound.
-    pub func start(self) -> Float {
+    pub func start(self: Self) -> Float {
         self.start_value
     }
 
     /// Returns the exclusive floating-point upper bound.
-    pub func end(self) -> Float {
+    pub func end(self: Self) -> Float {
         self.end_value
     }
 
     /// Draws one uniformly distributed floating-point value in this distribution's range.
-    pub func sample(self, source: RandomSource) -> Result<Float, RandomError> [read self(start_value, end_value), mut source] {
+    /// Binary64 rounding is bounded to `[start, end)`, including adjacent finite bounds.
+    pub func sample(self: Self, source: RandomSource) -> Result<Float, RandomError> [read self(start_value, end_value), mut source] {
         let capacity = try source_capacity(source, "uniform_float")
         let raw = try random::below_with(source, capacity)
-        let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
-        Result.Ok(self.start_value + (self.end_value - self.start_value) * unit)
+        let unit = unit_sample(raw, capacity)
+        let value = interpolate(self.start_value, self.end_value, unit)
+        Result.Ok(branch {
+            value < self.start_value -> self.start_value
+            value >= self.end_value -> below_endpoint(self.start_value, self.end_value)
+            _ -> value
+        })
     }
 }
 
@@ -103,7 +110,7 @@ pub type Bernoulli = & Distribution<Bool> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the probability of drawing true.
-    pub func probability(self) -> Float [read self.probability_value]
+    pub func probability(self: Self) -> Float [read self.probability_value]
 }
 
 impl Bernoulli {
@@ -116,17 +123,17 @@ impl Bernoulli {
     }
 
     /// Returns the probability of drawing true.
-    pub func probability(self) -> Float {
+    pub func probability(self: Self) -> Float {
         self.probability_value
     }
 
     /// Draws one Boolean with the configured probability of true.
-    pub func sample(self, source: RandomSource) -> Result<Bool, RandomError> [read self.probability_value, mut source] {
+    pub func sample(self: Self, source: RandomSource) -> Result<Bool, RandomError> [read self.probability_value, mut source] {
         return Result.Ok(false) if self.probability_value == 0.0
         return Result.Ok(true) if self.probability_value == 1.0
         let capacity = try source_capacity(source, "bernoulli")
         let raw = try random::below_with(source, capacity)
-        let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
+        let unit = unit_sample(raw, capacity)
         Result.Ok(unit < self.probability_value)
     }
 }
@@ -138,9 +145,9 @@ pub type WeightedIndex = & Distribution<Int> & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the number of weighted outcomes.
-    pub func length(self) -> Int [read self.weights_value]
+    pub func length(self: Self) -> Int [read self.weights_value]
     /// Returns the sum of all configured weights.
-    pub func total(self) -> Int [read self.total_value]
+    pub func total(self: Self) -> Int [read self.total_value]
 }
 
 impl WeightedIndex {
@@ -154,20 +161,50 @@ impl WeightedIndex {
     }
 
     /// Returns the number of weighted outcomes.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.weights_value.length
     }
 
     /// Returns the sum of all configured weights.
-    pub func total(self) -> Int {
+    pub func total(self: Self) -> Int {
         self.total_value
     }
 
     /// Draws one index in proportion to its configured weight.
-    pub func sample(self, source: RandomSource) -> Result<Int, RandomError> [read self(weights_value, total_value), mut source] {
+    pub func sample(self: Self, source: RandomSource) -> Result<Int, RandomError> [read self(weights_value, total_value), mut source] {
         let target = try random::below_with(source, self.total_value)
         Result.Ok(weighted_index(self.weights_value, target, 0, 0))
     }
+}
+
+/// Converts one discrete draw to `[0, 1)`, correcting rounding at large capacities.
+func unit_sample(raw: Int, capacity: Int) -> Float {
+    let unit = Float.from(raw) / Float.from(capacity)
+    branch {
+        unit >= 1.0 -> 0.9999999999999999
+        _ -> unit
+    }
+}
+
+/// Interpolates finite ordered bounds without overflowing an opposite-sign width.
+func interpolate(start: Float, end: Float, unit: Float) -> Float {
+    branch {
+        start < 0.0 && end > 0.0 -> start * (1.0 - unit) + end * unit
+        _ -> start + (end - start) * unit
+    }
+}
+
+/// Finds the last representable value below `end` when interpolation rounds up to it.
+/// Bisection terminates when no binary64 midpoint remains between the bounds.
+func below_endpoint(start: Float, end: Float) -> Float {
+    let lower = start
+    let upper = end
+    loop {
+        let middle = interpolate(lower, upper, 0.5)
+        return lower if middle <= lower || middle >= upper
+        lower = middle
+    }
+    lower
 }
 
 /// Accumulates validated weights without exceeding the portable source capacity.

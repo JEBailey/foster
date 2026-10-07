@@ -37,14 +37,14 @@ import std.iter.Iterator
 /// Validation rejects invalid offsets but cannot detect an offset from another source.
 pub type Cursor<T> = & Iterator<T> & {
     /// Reads the current item without advancing.
-    pub func peek(self) -> Option<T> [read self]
+    pub func peek(self: Self) -> Option<T> [read self]
     /// Returns the current source offset.
-    pub func checkpoint(self) -> Int [read self]
+    pub func checkpoint(self: Self) -> Int [read self]
     /// Restores a valid source offset, leaving the position unchanged on failure.
-    pub func restore(self, position: Int) -> Bool [mut self]
+    pub func restore(self: Self, position: Int) -> Bool [mut self]
     /// Copies `[start, end)` without changing the position; invalid bounds return `None`.
     /// Bounds use the source's offset unit, which can differ from the yielded item type.
-    pub func span(self, start: Int, end: Int) -> Option<List<T>> [read self]
+    pub func span(self: Self, start: Int, end: Int) -> Option<List<T>> [read self]
 }
 
 /// A checkpointable list snapshot; reading elements requires their Copy capability.
@@ -61,7 +61,7 @@ impl ListCursor<T> {
         }
     }
     /// Reads the current element without advancing.
-    pub func peek(self) -> Option<T> {
+    pub func peek(self: Self) -> Option<T> {
         branch {
             self.offset >= self.values.length -> Option.None
             _ -> branch self.values.at(self.offset) {
@@ -72,24 +72,24 @@ impl ListCursor<T> {
         }
     }
     /// Reads one element and advances, remaining exhausted at the end.
-    pub func next(self) -> Option<T> {
+    pub func next(self: Self) -> Option<T> {
         let value = self.peek()
         if self.offset < self.values.length self.offset = self.offset + 1
         value
     }
     /// Returns the current element offset.
-    pub func checkpoint(self) -> Int {
+    pub func checkpoint(self: Self) -> Int {
         self.offset
     }
     /// Restores an element offset in `[0, length]`, including the exhausted position.
     /// Returns false without moving for an out-of-range offset.
-    pub func restore(self, position: Int) -> Bool {
+    pub func restore(self: Self, position: Int) -> Bool {
         return false if position < 0 || position > self.values.length
         self.offset = position
         true
     }
     /// Copies a valid element range.
-    pub func span(self, start: Int, end: Int) -> Option<List<T>> {
+    pub func span(self: Self, start: Int, end: Int) -> Option<List<T>> {
         return Option.None if start < 0 || end < start || end > self.values.length
         Option.Some(self.values.slice(start, end))
     }
@@ -101,7 +101,7 @@ pub type BytesCursor = & Cursor<Byte> & {
     offset: Int
 
     /// Copies a valid byte range without changing the current position.
-    pub func byte_span(self, start: Int, end: Int) -> Option<Bytes> [read self]
+    pub func byte_span(self: Self, start: Int, end: Int) -> Option<Bytes> [read self]
 }
 impl BytesCursor {
     /// Takes ownership of a byte snapshot.
@@ -111,31 +111,31 @@ impl BytesCursor {
         }
     }
     /// Reads the current byte without advancing.
-    pub func peek(self) -> Option<Byte> {
+    pub func peek(self: Self) -> Option<Byte> {
         branch {
             self.offset >= self.data.length -> Option.None
             _ -> Option.Some(self.data[self.offset])
         }
     }
     /// Reads one byte and advances.
-    pub func next(self) -> Option<Byte> {
+    pub func next(self: Self) -> Option<Byte> {
         let value = self.peek()
         if self.offset < self.data.length self.offset = self.offset + 1
         value
     }
     /// Returns the byte offset.
-    pub func checkpoint(self) -> Int {
+    pub func checkpoint(self: Self) -> Int {
         self.offset
     }
     /// Restores a byte offset in `[0, length]`, including the exhausted position.
     /// Returns false without moving for an out-of-range offset.
-    pub func restore(self, position: Int) -> Bool {
+    pub func restore(self: Self, position: Int) -> Bool {
         return false if position < 0 || position > self.data.length
         self.offset = position
         true
     }
     /// Copies the bytes in a valid range into an item list.
-    pub func span(self, start: Int, end: Int) -> Option<List<Byte>> {
+    pub func span(self: Self, start: Int, end: Int) -> Option<List<Byte>> {
         return Option.None if start < 0 || end < start || end > self.data.length
         let values = []
         let index = start
@@ -146,7 +146,7 @@ impl BytesCursor {
         Option.Some(values)
     }
     /// Copies a valid byte range.
-    pub func byte_span(self, start: Int, end: Int) -> Option<Bytes> {
+    pub func byte_span(self: Self, start: Int, end: Int) -> Option<Bytes> {
         return Option.None if start < 0 || end < start || end > self.data.length
         Option.Some(self.data.slice(start, end))
     }

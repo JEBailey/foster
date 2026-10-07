@@ -31,13 +31,13 @@ type Reader = {
     values: List<String>, offset: Int
 }
 impl Reader {
-    func take(self) -> String {
+    func take(self: Self) -> String {
         assert(self.offset < self.values.length, "incomplete documentation data")
         let text = self.values[self.offset].copy()
         self.offset = self.offset + 1
         text
     }
-    func number(self) -> Int {
+    func number(self: Self) -> Int {
         let text = self.take()
         assert(!text.empty?, "missing documentation count")
         let value = 0
@@ -48,12 +48,12 @@ impl Reader {
         }
         value
     }
-    func flag(self) -> Bool {
+    func flag(self: Self) -> Bool {
         let value = self.take()
         assert(value == "0" || value == "1", "invalid documentation flag")
         value == "1"
     }
-    func optional(self) -> Option<String> {
+    func optional(self: Self) -> Option<String> {
         branch {
             self.flag() -> Option.Some(self.take()) _ -> Option.None
         }
@@ -64,7 +64,7 @@ type ModulePage = {
     file_name: String, html: String
 }
 impl ModulePage {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         ModulePage {
             file_name: self.file_name.copy(), html: self.html.copy()
         }
@@ -74,7 +74,7 @@ type Entry = {
     name: String, file_name: String, count: Int
 }
 impl Entry {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         Entry {
             name: self.name.copy(), file_name: self.file_name.copy(), count: self.count
         }

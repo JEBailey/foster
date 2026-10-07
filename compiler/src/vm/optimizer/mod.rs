@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn direct_and_contract_calls_preserve_receiver_storage() {
         let compilation = crate::compile(
-            "type Probe = { func done(self) -> Bool }
+            "type Probe = { func done(self: Self) -> Bool }
              type Counter = & Probe & { value: Int }
              impl Counter { func done(self: Counter) -> Bool { false } }
              func check(value: Probe) -> Bool { value.done() }

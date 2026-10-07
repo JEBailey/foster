@@ -36,21 +36,21 @@ pub type Path = & ResourceIdentifier & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the host path text.
-    pub func as_string(self) -> String [read self.value]
+    pub func as_string(self: Self) -> String [read self.value]
     /// Joins this path with another typed path.
-    pub func join(self, right: Path) -> Path [read right.value, read self.value]
+    pub func join(self: Self, right: Path) -> Path [read right.value, read self.value]
     /// Joins one textual path component onto this path.
-    pub func child(self, component: String) -> Path [read component, read self.value]
+    pub func child(self: Self, component: String) -> Path [read component, read self.value]
     /// Returns this path's parent, or `None` when no parent component exists.
-    pub func parent(self) -> Option<Path> [read self.value]
+    pub func parent(self: Self) -> Option<Path> [read self.value]
     /// Returns this path's final component, or `None` when it is absent.
-    pub func file_name(self) -> Option<String> [read self.value]
+    pub func file_name(self: Self) -> Option<String> [read self.value]
     /// Returns this path's final extension without its separator.
-    pub func extension(self) -> Option<String> [read self.value]
+    pub func extension(self: Self) -> Option<String> [read self.value]
     /// Resolves this path through the filesystem to an absolute canonical path.
     /// The path must be resolvable; missing paths and host failures return `IoError`.
     /// Use lexical composition when the destination does not exist yet.
-    pub func canonical(self) -> Result<Path, IoError> [read self.value]
+    pub func canonical(self: Self) -> Result<Path, IoError> [read self.value]
 }
 
 impl Path {
@@ -62,44 +62,44 @@ impl Path {
     }
 
     /// Returns the host path text.
-    pub func as_string(self) -> String {
+    pub func as_string(self: Self) -> String {
         self.value.slice(0, self.value.length)
     }
 
     /// Returns the stable identifier supplied to the filesystem provider.
-    pub func resource_id(self) -> String {
+    pub func resource_id(self: Self) -> String {
         self.as_string()
     }
 
     /// Joins this path with another typed path.
-    pub func join(self, right: Path) -> Path {
+    pub func join(self: Self, right: Path) -> Path {
         Path.from(PathHost.join(self.value, right.value))
     }
 
     /// Joins one textual path component onto this path.
-    pub func child(self, component: String) -> Path {
+    pub func child(self: Self, component: String) -> Path {
         Path.from(PathHost.join(self.value, component))
     }
 
     /// Returns this path's parent, or `None` when no parent component exists.
-    pub func parent(self) -> Option<Path> {
+    pub func parent(self: Self) -> Option<Path> {
         path_option(PathHost.parent(self.value))
     }
 
     /// Returns this path's final component, or `None` when it is absent.
-    pub func file_name(self) -> Option<String> {
+    pub func file_name(self: Self) -> Option<String> {
         optional_component(PathHost.file_name(self.value))
     }
 
     /// Returns this path's final extension without its separator.
-    pub func extension(self) -> Option<String> {
+    pub func extension(self: Self) -> Option<String> {
         optional_component(PathHost.extension(self.value))
     }
 
     /// Resolves this path through the filesystem to an absolute canonical path.
     /// The path must be resolvable; missing paths and host failures return `IoError`.
     /// Use lexical composition when the destination does not exist yet.
-    pub func canonical(self) -> Result<Path, IoError> {
+    pub func canonical(self: Self) -> Result<Path, IoError> {
         path_result(PathHost.canonicalize(self.value))
     }
 }

@@ -434,7 +434,7 @@ import core.result.Result
 import core.remote_error.RemoteError
 type Worker = {}
 impl Worker {
-    func fail(self) -> Int {
+    func fail(self: Self) -> Int {
         assert(false, "remote")
         42
     }

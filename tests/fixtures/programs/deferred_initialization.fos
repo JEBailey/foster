@@ -5,7 +5,7 @@ type Resource = & Drop & {
     id: Int
 }
 impl Resource {
-    func deinit(self) -> () {
+    func deinit(self: Self) -> () {
         println(self.id)
     }
 }
@@ -14,7 +14,7 @@ type Pair = & Drop & {
     first: Resource, second: Resource, number: Int
 }
 impl Pair {
-    func deinit(self) -> () {
+    func deinit(self: Self) -> () {
         println(self.number)
     }
 }

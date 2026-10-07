@@ -21,30 +21,30 @@ type PipelineReport = {
 }
 
 impl ParserWorker {
-    func parse_document(self, source: String) -> ParseResult<Json> {
+    func parse_document(self: Self, source: String) -> ParseResult<Json> {
         parse_json(move source)
     }
 }
 
 impl Statistics {
-    func record_success(self) -> Int {
+    func record_success(self: Self) -> Int {
         self.processed = self.processed + 1
         self.processed
     }
 
-    func record_failure(self) -> Int {
+    func record_failure(self: Self) -> Int {
         self.failed = self.failed + 1
         self.failed
     }
 
-    func record_result(self, result: ParseResult<Json>) -> Int {
+    func record_result(self: Self, result: ParseResult<Json>) -> Int {
         branch result {
             ParseOk(_) -> self.record_success()
             ParseError(_) -> self.record_failure()
         }
     }
 
-    func snapshot(self) -> PipelineReport {
+    func snapshot(self: Self) -> PipelineReport {
         PipelineReport {
             processed: self.processed
             failed: self.failed

@@ -1,0 +1,83 @@
+import core.option.Option
+import core.int
+
+pub type Box<T> = {
+    pub value: T
+}
+impl Box<T> {
+    func new(value: T) -> Self [consume value] {
+        Box {
+            value
+        }
+    }
+    func identity(self: Self) -> Self [consume self] {
+        move self
+    }
+    func borrow(self: ref[self] Self) -> ref[self] Self {
+        ref self
+    }
+}
+
+type Counter = {
+    value: Int
+}
+impl Counter {
+    func new(value: Int) -> Self {
+        Counter {
+            value
+        }
+    }
+    func owned(self: ref[self] Self) -> Self {
+        Counter {
+            value: self.value.copy()
+        }
+    }
+}
+
+pub type Wrapped = {
+    pub func wrap(self: Self) -> Option<Self> [consume self]
+    pub func wrap_twice(self: Self) -> Option<Option<Self>> [consume self]
+    pub func boxed(self: Self) -> Box<Self> [consume self]
+}
+impl Wrapped {
+    pub func wrap(self: Self) -> Option<Self> [consume self] {
+        Option.Some(move self)
+    }
+    pub func wrap_twice(self: Self) -> Option<Option<Self>> [consume self] {
+        Option.Some(Option.Some(move self))
+    }
+    pub func boxed(self: Self) -> Box<Self> [consume self] {
+        Box {
+            value: move self
+        }
+    }
+}
+pub type Item = & Wrapped & {
+    pub value: Int
+}
+
+func main() -> Int {
+    let box = Box.new(20).identity()
+    let borrowed = box.borrow()
+    assert(borrowed.value == 20)
+    let original = Counter.new(21)
+    let copied = original.owned()
+    assert(copied.value == 21 && original.value == 21)
+    let boxed = Item {
+        value: 42
+    }.boxed()
+    assert(boxed.value.value == 42)
+    let nested = Item {
+        value: 42
+    }.wrap_twice()
+    assert(branch nested {
+        Option.Some(Option.Some(item)) -> item.value == 42
+        _ -> false
+    })
+    branch (Item {
+        value: copied.value + 21
+    }.wrap()) {
+        Option.Some(item) -> item.value
+        Option.None -> 0
+    }
+}

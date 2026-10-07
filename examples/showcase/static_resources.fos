@@ -18,7 +18,9 @@ type FileServer = {
 }
 
 func response(status: Int, reason: String, media_type: String, body: String) -> Response {
-    Response { status, reason, media_type, body }
+    Response {
+        status, reason, media_type, body
+    }
 }
 
 func find_file(files: List<File>, path: String) -> Response {
@@ -30,7 +32,7 @@ func find_file(files: List<File>, path: String) -> Response {
 }
 
 impl FileServer {
-    func handle(self, method: String, target: String) -> Response {
+    func handle(self: Self, method: String, target: String) -> Response {
         branch {
             method != "GET" -> response(405, "Method Not Allowed", "text/plain", "method not allowed")
             target == "/../private.txt" -> response(403, "Forbidden", "text/plain", "path escapes document root")
@@ -41,6 +43,12 @@ impl FileServer {
 }
 
 func main() -> Int {
-    let server = FileServer { files: [File { path: "/index.html", media_type: "text/html", body: "<h1>Foster</h1>" }, File { path: "/assets/site.css", media_type: "text/css", body: "body {}" }] }
+    let server = FileServer {
+        files: [File {
+            path: "/index.html", media_type: "text/html", body: "<h1>Foster</h1>"
+        }, File {
+            path: "/assets/site.css", media_type: "text/css", body: "body {}"
+        }]
+    }
     server.handle("GET", "/").status + server.handle("GET", "/missing.txt").status
 }

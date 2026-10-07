@@ -188,7 +188,7 @@ fn privacy_and_method_access_are_not_bypassed() {
     let error =
         foster::compile("func main() -> Int { let { value } = \"private\"\n42 }").unwrap_err();
     assert!(error.message.contains("private"), "{error}");
-    let error = foster::compile("type P = { x: Int }\nimpl P { func value(self) -> Int { self.x } }\nfunc main() -> Int { let { value } = P { x: 42 }\nvalue }").unwrap_err();
+    let error = foster::compile("type P = { x: Int }\nimpl P { func value(self: Self) -> Int { self.x } }\nfunc main() -> Int { let { value } = P { x: 42 }\nvalue }").unwrap_err();
     assert!(error.message.contains("has no field"), "{error}");
 }
 
@@ -242,7 +242,7 @@ import core.drop.*
 import static core.drop.*
 type Item = { value: Int }
 type Parent = { item: Item }
-impl Parent { func deinit(self) -> () { () } }
+impl Parent { func deinit(self: Self) -> () { () } }
 func main() -> Int {
     let parent = Parent { item: Item { value: 42 } }
     let { item } = parent

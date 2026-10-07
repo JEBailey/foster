@@ -39,23 +39,23 @@ pub type Bytes = & Copy & Sequence<Byte> & Collection<Byte> & Equality<Bytes> & 
     value: RawBytes
 
     /// Reads `.bytes`: an independent immutable copy of these bytes, leaving `self` unchanged.
-    pub func bytes(self) -> Bytes [read self]
+    pub func bytes(self: Self) -> Bytes [read self]
 
     /// Returns an independent immutable byte value.
-    pub func copy(self) -> self [read self]
+    pub func copy(self: Self) -> Self [read self]
 
     // Required public operations; implementations live in impl blocks.
     /// Concatenates two immutable byte sequences.
-    pub func concat(self, other: Bytes) -> Bytes [read other, read self]
+    pub func concat(self: Self, other: Bytes) -> Bytes [read other, read self]
     /// Copies bytes in the half-open range `[start, end)`.
     /// Asserts unless `0 <= start <= end <= length`; bounds are not clamped.
-    pub func slice(self, start: Int, end: Int) -> Bytes [read end, read self, read start]
+    pub func slice(self: Self, start: Int, end: Int) -> Bytes [read end, read self, read start]
     /// Expands compact bytes into a Foster list.
-    pub func list(self) -> List<Byte> [read self]
+    pub func list(self: Self) -> List<Byte> [read self]
     /// Encodes bytes as lowercase hexadecimal text.
-    pub func hex(self) -> String [read self]
+    pub func hex(self: Self) -> String [read self]
     /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
-    pub func utf8_valid?(self) -> Bool [read self]
+    pub func utf8_valid?(self: Self) -> Bool [read self]
 
 }
 
@@ -77,12 +77,12 @@ pub type HexError = {
 
 impl Bytes {
     /// Reads `.bytes`: an independent immutable copy of these bytes, leaving `self` unchanged.
-    pub func bytes(self) -> Bytes [read self] {
+    pub func bytes(self: Self) -> Bytes [read self] {
         self.copy()
     }
 
     /// Returns an independent immutable byte value.
-    pub func copy(self) -> self [read self] {
+    pub func copy(self: Self) -> Self [read self] {
         BytesHost.from_list(BytesHost.to_list(self))
     }
 
@@ -119,7 +119,7 @@ impl Bytes {
     }
 
     /// Concatenates two immutable byte sequences.
-    pub func concat(self, other: Bytes) -> Bytes {
+    pub func concat(self: Self, other: Bytes) -> Bytes {
         let output = self.list()
         for octet in other {
             output.push(octet)
@@ -129,7 +129,7 @@ impl Bytes {
 
     /// Copies bytes in the half-open range `[start, end)`.
     /// Asserts unless `0 <= start <= end <= length`; bounds are not clamped.
-    pub func slice(self, start: Int, end: Int) -> Bytes {
+    pub func slice(self: Self, start: Int, end: Int) -> Bytes {
         assert(start >= 0 && end >= start && end <= self.length, "byte slice is out of bounds")
         let output = []
         let index = start
@@ -141,12 +141,12 @@ impl Bytes {
     }
 
     /// Expands compact bytes into a Foster list.
-    pub func list(self) -> List<Byte> {
+    pub func list(self: Self) -> List<Byte> {
         BytesHost.to_list(self)
     }
 
     /// Encodes bytes as lowercase hexadecimal text.
-    pub func hex(self) -> String {
+    pub func hex(self: Self) -> String {
         let output = []
         for octet in self {
             let value = octet.int
@@ -162,7 +162,7 @@ impl Bytes {
     }
 
     /// Returns whether two byte sequences contain identical values.
-    pub func equal?(self, other: Bytes) -> Bool {
+    pub func equal?(self: Self, other: Bytes) -> Bool {
         return false if self.length != other.length
         let index = 0
         while index < self.length {
@@ -173,7 +173,7 @@ impl Bytes {
     }
 
     /// Computes a deterministic hash over the byte sequence.
-    pub func hash(self) -> Int {
+    pub func hash(self: Self) -> Int {
         let state = 17
         for octet in self {
             state = state + octet
@@ -182,7 +182,7 @@ impl Bytes {
     }
 
     /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
-    pub func utf8_valid?(self) -> Bool {
+    pub func utf8_valid?(self: Self) -> Bool {
         let index = 0
         while index < self.length {
             let first = self[index].int

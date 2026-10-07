@@ -3,7 +3,7 @@
 the cleanup responsibility with the value; deinit is not a copying operation.</p>
 </article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Drop">Drop</a><span class="badge visibility-public">public</span></h3><p>The compiler calls <code>deinit</code> once, before cleaning up the value's fields.</p>
 <h4>Required methods</h4><ul><li><code>deinit</code><br><small>Releases external resources before the compiler releases owned fields and payloads.</small></li></ul></article></div></section></div><article id="Drop"><h2><a class="anchor" href="#Drop">Drop</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Drop = {
-    pub func deinit(self) -&gt; () [read self]
+    pub func deinit(self: Self) -&gt; () [read self]
 }</code></pre><p>The compiler calls <code>deinit</code> once, before cleaning up the value's fields.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
 const filter = document.querySelector('[data-module-filter]');

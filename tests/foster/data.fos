@@ -14,8 +14,8 @@ enum Outcome = Accepted(Int)
     | Rejected(String)
 
 type Identified = {
-    pub func id(self) -> Int [read self]
-    pub func offset(self, amount: Int) -> Int [read self]
+    pub func id(self: Self) -> Int [read self]
+    pub func offset(self: Self, amount: Int) -> Int [read self]
 }
 
 type User = & Identified & {
@@ -59,14 +59,18 @@ impl Formatter {
 }
 
 test "records support construction access and mutation" {
-    let person = Person { name: "Ada", age: 37 }
+    let person = Person {
+        name: "Ada", age: 37
+    }
     person.age = person.age + 5
     assert(person.name == "Ada")
     assert(person.age == 42)
 }
 
 test "generic record arguments are inferred" {
-    let parsed = Parsed { value: 42, remaining: "" }
+    let parsed = Parsed {
+        value: 42, remaining: ""
+    }
     assert(parsed.value == 42)
     assert(parsed.remaining.empty?)
 }
@@ -86,7 +90,9 @@ test "enum payloads are constructed and matched" {
 }
 
 test "structural contracts dispatch required methods" {
-    assert(identify(User { value: 20 }) == 42)
+    assert(identify(User {
+        value: 20
+    }) == 42)
 }
 
 test "methods overload by arity and parameter type" {

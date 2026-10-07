@@ -42,7 +42,7 @@ pub type Node = {
 }
 
 impl Node {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         Node {
             parent: self.parent, key: self.key.copy(), kind: self.kind.copy(), text: self.text.copy()
         }
@@ -115,7 +115,7 @@ func indexed(nodes: List<Node>) -> Contract [consume nodes] {
 }
 
 impl Contract {
-    pub func json(self, node: Int) -> String {
+    pub func json(self: Self, node: Int) -> String {
         assert(node >= 0, "missing JSON value")
         let kind = self.nodes[node].kind.copy()
         return json_quoted(self.nodes[node].text) if kind == "string"
@@ -131,25 +131,25 @@ impl Contract {
             kind == "object" -> "{" + values.join(",") + "}" _ -> "[" + values.join(",") + "]"
         }
     }
-    pub func member(self, object: Int, key: String) -> Int {
+    pub func member(self: Self, object: Int, key: String) -> Int {
         return -1 if object < 0
         for index in self.links[object] {
             return index if self.nodes[index].key == key
         }
         -1
     }
-    pub func children(self, parent: Int) -> List<Int> {
+    pub func children(self: Self, parent: Int) -> List<Int> {
         return [] if parent < 0
         self.links[parent].slice(0, self.links[parent].length)
     }
-    pub func array(self, object: Int, key: String, required: Bool) -> List<Int> {
+    pub func array(self: Self, object: Int, key: String, required: Bool) -> List<Int> {
         let node = self.member(object, key)
         assert(node >= 0 || !required, "missing field " + key)
         return [] if node < 0
         assert(self.nodes[node].kind == "array", "expected array for " + key)
         self.children(node)
     }
-    pub func string(self, object: Int, key: String, required: Bool) -> String {
+    pub func string(self: Self, object: Int, key: String, required: Bool) -> String {
         let node = self.member(object, key)
         assert(node >= 0 || !required, "missing field " + key)
         return "" if node < 0
@@ -158,20 +158,20 @@ impl Contract {
         assert(required || !self.nodes[node].text.empty?, "optional identifier must not be empty")
         self.nodes[node].text.copy()
     }
-    pub func boolean(self, object: Int, key: String) -> Bool {
+    pub func boolean(self: Self, object: Int, key: String) -> Bool {
         let node = self.member(object, key)
         return false if node < 0
         assert(self.nodes[node].kind == "bool", "expected boolean for " + key)
         self.nodes[node].text == "true"
     }
-    func fields(self, object: Int, allowed: String) {
+    func fields(self: Self, object: Int, allowed: String) {
         assert(object >= 0 && self.nodes[object].kind == "object", "expected manifest object")
         let names = allowed.copy().split(" ")
         for node in self.children(object) {
             assert(names.contains?(self.nodes[node].key), "unknown manifest field " + self.nodes[node].key)
         }
     }
-    func ty(self, node: Int) -> String {
+    func ty(self: Self, node: Int) -> String {
         assert(node >= 0, "missing value type")
         branch self.nodes[node].kind {
             "string" -> {
@@ -231,34 +231,34 @@ impl Contract {
             _ -> panic("invalid C value type")
         }
     }
-    func records(self) -> List<Int> {
+    func records(self: Self) -> List<Int> {
         self.array(0, "records", false)
     }
-    func enums(self) -> List<Int> {
+    func enums(self: Self) -> List<Int> {
         self.array(0, "enums", false)
     }
-    func enum_type(self, ty: String) -> String {
+    func enum_type(self: Self, ty: String) -> String {
         for node in self.enums() {
             return self.string(node, "c_type", true) if "$" + self.string(node, "name", true) == ty
         }
         panic("unknown C enum " + ty)
     }
-    func resources(self) -> List<Int> {
+    func resources(self: Self) -> List<Int> {
         self.array(0, "resources", false)
     }
-    func callbacks(self) -> List<Int> {
+    func callbacks(self: Self) -> List<Int> {
         self.array(0, "callbacks", false)
     }
-    func callback(self, ty: String) -> Int {
+    func callback(self: Self, ty: String) -> Int {
         for node in self.callbacks() {
             return node if "^" + self.string(node, "name", true) == ty
         }
         panic("unknown C callback " + ty)
     }
-    func operations(self) -> List<Int> {
+    func operations(self: Self) -> List<Int> {
         self.array(0, "operations", true)
     }
-    func bound(self, node: Int, key: String, maximum: Int) -> Int {
+    func bound(self: Self, node: Int, key: String, maximum: Int) -> Int {
         let value = self.member(node, key)
         assert(value >= 0 && self.nodes[value].kind == "number", "missing numeric " + key)
         let parsed = branch JsonNumber.parse(self.nodes[value].text) {
@@ -270,7 +270,7 @@ impl Contract {
         assert(number > 0 && number <= maximum, "invalid " + key)
         number
     }
-    func extended(self, node: Int) -> Bool {
+    func extended(self: Self, node: Int) -> Bool {
         return true if self.ty(self.member(node, "result")) == "c_string" || self.boolean(node, "borrowed_result") || !self.string(node, "length_type", false).empty?
         for parameter in self.array(node, "parameters", false) {
             let ty = self.ty(parameter)
@@ -278,7 +278,7 @@ impl Contract {
         }
         false
     }
-    func outputs(self, node: Int) -> List<String> {
+    func outputs(self: Self, node: Int) -> List<String> {
         let values = []
         let result_type = self.ty(self.member(node, "result"))
         if result_type != "void" {
@@ -295,7 +295,7 @@ impl Contract {
         }
         move values
     }
-    func output_names(self, node: Int) -> List<String> {
+    func output_names(self: Self, node: Int) -> List<String> {
         let names = []
         if self.ty(self.member(node, "result")) != "void" {
             names.push("result")
@@ -310,29 +310,29 @@ impl Contract {
         }
         move names
     }
-    func writable_buffer(self, node: Int) -> Bool {
+    func writable_buffer(self: Self, node: Int) -> Bool {
         self.boolean(node, "mutable") || self.boolean(node, "output")
     }
-    func raw_buffer(self, node: Int) -> Bool {
+    func raw_buffer(self: Self, node: Int) -> Bool {
         ["u8", "char", "void"].contains?(self.ty(self.member(node, "buffer")))
     }
-    func value_type(self, ty: String) -> String {
+    func value_type(self: Self, ty: String) -> String {
         return "List<" + foster_type(self.ty(self.member(decimal(ty.slice(1, ty.length)), "buffer"))) + ">" if ty.starts_with?("~")
         foster_type(ty)
     }
-    func record(self, ty: String) -> Int {
+    func record(self: Self, ty: String) -> Int {
         for node in self.records() {
             return node if "@" + self.string(node, "name", true) == ty
         }
         panic("unknown C record " + ty)
     }
-    func resource(self, name: String) -> Int {
+    func resource(self: Self, name: String) -> Int {
         for node in self.resources() {
             return node if self.string(node, "name", true) == name
         }
         panic("unknown C resource " + name)
     }
-    func kind(self, name: String) -> Int {
+    func kind(self: Self, name: String) -> Int {
         let index = 1
         for node in self.resources() {
             return index if self.string(node, "name", true) == name
@@ -340,7 +340,7 @@ impl Contract {
         }
         panic("unknown C resource " + name)
     }
-    func slots(self, ty: String, stack: List<String>) -> Int {
+    func slots(self: Self, ty: String, stack: List<String>) -> Int {
         branch {
             ty.starts_with?("[") -> {
                 assert(stack.length < 32, "excessively nested C array")
@@ -374,7 +374,7 @@ impl Contract {
             }
         }
     }
-    func c_type(self, ty: String) -> String {
+    func c_type(self: Self, ty: String) -> String {
         return self.string(self.record(ty), "c_type", true) if ty.starts_with?("@")
         return self.enum_type(ty) if ty.starts_with?("$")
         branch ty {
@@ -397,7 +397,7 @@ impl Contract {
             _ -> "void"
         }
     }
-    func validate(self) {
+    func validate(self: Self) {
         self.fields(0, "abi headers sources include_directories libraries resources records enums operations constants callbacks")
         let abi = self.member(0, "abi")
         assert(abi >= 0, "missing ABI")
@@ -632,18 +632,18 @@ func doc_lines(text: String, indent: String) -> String {
 }
 
 impl Contract {
-    func docs(self, node: Int, indent: String) -> String {
+    func docs(self: Self, node: Int, indent: String) -> String {
         let field = self.member(node, "documentation")
         return "" if field < 0
         assert(self.nodes[field].kind == "string", "documentation must be text")
         doc_lines(self.nodes[field].text, indent)
     }
-    func constant_type(self, node: Int) -> String {
+    func constant_type(self: Self, node: Int) -> String {
         let ty = self.member(node, "type")
         return "string" if ty >= 0 && self.nodes[ty].kind == "string" && self.nodes[ty].text == "string"
         self.ty(ty)
     }
-    func constant_value(self, ty: String, node: Int) -> String {
+    func constant_value(self: Self, ty: String, node: Int) -> String {
         assert(node >= 0, "missing constant value")
         branch {
             ty.starts_with?("[") -> {
@@ -763,7 +763,7 @@ func foster_function_name(name: String) -> String {
 }
 
 func foster_name(name: String) -> String {
-    let reserved = "func function impl test const let pub type enum import static as return assert loop while for in break continue if branch else remote await try panic not true false move ref group read mut reshape consume suspend intrinsic self copy".split(" ")
+    let reserved = "func function impl test const let pub type enum import static as return assert loop while for in break continue if branch else remote await try panic not true false move ref group read mut reshape consume suspend intrinsic self Self copy".split(" ")
     branch {
         name.ends_with?("_") || reserved.contains?(name) -> name + "_"
         _ -> name.copy()
@@ -832,7 +832,7 @@ func identity(input: String) -> String {
 }
 
 impl Contract {
-    func c_destroy(self, resource: Int, place: String) -> String {
+    func c_destroy(self: Self, resource: Int, place: String) -> String {
         let ty = self.string(resource, "c_type", true)
         let by_value = self.boolean(resource, "by_value")
         let argument = branch {
@@ -844,7 +844,7 @@ impl Contract {
             by_value -> " free(" + place + ");" _ -> ""
         }
     }
-    func c_create(self, name: String, call: String) -> String {
+    func c_create(self: Self, name: String, call: String) -> String {
         let resource = self.resource(name)
         let ty = self.string(resource, "c_type", true)
         let by_value = self.boolean(resource, "by_value")
@@ -862,7 +862,7 @@ impl Contract {
         }
         code + "*created=(void*)owned; return 0;\n"
     }
-    func c_extended(self, node: Int, operation: Int) -> String {
+    func c_extended(self: Self, node: Int, operation: Int) -> String {
         let prefix = "case " + operation.as_string() + ": {\n"
         let types = []
         let arguments = []
@@ -1085,7 +1085,7 @@ impl Contract {
         code = code + "*length=used;\ncleanup:\n" + result_cleanup + cleanup + "return status;\n}\n"
         code.copy().split("goto cleanup;").join("goto cleanup_" + operation.as_string() + ";").split("cleanup:\n").join("cleanup_" + operation.as_string() + ":\n")
     }
-    func c_read(self, ty: String, place: String) -> String {
+    func c_read(self: Self, ty: String, place: String) -> String {
         branch {
             ty.starts_with?("[") -> {
                 let output = ""
@@ -1145,7 +1145,7 @@ impl Contract {
             }
         }
     }
-    func c_write(self, ty: String, place: String, index: Int) -> String {
+    func c_write(self: Self, ty: String, place: String, index: Int) -> String {
         branch {
             ty.starts_with?("[") -> {
                 let output = ""
@@ -1176,7 +1176,7 @@ impl Contract {
             }
         }
     }
-    func c_operation(self, node: Int, index: Int) -> String {
+    func c_operation(self: Self, node: Int, index: Int) -> String {
         return self.c_extended(node, index) if self.extended(node)
         let output = "case " + index.as_string() + ": {\n"
         let types = []
@@ -1265,7 +1265,7 @@ impl Contract {
         }
         output + "}\n"
     }
-    func c_callback(self, node: Int) -> String {
+    func c_callback(self: Self, node: Int) -> String {
         let name = self.string(node, "name", true)
         let callback_result = self.ty(self.member(node, "result"))
         let types = []
@@ -1306,7 +1306,7 @@ impl Contract {
         }
         move output
     }
-    func c_source(self, schema: String) -> String {
+    func c_source(self: Self, schema: String) -> String {
         let output = PREAMBLE.copy()
         for node in self.array(0, "headers", true) {
             output = output + "#include \"" + self.nodes[node].text + "\"\n"
@@ -1452,10 +1452,10 @@ test "indexed JSON preserves array order and matches canonical manifest lookup" 
 }
 
 impl Contract {
-    func foster_callback(self, node: Int) -> String {
+    func foster_callback(self: Self, node: Int) -> String {
         let name = foster_type_name(self.string(node, "name", true))
         let method = foster_function_name(self.string(node, "method", true))
-        let parameters = ["self"]
+        let parameters = ["self: Self"]
         let arguments = []
         let statements = []
         let width = 0
@@ -1473,7 +1473,7 @@ impl Contract {
         if callback_result != "void" output = output + self.foster_argument(callback_result, "returned")
         output + "    Result.Ok(arguments.reply())\n}\n\n"
     }
-    func foster_extended(self, node: Int, id: Int) -> String {
+    func foster_extended(self: Self, node: Int, id: Int) -> String {
         let name = self.string(node, "name", true)
         let outputs = self.outputs(node)
         let output_names = self.output_names(node)
@@ -1655,7 +1655,7 @@ impl Contract {
             outputs.empty? -> "()" outputs.length == 1 -> values[0].copy() _ -> result_type + " { " + values.join(", ") + " }"
         } + ")\n}\n\n"
     }
-    func foster_argument(self, ty: String, place: String) -> String {
+    func foster_argument(self: Self, ty: String, place: String) -> String {
         branch {
             ty.starts_with?("[") -> {
                 let output = "    return Result.Error(CError { message: " + quoted("C array length mismatch: " + place) + ", status: 0 }) if " + place + ".length != " + array_length(ty).as_string() + "\n"
@@ -1684,7 +1684,7 @@ impl Contract {
             }
         }
     }
-    func foster_result(self, ty: String, index: Int, statements: List<String>) -> String {
+    func foster_result(self: Self, ty: String, index: Int, statements: List<String>) -> String {
         branch {
             ty.starts_with?("[") -> {
                 let values = []
@@ -1720,7 +1720,7 @@ impl Contract {
             }
         }
     }
-    func foster_source(self, path: String, schema: String) -> String {
+    func foster_source(self: Self, path: String, schema: String) -> String {
         let type_names = ["Int", "Float", "Bool", "String", "Bytes", "List", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"]
         for declarations in [self.enums(), self.records()] {
             for node in declarations {
@@ -1777,7 +1777,7 @@ impl Contract {
             for field in self.array(node, "fields", true) {
                 output = output + "    pub " + foster_name(self.string(field, "name", true)) + ": " + foster_type(self.ty(self.member(field, "type"))) + "\n"
             }
-            output = output + "}\nimpl " + name + " {\n    /// Copies every value field.\n    pub func copy(self) -> self {\n        " + name + " {\n"
+            output = output + "}\nimpl " + name + " {\n    /// Copies every value field.\n    pub func copy(self: Self) -> Self {\n        " + name + " {\n"
             for field in self.array(node, "fields", true) {
                 let field_name = foster_name(self.string(field, "name", true))
                 output = output + "            " + field_name + ": " + foster_copy(self.ty(self.member(field, "type")), "self." + field_name, 0) + "\n"
@@ -1797,7 +1797,7 @@ impl Contract {
         }
         for node in self.resources() {
             let name = self.string(node, "name", true)
-            output = output + ["/// Owns a native ", name.copy(), " allocation.\npub type Native", name.copy(), " = { value: CResource }\nimpl Native", name.copy(), " {\n    /// Attempts close, retaining ownership when the C close contract requires it.\n    pub func close(self) -> Result<(), CError> { self.value.close() }\n    /// Delivers queued callback notifications on this thread.\n    pub func poll_callbacks(self) -> Result<(), CError> { self.value.poll_callbacks() }\n    /// Retrieves a callback failure without delivering queued events.\n    pub func check_callbacks(self) -> Result<(), CError> { self.value.check_callbacks() }\n}\n\n"].join("")
+            output = output + ["/// Owns a native ", name.copy(), " allocation.\npub type Native", name.copy(), " = { value: CResource }\nimpl Native", name.copy(), " {\n    /// Attempts close, retaining ownership when the C close contract requires it.\n    pub func close(self: Self) -> Result<(), CError> { self.value.close() }\n    /// Delivers queued callback notifications on this thread.\n    pub func poll_callbacks(self: Self) -> Result<(), CError> { self.value.poll_callbacks() }\n    /// Retrieves a callback failure without delivering queued events.\n    pub func check_callbacks(self: Self) -> Result<(), CError> { self.value.check_callbacks() }\n}\n\n"].join("")
         }
         let id = 0
         for node in self.operations() {

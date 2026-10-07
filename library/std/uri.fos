@@ -27,11 +27,11 @@ pub type Uri = & ResourceIdentifier & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns the complete URI text.
-    pub func as_string(self) -> String [read self.value]
+    pub func as_string(self: Self) -> String [read self.value]
     /// Returns the scheme spelling supplied to the parser.
-    pub func scheme(self) -> String [read self.scheme_value]
+    pub func scheme(self: Self) -> String [read self.scheme_value]
     /// Returns the resource portion following the URI scheme separator.
-    pub func path(self) -> String [read self.path_value]
+    pub func path(self: Self) -> String [read self.path_value]
 }
 
 impl Uri {
@@ -53,22 +53,22 @@ impl Uri {
     }
 
     /// Returns the complete URI text.
-    pub func as_string(self) -> String {
+    pub func as_string(self: Self) -> String {
         self.value.scalar_slice(0, self.value.scalar_length())
     }
 
     /// Returns the stable identifier supplied to a protocol provider.
-    pub func resource_id(self) -> String {
+    pub func resource_id(self: Self) -> String {
         self.as_string()
     }
 
     /// Returns the scheme spelling supplied to the parser.
-    pub func scheme(self) -> String {
+    pub func scheme(self: Self) -> String {
         self.scheme_value.scalar_slice(0, self.scheme_value.scalar_length())
     }
 
     /// Returns the resource portion following the URI scheme separator.
-    pub func path(self) -> String {
+    pub func path(self: Self) -> String {
         self.path_value.scalar_slice(0, self.path_value.scalar_length())
     }
 }

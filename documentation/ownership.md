@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-Language version 20, ownership-model version 5.
+Language version 21, ownership-model version 5.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from
@@ -129,12 +129,12 @@ import core.drop.Drop
 
 type Item = & Copy & Drop & { id: Int }
 impl Item {
-    func copy(self) -> self { Item { id: self.id } }
-    func deinit(self) -> () { println(self.id) }
+    func copy(self: Self) -> Self { Item { id: self.id } }
+    func deinit(self: Self) -> () { println(self.id) }
 }
 ```
 
-The result spelling `self` denotes the concrete receiver type. A copy borrows the original and
+The result spelling `Self` denotes the concrete implemented value type. A copy borrows the original and
 creates an independent owner; it does not make assignment or capture implicitly copy the value.
 `String` and `Bytes` support explicit copying, as do the scalar modules. A type without a matching
 `copy` method remains noncopyable; `File`, for example, has no such implementation.

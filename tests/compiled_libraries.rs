@@ -5,17 +5,54 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[test]
+fn self_types_survive_compiled_factories_and_inherited_results() {
+    let workspace = Workspace::new();
+    workspace.library(
+        r#"
+import core.option.Option
+pub type Box<T> = { pub value: T }
+impl Box<T> { pub func new(value: T) -> Self [consume value] { Box { value } } }
+pub type Wrapped = { pub func wrap(self: Self) -> Option<Self> [consume self] }
+impl Wrapped {
+    pub func wrap(self: Self) -> Option<Self> [consume self] { Option.Some(move self) }
+}
+"#,
+    );
+    let application = workspace
+        .consumer(
+            r#"
+import api.*
+import core.option.Option
+pub type Item = & Wrapped & { pub value: Int }
+func main() -> Int {
+    let box = Box.new(42)
+    let item = Item { value: box.value }
+    branch item.wrap() {
+        Option.Some(value) -> value.value
+        Option.None -> 0
+    }
+}
+"#,
+        )
+        .unwrap();
+    assert_eq!(run(&application), Value::Integer(42));
+}
+
 struct Workspace(PathBuf);
+static NEXT_WORKSPACE: AtomicU64 = AtomicU64::new(0);
 impl Workspace {
     fn new() -> Self {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target/flib-tests")
             .join(format!(
-                "{}-{}",
+                "{}-{}-{}",
                 std::process::id(),
+                NEXT_WORKSPACE.fetch_add(1, Ordering::Relaxed),
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
@@ -97,7 +134,7 @@ fn static_import_uses_each_compiled_overloads_receiver_descriptor() {
         r#"
 pub type Counter = {}
 impl Counter {
-    pub func step(self) -> Int { 1 }
+    pub func step(self: Self) -> Int { 1 }
     pub func step(amount: Int) -> Int { amount }
 }
 "#,
@@ -117,7 +154,7 @@ import core.option.Option
 import std.iter.Iterator
 type Counter = & Iterator<Int> & { remaining: Int }
 impl Counter {
-    func next(self) -> Option<Int> [mut self.remaining] {
+    func next(self: Self) -> Option<Int> [mut self.remaining] {
         return Option.None if self.remaining == 0
         self.remaining = self.remaining - 1
         Option.Some(42)
@@ -217,7 +254,7 @@ import core.copy.*
 import static core.copy.*
 pub type Box<T> = { pub value: T }
 impl Box<T & Copy> {
-    pub func copied(self) -> T [read self] { self.value.copy() }
+    pub func copied(self: Self) -> T [read self] { self.value.copy() }
 }
 "#,
     );
@@ -249,7 +286,7 @@ fn intersection_dispatch_links_reordered_client_implementations() {
         r#"
 pub type A<T> = { pub first: T }
 pub type B<T> = { pub second: T }
-pub type Contract = { pub func apply<T, U>(self, value: A<T> & B<U>, marker: T) -> Int }
+pub type Contract = { pub func apply<T, U>(self: Self, value: A<T> & B<U>, marker: T) -> Int }
 pub func invoke<T, U>(receiver: Contract, value: A<T> & B<U>, marker: T) -> Int {
     receiver.apply(value, marker)
 }
@@ -379,10 +416,10 @@ fn named_scopes_survive_compiled_default_templates() {
     let w = Workspace::new();
     w.library(
         r#"
-pub type Sized = { pub func length(self) -> Int }
+pub type Sized = { pub func length(self: Self) -> Int }
 func adjustment(value: Int) -> Int { value + 2 }
 impl Sized {
-    pub func score(self) -> Int {
+    pub func score(self: Self) -> Int {
         :calculation { adjustment(self.length()) }
     }
 }
@@ -395,7 +432,7 @@ import api
 import api.*
 import static api.*
 pub type Local = & Sized & { count: Int }
-impl Local { pub func length(self) -> Int { self.count } }
+impl Local { pub func length(self: Self) -> Int { self.count } }
 func main() -> Int { Local { count: 40 }.score() }
 "#,
         )
@@ -408,12 +445,12 @@ fn consumers_inherit_compiled_defaults_for_new_receivers() {
     let w = Workspace::new();
     w.library(
         r#"
-pub type Sized = { pub func length(self) -> Int }
+pub type Sized = { pub func length(self: Self) -> Int }
 func adjustment(value: Int) -> Int { value + 2 }
 impl Sized {
-    pub func score(self) -> Int { adjustment(self.length()) }
-    pub func twice(self) -> Int { self.score() * 2 }
-    pub func closure(self) -> func(Int) -> Int {
+    pub func score(self: Self) -> Int { adjustment(self.length()) }
+    pub func twice(self: Self) -> Int { self.score() * 2 }
+    pub func closure(self: Self) -> func(Int) -> Int {
         let offset = self.length()
         (value: Int) -> adjustment(value) + offset
     }
@@ -426,7 +463,7 @@ impl Provider {
 }
 pub type Middle<U> = & Provider<U> & {}
 pub type Other = {}
-impl Other { pub func score(self) -> Int { 21 } }
+impl Other { pub func score(self: Self) -> Int { 21 } }
 "#,
     );
     let app = w
@@ -436,13 +473,13 @@ import api
 import api.*
 import static api.*
 pub type Local = & Sized & { count: Int }
-impl Local { pub func length(self) -> Int { self.count } }
+impl Local { pub func length(self: Self) -> Int { self.count } }
 pub type Ordered = & Sized & Other & {}
-impl Ordered { pub func length(self) -> Int { 100 } }
+impl Ordered { pub func length(self: Self) -> Int { 100 } }
 pub type Override = & Sized & Other & {}
 impl Override {
-    pub func length(self) -> Int { 100 }
-    pub func score(self) -> Int { 7 }
+    pub func length(self: Self) -> Int { 100 }
+    pub func score(self: Self) -> Int { 7 }
 }
 pub type Generic<V> = & Middle<V> & {}
 type Concrete = & Generic<Int> & {}
@@ -534,7 +571,7 @@ fn structural_calls_find_client_implementations() {
     let w = Workspace::new();
     w.library(
         r#"
-pub type Scored = { pub func score(self, value: Int) -> Int }
+pub type Scored = { pub func score(self: Self, value: Int) -> Int }
 pub func evaluate(value: Scored) -> Int { value.score(40) }
 "#,
     );
@@ -544,7 +581,7 @@ pub func evaluate(value: Scored) -> Int { value.score(40) }
 import api
 import api.*
 import static api.*
-type Local = { pub func score(self, value: Int) -> Int }
+type Local = { pub func score(self: Self, value: Int) -> Int }
 impl Local { func score(self: Local, value: Int) -> Int { value + 2 } }
 func main() -> Int { evaluate(Local {}) }
 "#,
@@ -558,7 +595,7 @@ fn type_branch_in_library_recognizes_client_types() {
     let workspace = Workspace::new();
     workspace.library(
         r#"
-pub type Numbered = { pub func number(self) -> Int [read self] }
+pub type Numbered = { pub func number(self: Self) -> Int [read self] }
 pub func inspect<T>(value: T) -> Int [read value] {
     branch value {
         is Numbered -> value.number()
@@ -574,7 +611,7 @@ import api
 import api.*
 import static api.*
 pub type Local = { value: Int }
-impl Local { pub func number(self) -> Int [read self] { self.value } }
+impl Local { pub func number(self: Self) -> Int [read self] { self.value } }
 func main() -> Int { inspect(Local { value: 42 }) }
 "#,
         )
@@ -614,7 +651,7 @@ fn default_templates_preserve_explicit_ownership_and_reject_invalid_metadata() {
     let mut lib = w.library(
         r#"
 pub type Provider = {}
-impl Provider { pub func take(self, value: String) -> String [consume value] { value } }
+impl Provider { pub func take(self: Self, value: String) -> String [consume value] { value } }
 "#,
     );
     let error = w
@@ -818,7 +855,7 @@ fn libraries_can_bundle_compiled_dependencies() {
 #[test]
 fn composition_materialized_inside_a_library_is_retained() {
     let w = Workspace::new();
-    w.library("pub type Base = { pub value: Int, pub func score(self) -> Int }\nimpl Base { pub func score(self: Base) -> Int { self.value } }\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }");
+    w.library("pub type Base = { pub value: Int, pub func score(self: Self) -> Int }\nimpl Base { pub func score(self: Base) -> Int { self.value } }\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }");
     let app = w
         .consumer("import api\nimport api.*\nimport static api.*\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nNew { extra: 99, value: 42 }.score() }")
         .unwrap();
@@ -900,10 +937,10 @@ fn materialized_methods_keep_cross_module_receiver_types() {
 import tokens
 import tokens.*
 import static tokens.*
-pub type Base = { pub value: Int, pub func score(self) -> Int }
+pub type Base = { pub value: Int, pub func score(self: Self) -> Int }
 impl Base {
     pub func score(self: Base) -> Int { self.value }
-    pub func closure(self) -> func(tokens::Token) -> Int {
+    pub func closure(self: Self) -> func(tokens::Token) -> Int {
         let offset = self.value
         (token: tokens::Token) -> token.value + offset
     }

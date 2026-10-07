@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn symbols_include_methods_enum_cases_and_recoverable_declarations() {
         let uri = "file:///symbols.fos".parse().unwrap();
-        let source = "/// value is documented\ntype Box = { value: Int }\nimpl Box { func value(self) -> Int { self.value } }\nenum Outcome = Good(Int) | Bad\nconst Answer = 42\nfunc broken() { let x = }\nfunc healthy() -> Int { 1 }\n";
+        let source = "/// value is documented\ntype Box = { value: Int }\nimpl Box { func value(self: Self) -> Int { self.value } }\nenum Outcome = Good(Int) | Bad\nconst Answer = 42\nfunc broken() { let x = }\nfunc healthy() -> Int { 1 }\n";
         let symbols = source_symbols(&uri, source);
         for (name, kind) in [
             ("Box", SymbolKind::STRUCT),

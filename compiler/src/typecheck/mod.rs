@@ -572,11 +572,60 @@ impl<'a> Checker<'a> {
         for (function_id, function) in self.hir.functions.iter() {
             let module = function.module;
             let source_module = self.hir.modules[module].name.clone();
-            let generics = function
+            let mut generics = function
                 .type_parameters
                 .iter()
                 .map(|parameter| (parameter.clone(), Ty::Generic(parameter.clone())))
                 .collect::<HashMap<_, _>>();
+            if let Some(owner) = function.owner.as_deref()
+                && function
+                    .parameters
+                    .iter()
+                    .filter_map(|parameter| parameter.ty.as_ref())
+                    .chain(function.return_type.iter())
+                    .any(uses_self_type)
+            {
+                let owner_annotation = if function.receiver.is_some() {
+                    let annotation = function.parameters[0]
+                        .ty
+                        .as_ref()
+                        .expect("receivers have explicit types");
+                    match annotation {
+                        crate::ast::TypeExpr::Reference { value, .. } => value.as_ref().clone(),
+                        annotation => annotation.clone(),
+                    }
+                } else {
+                    let arity = if matches!(owner, "Bool" | "Int" | "Float" | "CodePoint" | "Byte")
+                    {
+                        0
+                    } else {
+                        match self.resolve_nominal_type(module, owner)? {
+                            NominalTypeId::Record(record) => {
+                                self.hir.records[record].parameters.len()
+                            }
+                            NominalTypeId::Variant(variant) => {
+                                self.hir.variant_types[variant].parameters.len()
+                            }
+                        }
+                    };
+                    if function.type_parameters.len() < arity {
+                        return Err(FosterError::runtime(format!(
+                            "implementation of `{owner}` needs {arity} type parameters"
+                        )));
+                    }
+                    crate::ast::TypeExpr::Named(
+                        owner.to_owned(),
+                        function
+                            .type_parameters
+                            .iter()
+                            .take(arity)
+                            .map(|name| crate::ast::TypeExpr::Named(name.clone(), vec![]))
+                            .collect(),
+                    )
+                };
+                let owner_type = self.annotation_type(module, &owner_annotation, &generics)?;
+                generics.insert("Self".into(), owner_type);
+            }
             let parameters = function
                 .parameters
                 .iter()
@@ -639,12 +688,8 @@ impl<'a> Checker<'a> {
                     )));
                 }
             }
-            let mut result_generics = generics.clone();
-            if function.receiver.is_some() {
-                result_generics.insert("self".into(), parameters[0].clone());
-            }
             let result = match function.return_type.as_ref() {
-                Some(annotation) => self.annotation_type(module, annotation, &result_generics)?,
+                Some(annotation) => self.annotation_type(module, annotation, &generics)?,
                 None => self.fresh(),
             };
             if function.public
@@ -760,6 +805,19 @@ fn overload_type_key(
             parameter_modes,
             effects
         ),
+    }
+}
+
+fn uses_self_type(annotation: &crate::ast::TypeExpr) -> bool {
+    use crate::ast::TypeExpr;
+    match annotation {
+        TypeExpr::Named(name, arguments) => name == "Self" || arguments.iter().any(uses_self_type),
+        TypeExpr::Intersection(members) => members.iter().any(uses_self_type),
+        TypeExpr::Reference { value, .. } => uses_self_type(value),
+        TypeExpr::Function {
+            parameters, result, ..
+        } => parameters.iter().any(uses_self_type) || uses_self_type(result),
+        TypeExpr::Unit => false,
     }
 }
 

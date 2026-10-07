@@ -1,19 +1,31 @@
-type Counter = { value: Int }
+type Counter = {
+    value: Int
+}
 
 impl Counter {
-    func empty(self) {}
+    func empty(self: Self) {}
     func done() {}
-    func set(self, value: Int) { self.value = value }
+    func set(self: Self, value: Int) {
+        self.value = value
+    }
 }
 
 func empty() {}
-func binding() { let value = 42 }
+func binding() {
+    let value = 42
+}
 func assignment() {
     let value = 1
     value = 42
 }
-func assertion() { assert(true) }
-func loop_result() { loop { break } }
+func assertion() {
+    assert(true)
+}
+func loop_result() {
+    loop {
+        break
+    }
+}
 func guarded(stop: Bool) {
     let previous = 42
     return () if stop
@@ -27,7 +39,9 @@ func main() -> Int {
     assert(loop_result() == ())
     assert(guarded(true) == ())
     assert(guarded(false) == ())
-    let counter = Counter { value: 0 }
+    let counter = Counter {
+        value: 0
+    }
     assert(counter.empty() == ())
     assert(Counter.done() == ())
     assert(counter.set(42) == 42)
@@ -35,7 +49,9 @@ func main() -> Int {
     let closure = () -> {}
     assert(closure() == ())
     let arm = branch {
-        true -> { counter.value = 43 }
+        true -> {
+            counter.value = 43
+        }
         _ -> {}
     }
     assert(arm == ())

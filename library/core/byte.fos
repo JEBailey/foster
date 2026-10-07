@@ -11,12 +11,12 @@ import core.bytes.Bytes
 
 impl Byte {
     /// Reads `.bytes`: a one-byte immutable sequence, leaving `self` unchanged.
-    pub func bytes(self) -> Bytes [read self] {
+    pub func bytes(self: Self) -> Bytes [read self] {
         Bytes.from([self])
     }
 
     /// Explicitly copies this scalar value.
-    pub func copy(self) -> self [read self] {
+    pub func copy(self: Self) -> Self [read self] {
         self
     }
 

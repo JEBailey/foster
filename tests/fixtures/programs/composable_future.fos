@@ -8,16 +8,16 @@ import core.remote_error
 import core.remote_error.RemoteError
 
 pub type Named = {
-    pub func name(self) -> Int [read self]
+    pub func name(self: Self) -> Int [read self]
 }
 pub type Ready = & Future<Int> & Named & {
     value: Int
 }
 impl Ready {
-    pub func name(self) -> Int [read self.value] {
+    pub func name(self: Self) -> Int [read self.value] {
         self.value
     }
-    pub func resolve(self) -> Int [consume self] {
+    pub func resolve(self: Self) -> Int [consume self] {
         self.value
     }
 }
@@ -33,13 +33,13 @@ type Box<T> = {
     value: T
 }
 impl Box<T & Future<Int>> {
-    func finish(self) -> Int [consume self, suspend] {
+    func finish(self: Self) -> Int [consume self, suspend] {
         await self.value
     }
 }
 type Worker = {}
 impl Worker {
-    func answer(self) -> Int {
+    func answer(self: Self) -> Int {
         2
     }
 }

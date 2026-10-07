@@ -39,7 +39,7 @@ being added accidentally.
 | Module | Purpose |
 | --- | --- |
 | `core.copy` | Explicit copying into an independent value of the concrete receiver type |
-| `core.drop` | Automatic `deinit(self) -> ()` at ownership end |
+| `core.drop` | Automatic `deinit(self: Self) -> ()` at ownership end |
 | `core.functions` | Reusable predicate, consuming consumer, and supplier callable type aliases |
 | `core.option` | Optional values, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries |
 | `std.iter` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |

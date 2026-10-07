@@ -6,5 +6,5 @@
 /// The compiler calls `deinit` once, before cleaning up the value's fields.
 pub type Drop = {
     /// Releases external resources before the compiler releases owned fields and payloads.
-    pub func deinit(self) -> () [read self]
+    pub func deinit(self: Self) -> () [read self]
 }

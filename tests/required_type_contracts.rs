@@ -14,10 +14,10 @@ fn composition_rejects_conflicting_modes_for_the_same_parameter_types() {
     ] {
         let source = format!(
             r#"
-type Borrowing = {{ pub func accept(self, value: String) -> Int }}
-type Consuming = {{ pub func accept(self, value: String) -> Int [consume value] }}
+type Borrowing = {{ pub func accept(self: Self, value: String) -> Int }}
+type Consuming = {{ pub func accept(self: Self, value: String) -> Int [consume value] }}
 {declaration}
-impl Combined {{ func accept(self, value: String) -> Int {{ 42 }} }}
+impl Combined {{ func accept(self: Self, value: String) -> Int {{ 42 }} }}
 func main() -> Int {{ {value}.accept("test") }}
 "#
         );
@@ -36,7 +36,7 @@ fn impl_only_methods_do_not_become_requirements() {
     let source = r#"
 type Original = {
     pub value: Int
-    pub func required(self) -> Int
+    pub func required(self: Self) -> Int
 }
 impl Original {
     func required(self: Original) -> Int { self.value }
@@ -65,7 +65,7 @@ func main() -> Int { Combined { value: 42 }.required() }
 fn required_methods_have_independent_type_parameters() {
     let source = r#"
 type Identity = {
-    pub func apply<T>(self, value: T) -> T [consume value]
+    pub func apply<T>(self: Self, value: T) -> T [consume value]
 }
 type Implementation = & Identity & {}
 impl Implementation {
@@ -105,6 +105,7 @@ func main() -> Int { Combined { marker: 42 }.marker }
 fn library_contracts_match_their_implementations() {
     let compilation = foster::check_package("library").unwrap();
     let mut audited = 0;
+    let mut missing = Vec::new();
     for (_, function) in compilation.hir.functions.iter() {
         if !function.public || function.receiver.is_none() {
             continue;
@@ -120,27 +121,26 @@ fn library_contracts_match_their_implementations() {
                     continue;
                 }
                 let name = function.name.strip_prefix(&format!("{owner}.")).unwrap();
-                assert!(
-                    definition.methods.iter().any(|method| method.name == name)
-                        || definition.compositions.iter().any(|contract| {
-                            let foster::ast::TypeExpr::Named(contract, _) = contract else {
-                                return false;
-                            };
-                            let module = &compilation.hir.modules[function.module];
-                            std::iter::once(function.module)
-                                .chain(module.imports.values().copied())
-                                .any(|module| {
-                                    compilation.hir.record_named(module, contract).is_some_and(
-                                        |record| {
-                                            compilation.types.record_methods[&record].contains(name)
-                                        },
-                                    )
-                                })
-                        }),
-                    "{}.{} has no required declaration",
-                    compilation.hir.modules[function.module].name,
-                    function.name
-                );
+                if !(definition.methods.iter().any(|method| method.name == name)
+                    || definition.compositions.iter().any(|contract| {
+                        let foster::ast::TypeExpr::Named(contract, _) = contract else {
+                            return false;
+                        };
+                        compilation
+                            .hir
+                            .visible_types(function.module, contract)
+                            .iter()
+                            .any(|ty| {
+                                matches!(ty, foster::types::NominalTypeId::Record(record)
+                                        if compilation.types.record_methods[record].contains(name))
+                            })
+                    }))
+                {
+                    missing.push(format!(
+                        "{}.{} has no required declaration",
+                        compilation.hir.modules[function.module].name, function.name
+                    ));
+                }
                 audited += 1;
             }
             continue;
@@ -154,15 +154,16 @@ fn library_contracts_match_their_implementations() {
             continue;
         }
         let name = function.name.strip_prefix(&format!("{owner}.")).unwrap();
-        assert!(
-            compilation.types.record_methods[&record].contains(name),
-            "{}.{} has no required declaration",
-            compilation.hir.modules[function.module].name,
-            function.name
-        );
+        if !compilation.types.record_methods[&record].contains(name) {
+            missing.push(format!(
+                "{}.{} has no required declaration",
+                compilation.hir.modules[function.module].name, function.name
+            ));
+        }
         audited += 1;
     }
     assert!(audited > 150, "audited only {audited} instance methods");
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
 }
 
 #[test]

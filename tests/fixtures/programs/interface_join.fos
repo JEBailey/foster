@@ -5,7 +5,7 @@ import core.string
 import core.string.String
 
 pub type Named = {
-    pub func id(self) -> String
+    pub func id(self: Self) -> String
 }
 pub type First = & Named & {
     text: String
@@ -14,12 +14,12 @@ pub type Second = & Named & {
     text: String
 }
 impl First {
-    pub func id(self) -> String {
+    pub func id(self: Self) -> String {
         "first:" + self.text
     }
 }
 impl Second {
-    pub func id(self) -> String {
+    pub func id(self: Self) -> String {
         "second:" + self.text
     }
 }

@@ -6,11 +6,11 @@ fn generic_blocks_supply_receiver_types_and_preserve_member_generics() {
 type Box<T> = { value: T }
 impl Box<T> {
     func new(value: T) -> Box<T> { Box { value } }
-    func get(self) -> T { self.value }
-    func apply<U>(self, transform: func(T) -> U) -> U { transform(self.value) }
+    func get(self: Self) -> T { self.value }
+    func apply<U>(self: Self, transform: func(T) -> U) -> U { transform(self.value) }
 }
 impl Box<T> {
-    func again(self) -> T { self.get() }
+    func again(self: Self) -> T { self.get() }
 }
 func main() -> Int {
     let box = Box.new(20)
@@ -31,11 +31,11 @@ func main() -> Int {
 }
 
 #[test]
-fn enum_blocks_support_inferred_receivers() {
+fn enum_blocks_support_explicit_self_receivers() {
     let source = r#"
 enum Choice = Value(Int) | Empty
 impl Choice {
-    func get(self) -> Int {
+    func get(self: Self) -> Int {
         branch self {
             Choice.Value(value) -> value
             Choice.Empty -> 0
@@ -57,7 +57,7 @@ fn rejects_invalid_block_structure_and_old_member_declarations() {
         "type Box = {}\nimpl Box { type Inner = {} }",
         "type Box = {}\nimpl Box { func new() {}",
         "type Box<T> = {}\nimpl Box<T, T> {}",
-        "type Box<T> = {}\nimpl Box<T> { func get<T>(self) {} }",
+        "type Box<T> = {}\nimpl Box<T> { func get<T>(self: Self) {} }",
         "pub impl Box {}",
         "func main() { impl Box {} }",
     ] {
@@ -66,7 +66,7 @@ fn rejects_invalid_block_structure_and_old_member_declarations() {
     for source in [
         "impl Missing {}\nfunc main() {}",
         "type Box<T> = {}\nimpl Box<T, U> {}\nfunc main() {}",
-        "type Box = {}\nimpl Box { func get(self) {} }\nimpl Box { func get(self) {} }\nfunc main() {}",
+        "type Box = {}\nimpl Box { func get(self: Self) {} }\nimpl Box { func get(self: Self) {} }\nfunc main() {}",
     ] {
         assert!(foster::compile(source).is_err(), "accepted {source}");
     }
@@ -74,7 +74,7 @@ fn rejects_invalid_block_structure_and_old_member_declarations() {
 
 #[test]
 fn recovery_does_not_leak_members_from_a_damaged_block() {
-    let source = "type Box = {}\nimpl Box {\n    func broken(self) { let x = }\n    func later() {}\n}\nfunc healthy() { 42 }";
+    let source = "type Box = {}\nimpl Box {\n    func broken(self: Self) { let x = }\n    func later() {}\n}\nfunc healthy() { 42 }";
     let parsed = foster::parse_recovering(source).unwrap();
     assert_eq!(parsed.diagnostics.len(), 1);
     assert_eq!(parsed.program.functions.len(), 1);

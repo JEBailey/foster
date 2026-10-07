@@ -10,7 +10,7 @@ type Label = {
     text: String, calls: Int
 }
 impl Label {
-    func as_string(self) -> String [mut self.calls, read self.text] {
+    func as_string(self: Self) -> String [mut self.calls, read self.text] {
         self.calls = self.calls + 1
         self.text.copy()
     }

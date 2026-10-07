@@ -19,16 +19,16 @@ this contract accidentally merely because they implement <code>as_string</code>.
 <h4>Required methods</h4><ul><li><code>resource_id</code><br><small>Returns the stable textual identifier supplied to the resource provider.</small></li></ul></article><article class="type-summary"><h3><a href="#Sized">Sized</a><span class="badge visibility-public">public</span></h3><p>A value whose current binary length can be queried.</p>
 <h4>Required methods</h4><ul><li><code>length</code><br><small>Returns the current length in bytes.</small></li></ul></article><article class="type-summary"><h3><a href="#Writable">Writable</a><span class="badge visibility-public">public</span></h3><p>A value whose binary contents can be replaced.</p>
 <h4>Required methods</h4><ul><li><code>write</code><br><small>Writes bytes and returns the number accepted.</small></li><li><code>flush</code><br><small>Makes buffered output visible to the destination.</small></li></ul></article></div></section></div><article id="Accepting"><h2><a class="anchor" href="#Accepting">Accepting</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Accepting&lt;C, E&gt; = {
-    pub func accept(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;C, E&gt; [mut self]
+    pub func accept(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;C, E&gt; [mut self]
 }</code></pre><p>A value that accepts child values of type <code>C</code>.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Appendable"><h2><a class="anchor" href="#Appendable">Appendable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Appendable&lt;E&gt; = {
-    pub func append(self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+    pub func append(self: Self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
 }</code></pre><p>A value that accepts bytes at its current logical end.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Closable"><h2><a class="anchor" href="#Closable">Closable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Closable&lt;E&gt; = {
-    pub func close(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [consume self]
+    pub func close(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [consume self]
 }</code></pre><p>An owned value that can release its host or provider state deterministically.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="PositionedReadable"><h2><a class="anchor" href="#PositionedReadable">PositionedReadable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type PositionedReadable&lt;E&gt; = {
-    pub func read_at(self, offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
+    pub func read_at(self: Self, offset: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
 }</code></pre><p>A value supporting bounded binary reads at explicit offsets.</p>
 <p>Position belongs to the operation rather than the resource, so callers can share one stable
 identifier without manufacturing separate reader objects.</p>
@@ -36,7 +36,7 @@ identifier without manufacturing separate reader objects.</p>
 
 }</code></pre><p>A value supporting both complete binary reads and writes.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Readable"><h2><a class="anchor" href="#Readable">Readable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Readable&lt;E&gt; = {
-    pub func read(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
+    pub func read(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
 }</code></pre><p>A value whose complete binary contents can be read.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Resource"><h2><a class="anchor" href="#Resource">Resource</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Resource&lt;L&gt; = {
     pub location: L<span class="badge visibility-public">public</span>
@@ -44,16 +44,16 @@ identifier without manufacturing separate reader objects.</p>
 <p>Keeping <code>L</code> in the contract prevents a file, socket, or future URI-backed provider from losing
 the kind of identifier with which it was created.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ResourceIdentifier"><h2><a class="anchor" href="#ResourceIdentifier">ResourceIdentifier</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ResourceIdentifier = {
-    pub func resource_id(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self]
+    pub func resource_id(self: Self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self]
 }</code></pre><p>An explicit identifier for a resource provider or target.</p>
 <p>The uncommon <code>resource_id</code> member prevents displayable values such as integers from satisfying
 this contract accidentally merely because they implement <code>as_string</code>.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Sized"><h2><a class="anchor" href="#Sized">Sized</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Sized&lt;E&gt; = {
-    pub func length(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+    pub func length(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
 }</code></pre><p>A value whose current binary length can be queried.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Writable"><h2><a class="anchor" href="#Writable">Writable</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Writable&lt;E&gt; = {
-    pub func write(self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
-    pub func flush(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+    pub func write(self: Self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+    pub func flush(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
 }</code></pre><p>A value whose binary contents can be replaced.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article></div></div></main><script>
 const filter = document.querySelector('[data-module-filter]');

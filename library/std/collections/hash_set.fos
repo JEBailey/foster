@@ -19,7 +19,7 @@ pub type HashSet<T> = & Set<T> & {
     table: HashMap<T, ()>
 
     /// Consumes the set and returns its values in unspecified order.
-    pub func values(self) -> List<T> [consume self]
+    pub func values(self: Self) -> List<T> [consume self]
 }
 
 impl HashSet<T> {
@@ -40,29 +40,29 @@ impl HashSet<T> {
     }
 
     /// Returns the number of distinct values.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.table.length()
     }
 
     /// Returns whether the set has no values.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.table.empty?()
     }
 
     /// Tests membership without consuming the set.
-    pub func contains?(self, value: T) -> Bool {
+    pub func contains?(self: Self, value: T) -> Bool {
         self.table.contains_key?(value)
     }
 
     /// Returns a set containing the supplied value.
-    pub func insert(self, value: T) -> HashSet<T> [consume self, consume value] {
+    pub func insert(self: Self, value: T) -> HashSet<T> [consume self, consume value] {
         HashSet {
             table: (move self.table).put(move value, ())
         }
     }
 
     /// Returns a set without the supplied value; absent values leave it unchanged.
-    pub func remove(self, value: T) -> HashSet<T> [consume self] {
+    pub func remove(self: Self, value: T) -> HashSet<T> [consume self] {
         let table = move self.table
         table.remove(value)
         HashSet {
@@ -71,7 +71,7 @@ impl HashSet<T> {
     }
 
     /// Creates a snapshot iterator in unspecified order.
-    pub func iterator(self) -> Iterator<T> {
+    pub func iterator(self: Self) -> Iterator<T> {
         let values = []
         for entry in self.table {
             values.push(entry.key)
@@ -80,7 +80,7 @@ impl HashSet<T> {
     }
 
     /// Consumes the set and returns its values in unspecified order.
-    pub func values(self) -> List<T> [consume self] {
+    pub func values(self: Self) -> List<T> [consume self] {
         (move self.table).keys()
     }
 }

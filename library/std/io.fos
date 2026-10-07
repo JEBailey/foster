@@ -17,13 +17,13 @@ import core.result.Result
 /// True includes EOF and pending I/O errors. Readiness is advisory when consumers race.
 pub type ReadReady<E> = {
     /// Waits up to `milliseconds`; false means timeout, Error means the wait failed.
-    pub func wait_readable(self, milliseconds: Int) -> Result<Bool, E> [read self]
+    pub func wait_readable(self: Self, milliseconds: Int) -> Result<Bool, E> [read self]
 }
 
 /// Timed readiness for writing. Readiness does not promise a complete write will fit.
 pub type WriteReady<E> = {
     /// Waits up to `milliseconds`; zero polls, false means timeout, negative values fail.
-    pub func wait_writable(self, milliseconds: Int) -> Result<Bool, E> [read self]
+    pub func wait_writable(self: Self, milliseconds: Int) -> Result<Bool, E> [read self]
 }
 
 /// Describes a failed host I/O operation.
@@ -42,7 +42,7 @@ pub type IoError = {
 pub type Reader<E> = {
     /// Reads at most `maximum` bytes; callers supply a positive maximum.
     /// For that positive request, empty bytes mean EOF and a nonempty result means progress.
-    pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
+    pub func read(self: Self, maximum: Int) -> Result<Bytes, E> [mut self]
 }
 
 /// A stateful destination for binary data.
@@ -53,16 +53,16 @@ pub type Reader<E> = {
 pub type Writer<E> = {
     /// Writes a prefix of `contents` and returns its byte count.
     /// For nonempty input, success must report `1..contents.length`; empty input may report zero.
-    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+    pub func write(self: Self, contents: Bytes) -> Result<Int, E> [mut self]
     /// Makes buffered output visible to the destination.
-    pub func flush(self) -> Result<(), E> [mut self]
+    pub func flush(self: Self) -> Result<(), E> [mut self]
 }
 
 /// A stateful source which decodes text while preserving character boundaries between reads.
 /// Empty text indicates clean end-of-stream.
 pub type TextReader<E> = {
     /// Reads decoded text without splitting a character boundary.
-    pub func read_text(self, maximum: Int) -> Result<String, E> [mut self]
+    pub func read_text(self: Self, maximum: Int) -> Result<String, E> [mut self]
 }
 
 /// A stateful text destination.
@@ -71,9 +71,9 @@ pub type TextReader<E> = {
 /// to the destination.
 pub type TextWriter<E> = {
     /// Writes the complete text value or returns an error.
-    pub func write_text(self, text: String) -> Result<(), E> [mut self]
+    pub func write_text(self: Self, text: String) -> Result<(), E> [mut self]
     /// Makes buffered text visible to the destination.
-    pub func flush(self) -> Result<(), E> [mut self]
+    pub func flush(self: Self) -> Result<(), E> [mut self]
 }
 
 /// A bidirectional binary stream combining the `Reader<E>` and `Writer<E>` contracts.
@@ -165,7 +165,7 @@ type IoTestWriter = & Writer<IoTestError> & {
 
 impl IoTestReader {
     /// Reads a bounded chunk for the generic stream contract test.
-    func read(self, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
+    func read(self: Self, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
         let limit = branch {
             maximum < self.chunk_size -> maximum _ -> self.chunk_size
         }
@@ -180,7 +180,7 @@ impl IoTestReader {
 
 impl IoTestWriter {
     /// Accepts a bounded chunk for the generic stream contract test.
-    func write(self, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
+    func write(self: Self, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
         let amount = branch {
             self.chunk_size < contents.length -> self.chunk_size _ -> contents.length
         }
@@ -189,7 +189,7 @@ impl IoTestWriter {
     }
 
     /// Completes a test writer flush.
-    func flush(self) -> Result<(), IoTestError> {
+    func flush(self: Self) -> Result<(), IoTestError> {
         Result.Ok(())
     }
 }

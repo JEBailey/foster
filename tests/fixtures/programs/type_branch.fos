@@ -24,7 +24,7 @@ type Item = {
     value: Int
 }
 impl Item {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         Item {
             value: self.value
         }

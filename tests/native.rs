@@ -538,8 +538,8 @@ fn dispatches_contract_methods_with_arguments() {
     let compilation = foster::compile(
         r#"
 type Identified = {
-    pub func id(self) -> Int [read self]
-    pub func offset(self, amount: Int) -> Int [read self]
+    pub func id(self: Self) -> Int [read self]
+    pub func offset(self: Self, amount: Int) -> Int [read self]
 }
 
 type User = & Identified & { value: Int }
@@ -586,7 +586,7 @@ fn dispatches_generic_contract_implementations() {
     let compilation = foster::compile(
         r#"
 type Renderer<T> = {
-    pub func render(self, value: T) -> String [read self]
+    pub func render(self: Self, value: T) -> String [read self]
 }
 
 type Formatter<T> = & Renderer<T> & {}
@@ -622,7 +622,7 @@ func main() -> String { render(Formatter {}) }
 fn dispatches_contracts_to_tagged_variants() {
     let compilation = foster::compile(
         r#"
-type Scored = { pub func score(self) -> Int [read self] }
+type Scored = { pub func score(self: Self) -> Int [read self] }
 
 enum Choice = Number(Int)
     | Empty

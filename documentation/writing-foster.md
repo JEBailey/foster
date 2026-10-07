@@ -18,7 +18,7 @@ import core.copy.Copy
 type Box<T> = { value: T }
 
 impl Box<T & Copy> {
-    func copied(self) -> T [read self] { self.value.copy() }
+    func copied(self: Self) -> T [read self] { self.value.copy() }
 }
 
 func main() -> Int { Box { value: 42 }.copied() }
@@ -160,9 +160,12 @@ result, so an assignment or call needs no trailing `()`. Explicit early returns 
 
 Records use `type Name = { ... }`, construction uses `Name { field: value }`,
 and implementations use `impl Name { ... }`. Use `pub` on declarations and fields
-that other modules must access. Prefer inferred `self` in implementation methods;
-put shared generic parameters on the `impl` header. Keep explicit receiver types
-for references and specialized receivers such as `List<String>`. Structural
+that other modules must access. Write `self: Self` in implementation methods;
+put shared generic parameters on the `impl` header. `Self` denotes the implemented
+value type and can also appear in associated-function returns and nested results.
+Use `self: ref[self] Self` for a borrowed receiver and `ref[self] Self` for a borrowed
+return; `-> Self` returns the value type. Keep concrete receiver annotations for
+specialized receivers such as `List<String>`. Structural
 contracts match accessible members; there is no nominal `implements` requirement.
 
 Use field shorthand when a field and its source variable have the same name:
@@ -173,13 +176,15 @@ Keep explicit initializers for expressions and ownership markers such as `move`.
 type Counter = { value: Int }
 
 impl Counter {
-    func increment(self) -> () [mut self] {
+    func new(value: Int) -> Self { Counter { value } }
+
+    func increment(self: Self) -> () [mut self] {
         self.value = self.value + 1
     }
 }
 
 func main() -> Int {
-    let counter = Counter { value: 0 }
+    let counter = Counter.new(0)
     let total = 0
     for item in [10, 20, 30] {
         continue if item == 20

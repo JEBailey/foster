@@ -1,33 +1,53 @@
 pub type Sized = {
-    pub func length(self) -> Int
-    pub func empty?(self) -> Bool
+    pub func length(self: Self) -> Int
+    pub func empty?(self: Self) -> Bool
 }
 
 impl Sized {
-    pub func empty?(self) -> Bool { self.length() == 0 }
+    pub func empty?(self: Self) -> Bool {
+        self.length() == 0
+    }
 }
 
-pub type Counted = & Sized & { count: Int }
+pub type Counted = & Sized & {
+    count: Int
+}
 impl Counted {
-    pub func length(self) -> Int { self.count }
+    pub func length(self: Self) -> Int {
+        self.count
+    }
 }
 
-pub type Pair = & Sized & { first: Int, second: Int }
+pub type Pair = & Sized & {
+    first: Int, second: Int
+}
 impl Pair {
-    pub func length(self) -> Int { self.first + self.second }
+    pub func length(self: Self) -> Int {
+        self.first + self.second
+    }
 }
 
-func is_empty(value: Sized) -> Bool { value.empty?() }
+func is_empty(value: Sized) -> Bool {
+    value.empty?()
+}
 
 func main() -> Int {
-    let empty = Counted { count: 0 }
-    let full = Pair { first: 2, second: 3 }
+    let empty = Counted {
+        count: 0
+    }
+    let full = Pair {
+        first: 2, second: 3
+    }
     assert(empty.empty?())
     assert(not full.empty?())
     assert(is_empty(empty))
     assert(not is_empty(full))
-    assert(not is_empty(Counted { count: 7 }))
-    assert(is_empty(Pair { first: 0, second: 0 }))
+    assert(not is_empty(Counted {
+        count: 7
+    }))
+    assert(is_empty(Pair {
+        first: 0, second: 0
+    }))
     assert(empty.length() == 0)
     assert(full.length() == 5)
     42

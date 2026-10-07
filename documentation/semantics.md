@@ -1,7 +1,7 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 10, 2026-09-25.
-Baseline: **language version 20, ownership-model version 5**.
+Status: **draft normative specification**, revision 11, 2026-10-06.
+Baseline: **language version 21, ownership-model version 5**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -65,8 +65,12 @@ The dependency key names that root when imported, independently of the selected 
 Selecting a library entry does not execute its declarations or imply an initialization function.
 
 Methods and associated functions are declared in module-scope `impl Type { ... }` blocks.
-The block supplies the member owner and optional shared type parameters. An unannotated first
-`self` parameter receives the block's type. Blocks share the existing member namespace and do
+The block supplies the member owner and optional shared type parameters. A first
+`self` parameter requires an explicit type, normally `self: Self`. `Self` denotes the
+implemented value type and its generic arguments, including for associated-function
+returns; borrowed receivers and returns use `ref[self] Self`. Structural requirements
+begin with `self: Self`, and their `Self` results retain the implementing receiver's
+identity. Lowercase `self` names a value or storage group, never a type. Blocks share the existing member namespace and do
 not declare conformance; visibility remains per member. Module functions remain at module scope.
 
 An implementation header may constrain a generic parameter, as in `impl Box<T & Copy>`.
@@ -313,7 +317,7 @@ local can reinitialize it; using a field through an unavailable parent cannot. A
 invalidates the moved part and overlapping uses, not provably disjoint initialized siblings.
 
 The built-in copy types are `()`, `Bool`, `Int`, `Float`, `Byte`, `CodePoint`, and `Symbol`.
-Copying one preserves the source. `core.copy.Copy` declares `func copy(self) -> self`: a
+Copying one preserves the source. `core.copy.Copy` declares `func copy(self: Self) -> Self`: a
 non-suspending read of the receiver that returns an independent value of its concrete type.
 Implementing it enables explicit `.copy()` and checked `List.at()` reads; assignment and capture
 classification remain unchanged. Shared runtime storage does not confer copy permission.
@@ -418,7 +422,7 @@ leaving its current control path. A value successfully moved into a destination 
 environment is no longer owned by its temporary.
 Owned function storage is subject to the destruction rules in the ownership model; borrowed
 parameters do not destroy their caller's storage. Earlier last-use disposal is allowed only when
-observably equivalent. `core.drop.Drop` declares `func deinit(self) -> ()`. A matching method
+observably equivalent. `core.drop.Drop` declares `func deinit(self: Self) -> ()`. A matching method
 runs automatically once when ownership ends, before owned fields and payloads are released.
 It borrows the complete receiver, cannot suspend, and cannot be called directly. Locals are cleaned
 up in reverse binding order on scope exit; replacement cleans the old value after evaluating the
@@ -430,7 +434,7 @@ reclamation timing are not specified.
 ## 9. Remote execution
 
 `core.future.Future<T>` is a structural contract requiring a zero-argument
-`resolve(self) -> T [consume self, suspend]` method. It composes with other
+`resolve(self: Self) -> T [consume self, suspend]` method. It composes with other
 contracts and supports generic constraints. `await value` consumes the value and
 dispatches `resolve()`; implementations that complete immediately may omit the
 `suspend` effect. Await remains a suspension boundary for ownership checking.

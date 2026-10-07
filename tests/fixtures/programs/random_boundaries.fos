@@ -1,0 +1,93 @@
+import core.result.Result
+import std.random
+import std.random.RandomSource
+import std.random.RandomError
+import std.random.distribution.UniformFloat
+import std.random.distribution.UniformInt
+import std.random.distribution.Bernoulli
+
+type Source = & RandomSource & {
+    value: Int, limit: Int
+}
+
+impl Source {
+    func next(self: Self) -> Result<Int, RandomError> [mut self.value, read self.limit] {
+        let value = self.value
+        self.value = branch {
+            value >= self.limit -> 0 _ -> value + 1
+        }
+        Result.Ok(value)
+    }
+
+    func maximum(self: Self) -> Int {
+        self.limit
+    }
+}
+
+func sample(start: Float, end: Float, value: Int, limit: Int) -> Float {
+    let source = Source {
+        value, limit
+    }
+    let distribution = branch UniformFloat.from(start, end) {
+        Result.Ok(distribution) -> move distribution
+        Result.Error(_) -> panic("valid float bounds were rejected")
+    }
+    branch distribution.sample(source) {
+        Result.Ok(result) -> {
+            assert(result >= start && result < end, "float sample escaped its bounds")
+            result
+        }
+        Result.Error(_) -> panic("valid float sample failed")
+    }
+}
+
+func main() -> Int {
+    assert(sample(0.0, 1.0, 9223372036854775806, 9223372036854775806) < 1.0)
+    assert(sample(0.0, 1.0, 9007199254740992, 9007199254740992) < 1.0)
+    assert(sample(-1e308, 1e308, 0, 1) == -1e308)
+    assert(sample(-1e308, 1e308, 1, 1) == 0.0)
+    assert(sample(-1e308, 1e308, 9223372036854775806, 9223372036854775806) < 1e308)
+    assert(sample(1.0, 1.0000000000000002, 1, 1) == 1.0)
+    assert(sample(-1.0000000000000002, -1.0, 1, 1) == -1.0000000000000002)
+    assert(sample(0.0, 5e-324, 1, 1) == 0.0)
+    assert(sample(-5e-324, 0.0, 1, 1) == -5e-324)
+    assert(sample(5e-324, 1e-323, 1, 1) == 5e-324)
+    assert(sample(-1e-323, -5e-324, 1, 1) == -1e-323)
+    assert(sample(1e308, 1.7976931348623157e308, 9223372036854775806, 9223372036854775806) < 1.7976931348623157e308)
+
+    let invalid = Source {
+        value: 0, limit: 9223372036854775807
+    }
+    branch random::between_with(invalid, 0, 1) {
+        Result.Error(error) -> {
+            assert(error.operation == "between" && error.value == 9223372036854775807)
+        }
+        Result.Ok(_) -> panic("invalid source maximum was accepted")
+    }
+    assert(invalid.value == 0)
+    assert(random::between_with(Source {
+        value: 0, limit: -1
+    }, 0, 1).error?())
+    branch UniformInt.from(0, 1) {
+        Result.Ok(distribution) -> {
+            assert(distribution.sample(invalid).error?())
+        }
+        Result.Error(_) -> panic("valid integer bounds were rejected")
+    }
+    let minimum = -9223372036854775807 - 1
+    assert(random::between_with(Source {
+        value: 0, limit: 9223372036854775806
+    }, minimum, -1) == Result.Ok(minimum))
+    assert(random::between_with(Source {
+        value: 0, limit: 1
+    }, minimum, 0).error?())
+    branch Bernoulli.from(0.9999999999999999) {
+        Result.Ok(distribution) -> {
+            assert(distribution.sample(Source {
+                value: 9223372036854775806, limit: 9223372036854775806
+            }) == Result.Ok(false))
+        }
+        Result.Error(_) -> panic("valid probability was rejected")
+    }
+    42
+}

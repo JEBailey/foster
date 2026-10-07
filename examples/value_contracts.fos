@@ -7,11 +7,11 @@ type Version = & Ordered<Version> & Hashing & {
 }
 
 impl Version {
-    func equal?(self, other: Version) -> Bool {
+    func equal?(self: Self, other: Version) -> Bool {
         self.number == other.number
     }
 
-    func compare(self, other: Version) -> Ordering {
+    func compare(self: Self, other: Version) -> Ordering {
         branch {
             self.number < other.number -> Ordering.Less
             self.number > other.number -> Ordering.Greater
@@ -19,7 +19,7 @@ impl Version {
         }
     }
 
-    func hash(self) -> Int {
+    func hash(self: Self) -> Int {
         self.number * 31
     }
 }

@@ -287,7 +287,7 @@ the generated C checks its complete function-pointer type. This resolves the
 typedef's unsupported-report entry as well as reviewed operations using it.
 
 An operation parameter `{"callback":"Visitor"}` generates a generic Foster
-handler parameter. The handler supplies `visit(self, value: Int) -> Int`; it can
+handler parameter. The handler supplies `visit(self: Self, value: Int) -> Int`; it can
 mutate its own state. The wrapper borrows it until the C call returns. C must not
 retain either the callback or its context after that call.
 

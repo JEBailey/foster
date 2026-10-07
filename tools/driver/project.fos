@@ -32,7 +32,7 @@ type Dependency = {
     name: String, root: String
 }
 impl Dependency {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         Dependency {
             name: self.name.copy(), root: self.root.copy()
         }
@@ -42,7 +42,7 @@ type ProjectData = {
     name: String, root: String, manifest: String, source: String, entry: String, dependencies: List<Dependency>
 }
 impl ProjectData {
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         ProjectData {
             name: self.name.copy(), root: self.root.copy(), manifest: self.manifest.copy(), source: self.source.copy(), entry: self.entry.copy(), dependencies: self.dependencies.map((value: Dependency) -> value.copy())
         }

@@ -344,6 +344,12 @@ impl Workspace {
             }
             let (name, name_start) = identifier_at(source, offset)?;
             let qualifier = qualifier_before(source, name_start);
+            if qualifier.is_none()
+                && name == "Self"
+                && let Some(symbol) = self_type_owner_at(&compilation, module_id, offset)
+            {
+                return symbol_declaration(&compilation, symbol);
+            }
 
             if qualifier.is_none() && name == "CodePoint" {
                 return embedded_module_location("core.code_point");
@@ -406,7 +412,13 @@ impl Workspace {
         let qualifier = qualifier_before(current_source, start);
         let semantic_offset = snapshot.current_offset_to_semantic(current_offset)?;
 
-        let value = if let Some(symbol) =
+        let value = if qualifier.is_none()
+            && name == "Self"
+            && let Some(symbol) = self_type_owner_at(&compilation, module_id, semantic_offset)
+            && let Some(value) = symbol_hover(&compilation, symbol)
+        {
+            value
+        } else if let Some(symbol) =
             symbol_at(&compilation, module_id, semantic_source, semantic_offset)
             && let Some(value) = symbol_hover(&compilation, symbol)
         {
@@ -672,6 +684,14 @@ impl Workspace {
         let offset = snapshot.current_position_to_semantic_offset(position.position)?;
         let symbol = symbol_at(&compilation, module, source, offset)?;
         if matches!(symbol, SymbolIdentity::Builtin(_)) {
+            return None;
+        }
+        if params.new_name == "Self"
+            && matches!(
+                symbol,
+                SymbolIdentity::Record(_) | SymbolIdentity::Variant(_)
+            )
+        {
             return None;
         }
         if !matches!(symbol, SymbolIdentity::Local(_))
@@ -1132,6 +1152,39 @@ fn symbol_at(
             matches.next().is_none().then_some(first)
         })?
     })
+}
+
+fn self_type_owner_at(
+    compilation: &crate::compiler::RecoveryCompilation,
+    module: crate::hir::ModuleId,
+    offset: usize,
+) -> Option<SymbolIdentity> {
+    if let Some(function) = function_at(compilation, module, offset)
+        && let Some(owner) = &compilation.hir.functions[function].owner
+    {
+        return declaration_identity(compilation, module, owner);
+    }
+    for (id, record) in compilation.hir.records.iter() {
+        if record.module == module
+            && record
+                .methods
+                .iter()
+                .any(|method| method.span.contains(&offset))
+        {
+            return Some(SymbolIdentity::Record(id));
+        }
+    }
+    for (id, variant) in compilation.hir.variant_types.iter() {
+        if variant.module == module
+            && variant
+                .methods
+                .iter()
+                .any(|method| method.span.contains(&offset))
+        {
+            return Some(SymbolIdentity::Variant(id));
+        }
+    }
+    None
 }
 
 fn symbol_hover(

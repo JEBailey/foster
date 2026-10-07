@@ -2,7 +2,7 @@ type Counter = {
     value: Int
 }
 impl Counter {
-    func increment(self) -> () [mut self] {
+    func increment(self: Self) -> () [mut self] {
         self.value = self.value + 1
     }
 }

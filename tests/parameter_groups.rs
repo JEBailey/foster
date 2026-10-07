@@ -68,10 +68,10 @@ fn method_contracts_use_parameter_positions_for_group_names() {
     foster::compile(
         r#"
 type Item = { value: Int }
-type Reader = { pub func borrow(self, item: Item) -> ref[item] Item }
+type Reader = { pub func borrow(self: Self, item: Item) -> ref[item] Item }
 type Implementation = & Reader & {}
 impl Implementation {
-    func borrow(self, other: Item) -> ref[other] Item { ref other }
+    func borrow(self: Self, other: Item) -> ref[other] Item { ref other }
 }
 func main() -> Int {
     let reader = Implementation {}
@@ -91,8 +91,8 @@ type Item = { value: Int }
 func first(left: Item, right: Item) -> ref[left] Item { ref left }
 func relay(right: Item, other: Item) -> ref[right] Item { first(right, other) }
 impl Item {
-    func choose(self, item: Item) -> ref[item] Item { ref item }
-    func forward(self, other: Item) -> ref[self] Item { other.choose(self) }
+    func choose(self: Self, item: Item) -> ref[item] Item { ref item }
+    func forward(self: Self, other: Item) -> ref[self] Item { other.choose(self) }
 }
 func main() -> Int { let item = Item { value: 42 }
 relay(item, item).value }

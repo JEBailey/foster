@@ -11,15 +11,15 @@ equal values equal hashes; a hash is not a unique identifier.</p>
 it returns <code>Ordering.Equal</code> exactly when <code>equal?</code> returns true.</p>
 <h4>Contracts</h4><ul><li><code><a class="type-link" href="#Equality" title="core.ordering.Equality">Equality</a>&lt;T&gt;</code></li></ul><h4>Required methods</h4><ul><li><code>compare</code><br><small>Compares this value with `other`.</small></li></ul></article><article class="type-summary"><h3><a href="#Ordering">Ordering</a><span class="badge visibility-public">public</span></h3><p>The relative order of two comparable values.</p>
 <h4>Cases</h4><ul><li><code>Less</code></li><li><code>Equal</code></li><li><code>Greater</code></li></ul><h4>Required methods</h4><ul><li><code>reverse</code><br><small>Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.</small></li></ul><h4>Functions and methods</h4><ul><li><a href="#Ordering.reverse"><code>reverse</code></a><br><small>Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.</small></li></ul></article></div></section></div><article id="Equality"><h2><a class="anchor" href="#Equality">Equality</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Equality&lt;T&gt; = {
-    pub func equal?(self, other: T) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>
+    pub func equal?(self: Self, other: T) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>
 }</code></pre><p>A type whose values can be compared for semantic equality with <code>T</code>.</p>
 <p>Implementations must be reflexive, symmetric, and transitive.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Hashing"><h2><a class="anchor" href="#Hashing">Hashing</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Hashing = {
-    pub func hash(self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
+    pub func hash(self: Self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
 }</code></pre><p>A type that provides a stable integer hash for its semantic value.</p>
 <p>Values considered equal must return the same hash. Unequal values may collide.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Ordered"><h2><a class="anchor" href="#Ordered">Ordered</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Ordered&lt;T&gt; = &amp; <a class="type-link" href="#Equality" title="core.ordering.Equality">Equality</a>&lt;T&gt; &amp; {
-    pub func compare(self, other: T) -&gt; <a class="type-link" href="#Ordering" title="core.ordering.Ordering">Ordering</a>
+    pub func compare(self: Self, other: T) -&gt; <a class="type-link" href="#Ordering" title="core.ordering.Ordering">Ordering</a>
 }</code></pre><p>A totally ordered type whose values can be compared with <code>T</code>.</p>
 <p><code>compare</code> must agree with the composed <code>Equality&lt;T&gt;</code> implementation:
 it returns <code>Ordering.Equal</code> exactly when <code>equal?</code> returns true.</p>

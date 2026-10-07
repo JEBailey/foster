@@ -23,6 +23,10 @@ and the standard library are written in `.fos` files.
 - Use dotted imports, `module::function()`, `Type.factory()`, `Enum.Case(...)`,
   `value.field`, and `value.method()`. Zero-argument methods still require `()`.
 - Imports expose public declarations; a public type does not make its fields public.
+- Receivers need an explicit type: use `self: Self` in implementations and required
+  methods. `Self` is the implemented value type; `self` is the value and storage group.
+  Borrowed receivers and returns use `ref[self] Self`. Bare `self` parameters and
+  lowercase `self` type annotations are invalid.
 - Ordinary call arguments borrow by default. Consuming parameters take an existing
   owned binding with `move`. Explicit reference types use groups, not Rust lifetimes.
 - Read the actual API before choosing a collection operation: consuming a collection,

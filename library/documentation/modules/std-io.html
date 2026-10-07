@@ -35,30 +35,30 @@ For nonempty input, success must report `1..contents.length`; empty input may re
 <code>operation</code> identifies the failing action and <code>path</code> its target when available.
 <code>message</code> is human-readable host text whose wording may vary by platform.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ReadReady"><h2><a class="anchor" href="#ReadReady">ReadReady</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ReadReady&lt;E&gt; = {
-    pub func wait_readable(self, milliseconds: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, E&gt; [read self]
+    pub func wait_readable(self: Self, milliseconds: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, E&gt; [read self]
 }</code></pre><p>Timed readiness for reading or accepting. Zero polls without waiting; negative timeouts fail.
 True includes EOF and pending I/O errors. Readiness is advisory when consumers race.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Reader"><h2><a class="anchor" href="#Reader">Reader</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Reader&lt;E&gt; = {
-    pub func read(self, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
+    pub func read(self: Self, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>, E&gt; [mut self]
 }</code></pre><p>A stateful source of binary data.</p>
 <p><code>read</code> returns at most <code>maximum</code> bytes. Empty bytes indicate clean end-of-stream.
 A successful read of a non-empty stream must return at least one byte.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="TextReader"><h2><a class="anchor" href="#TextReader">TextReader</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type TextReader&lt;E&gt; = {
-    pub func read_text(self, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, E&gt; [mut self]
+    pub func read_text(self: Self, maximum: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-string.html#String" title="core.string.String">String</a>, E&gt; [mut self]
 }</code></pre><p>A stateful source which decodes text while preserving character boundaries between reads.
 Empty text indicates clean end-of-stream.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="TextWriter"><h2><a class="anchor" href="#TextWriter">TextWriter</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type TextWriter&lt;E&gt; = {
-    pub func write_text(self, text: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
-    pub func flush(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+    pub func write_text(self: Self, text: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+    pub func flush(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
 }</code></pre><p>A stateful text destination.</p>
 <p><code>write_text</code> accepts the complete string or returns an error. <code>flush</code> makes buffered text visible
 to the destination.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="WriteReady"><h2><a class="anchor" href="#WriteReady">WriteReady</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type WriteReady&lt;E&gt; = {
-    pub func wait_writable(self, milliseconds: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, E&gt; [read self]
+    pub func wait_writable(self: Self, milliseconds: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>, E&gt; [read self]
 }</code></pre><p>Timed readiness for writing. Readiness does not promise a complete write will fit.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Writer"><h2><a class="anchor" href="#Writer">Writer</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Writer&lt;E&gt; = {
-    pub func write(self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
-    pub func flush(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
+    pub func write(self: Self, contents: <a class="type-link" href="core-bytes.html#Bytes" title="core.bytes.Bytes">Bytes</a>) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, E&gt; [mut self]
+    pub func flush(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;(), E&gt; [mut self]
 }</code></pre><p>A stateful destination for binary data.</p>
 <p><code>write</code> may accept fewer bytes than supplied and reports the accepted count. A successful write
 of non-empty bytes must accept at least one byte. <code>flush</code> makes buffered output visible to the

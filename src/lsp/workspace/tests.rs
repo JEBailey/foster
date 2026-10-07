@@ -1,6 +1,51 @@
 use super::*;
 
 #[test]
+fn reserved_self_type_cannot_be_a_rename_target() {
+    for source in ["type Item = {}\n", "enum Item = One | Two\n"] {
+        let (mut workspace, uri, _) = fixture_workspace();
+        workspace.open(uri.clone(), source.into(), 1);
+        let params = RenameParams {
+            text_document_position: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri),
+                Position::new(0, 5),
+            ),
+            new_name: "Self".into(),
+            work_done_progress_params: Default::default(),
+        };
+        assert!(workspace.rename(&params).is_none());
+        assert!(
+            workspace
+                .rename(&RenameParams {
+                    new_name: "Renamed".into(),
+                    ..params
+                })
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn self_type_hover_and_definition_follow_the_enclosing_owner() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "type Item = { pub func identity(self: Self) -> Self [consume self] }\nimpl Item { func identity(self: Self) -> Self [consume self] { move self } }\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    for (offset, _) in source.match_indices("Self") {
+        let params = TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri.clone()),
+            byte_range_to_lsp(source, offset..offset).start,
+        );
+        let HoverContents::Markup(hover) = workspace.hover(&params).unwrap().contents else {
+            panic!("expected type hover")
+        };
+        assert!(hover.value.contains("type Item"), "{}", hover.value);
+        let definition = workspace.definition(&params).unwrap();
+        assert_eq!(definition.uri, uri);
+        assert_eq!(definition.range.start, Position::new(0, 5));
+    }
+}
+
+#[test]
 fn if_statements_are_available_to_semantic_analysis() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = "func main() -> Int {\n    let value = 0\n    if true value = 42\n    if false { value = 0 }\n    value\n}\n";
@@ -41,7 +86,7 @@ fn multiline_method_error_keeps_the_enclosing_function_available() {
 
 #[test]
 fn constrained_method_signature_displays_requirements() {
-    let compilation = crate::compile("import core.copy.*\ntype Box<T> = { value: T }\nimpl Box<T & Copy> { func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { Box { value: 42 }.copied() }").unwrap();
+    let compilation = crate::compile("import core.copy.*\ntype Box<T> = { value: T }\nimpl Box<T & Copy> { func copied(self: Self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { Box { value: 42 }.copied() }").unwrap();
     let module = compilation.hir.module_named("main").unwrap();
     let method = compilation
         .hir
@@ -126,7 +171,9 @@ fn failed_comparison_keeps_parameter_method_navigation_and_operand_locations() {
     let core = include_str!("../../../library/core/string.fos");
     let line = core
         .lines()
-        .position(|line| line.contains("pub func iterator(self)") && line.trim_end().ends_with("{"))
+        .position(|line| {
+            line.contains("pub func iterator(self: Self)") && line.trim_end().ends_with("{")
+        })
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(line, 13));
 }
@@ -1179,7 +1226,7 @@ fn callable_contract_members_provide_hover_signature_and_definition() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"type Identified = {
     /// Adds an amount to this value.
-    pub func offset(self, amount: Int) -> Int [read self]
+    pub func offset(self: Self, amount: Int) -> Int [read self]
 }
 
 type User = & Identified & { value: Int }
@@ -1205,7 +1252,7 @@ func main() -> Int { apply(User { value: 40 }) }
     assert!(
         contents
             .value
-            .contains("func offset(self, amount: Int) -> Int"),
+            .contains("func offset(self: Self, amount: Int) -> Int"),
         "{}",
         contents.value
     );
@@ -1227,7 +1274,7 @@ func main() -> Int { apply(User { value: 40 }) }
     assert!(
         help.signatures[0]
             .label
-            .contains("offset(self, amount: Int)")
+            .contains("offset(self: Self, amount: Int)")
     );
     assert!(matches!(
         &help.signatures[0].documentation,
@@ -1238,7 +1285,7 @@ func main() -> Int { apply(User { value: 40 }) }
 #[test]
 fn impl_member_rename_from_its_declaration_preserves_other_owners() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = "type Left = {}\ntype Right = {}\nimpl Left {\n    func read(self) -> Int { 20 }\n}\nimpl Right {\n    func read(self) -> Int { 22 }\n}\nfunc main() -> Int { Left {}.read() + Right {}.read() }\n";
+    let source = "type Left = {}\ntype Right = {}\nimpl Left {\n    func read(self: Self) -> Int { 20 }\n}\nimpl Right {\n    func read(self: Self) -> Int { 22 }\n}\nfunc main() -> Int { Left {}.read() + Right {}.read() }\n";
     workspace.open(uri.clone(), source.into(), 1);
     let edit = workspace
         .rename(&RenameParams {
@@ -1393,7 +1440,9 @@ func main() -> Int {
     let core = include_str!("../../../library/core/int.fos");
     let line = core
         .lines()
-        .position(|line| line.contains("pub func power(self,") && line.trim_end().ends_with("{"))
+        .position(|line| {
+            line.contains("pub func power(self: Self,") && line.trim_end().ends_with("{")
+        })
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(line, 13));
 }
@@ -1527,7 +1576,7 @@ fn source_builtins_provide_docs_navigation_and_parameter_hints() {
     assert!(
         uri_to_path(&location.uri)
             .unwrap()
-            .ends_with("../../../documentation/core-library.md")
+            .ends_with("documentation/core-library.md")
     );
 
     let hints = workspace
@@ -1676,16 +1725,16 @@ fn overloaded_contract_calls_use_the_selected_requirement_for_lsp_features() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"type IntegerRenderer = {
     /// Renders an integer.
-    pub func render(self, value: Int) -> String [read self]
+    pub func render(self: Self, value: Int) -> String [read self]
 }
 
 type CodePointRenderer = {
     /// Renders a code point.
-    pub func render(self, value: CodePoint) -> String [read self]
+    pub func render(self: Self, value: CodePoint) -> String [read self]
 }
 
 type Renderer = & IntegerRenderer & CodePointRenderer & {
-    pub func render(self, value: Int) -> String [read self]
+    pub func render(self: Self, value: Int) -> String [read self]
 }
 
 type Formatter = & Renderer & {}
@@ -1712,7 +1761,7 @@ func main() -> String { inspect(Formatter {}) }
         panic!("expected markdown hover")
     };
     assert!(
-        hover.value.contains("render(self, value: CodePoint)"),
+        hover.value.contains("render(self: Self, value: CodePoint)"),
         "{}",
         hover.value
     );
@@ -1734,7 +1783,7 @@ func main() -> String { inspect(Formatter {}) }
     assert!(
         help.signatures[0]
             .label
-            .contains("render(self, value: CodePoint)")
+            .contains("render(self: Self, value: CodePoint)")
     );
 }
 

@@ -22,13 +22,13 @@ import core.byte
 /// The structural effect includes borrowed callback environments; exhaustion returns `None`.
 pub type Iterator<T> = {
     /// Advances this iterator and returns its next value, if one remains.
-    pub func next(self) -> Option<T> [reshape self]
+    pub func next(self: Self) -> Option<T> [reshape self]
 }
 
 /// A value that can create an independent iterator over a read-only view of its elements.
 pub type Iterable<T> = {
     /// Creates an iterator positioned before this iterable's first element.
-    pub func iterator(self) -> Iterator<T>
+    pub func iterator(self: Self) -> Iterator<T>
 }
 
 type SequenceIterator<T> = & Iterator<T> & {
@@ -43,7 +43,7 @@ type ListIterator<T> = & Iterator<T> & {
 
 impl ListIterator<T> {
     /// Reads the next indexed element, retaining the backing snapshot until release.
-    func next(self) -> Option<T> {
+    func next(self: Self) -> Option<T> {
         branch {
             self.index >= self.values.length -> Option.None
             _ -> {
@@ -63,7 +63,7 @@ type BytesIterator = & Iterator<Byte> & {
 
 impl BytesIterator {
     /// Returns the next byte, or None after exhaustion.
-    func next(self) -> Option<Byte> {
+    func next(self: Self) -> Option<Byte> {
         branch {
             self.index >= self.data.length -> Option.None
             _ -> {
@@ -77,7 +77,7 @@ impl BytesIterator {
 
 impl SequenceIterator<T> {
     /// Advances a sequence-backed iterator unless it has been exhausted.
-    func next(self) -> Option<T> {
+    func next(self: Self) -> Option<T> {
         branch {
             self.remaining.empty?() -> Option.None
             _ -> self.advance()
@@ -85,7 +85,7 @@ impl SequenceIterator<T> {
     }
 
     /// Removes and returns the current head of a non-empty sequence cursor.
-    func advance(self) -> Option<T> {
+    func advance(self: Self) -> Option<T> {
         let value = self.remaining.head()
         self.remaining = self.remaining.rest()
         Option.Some(value)
@@ -108,7 +108,7 @@ impl Iterator<T> {
     }
 
     /// Calls `action` once for every remaining element without growing the call stack.
-    pub func for_each(self, action: Consumer<T>) -> () [reshape self] {
+    pub func for_each(self: Self, action: Consumer<T>) -> () [reshape self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> action(move value)
@@ -121,7 +121,7 @@ impl Iterator<T> {
     }
 
     /// Reduces every remaining element into one owned accumulator, from left to right.
-    pub func fold<U>(self, initial: U, combine: func(consume U, consume T) -> U) -> U [reshape self, consume initial] {
+    pub func fold<U>(self: Self, initial: U, combine: func(consume U, consume T) -> U) -> U [reshape self, consume initial] {
         let accumulated = move initial
         loop {
             branch self.next() {
@@ -138,7 +138,7 @@ impl Iterator<T> {
     }
 
     /// Returns the first match, leaving later elements unconsumed.
-    pub func find(self, predicate: Predicate<T>) -> Option<T> [reshape self] {
+    pub func find(self: Self, predicate: Predicate<T>) -> Option<T> [reshape self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> {
@@ -154,7 +154,7 @@ impl Iterator<T> {
     }
 
     /// Stops pulling as soon as an element satisfies `predicate`.
-    pub func any?(self, predicate: Predicate<T>) -> Bool [reshape self] {
+    pub func any?(self: Self, predicate: Predicate<T>) -> Bool [reshape self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> {
@@ -170,7 +170,7 @@ impl Iterator<T> {
     }
 
     /// Stops pulling as soon as an element fails `predicate`.
-    pub func all?(self, predicate: Predicate<T>) -> Bool [reshape self] {
+    pub func all?(self: Self, predicate: Predicate<T>) -> Bool [reshape self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> {
@@ -186,7 +186,7 @@ impl Iterator<T> {
     }
 
     /// Counts every remaining element and leaves the iterator exhausted.
-    pub func count(self) -> Int [reshape self] {
+    pub func count(self: Self) -> Int [reshape self] {
         let total = 0
         loop {
             branch self.next() {
@@ -203,7 +203,7 @@ impl Iterator<T> {
     }
 
     /// Collects the remaining elements into one growing list.
-    pub func collect(self) -> List<T> [reshape self] {
+    pub func collect(self: Self) -> List<T> [reshape self] {
         let output = []
         loop {
             branch self.next() {

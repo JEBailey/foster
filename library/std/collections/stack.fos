@@ -15,9 +15,9 @@ import core.option.Option
 /// A last-in, first-out collection.
 pub type Stack<T> = & Collection<T> & {
     /// Returns a stack with `value` placed on top.
-    pub func push(self, value: T) -> self [consume self, consume value]
+    pub func push(self: Self, value: T) -> Self [consume self, consume value]
     /// Removes the top value and returns the remaining stack.
-    pub func pop(self) -> Option<StackItem<T, self>> [consume self]
+    pub func pop(self: Self) -> Option<StackItem<T, Self>> [consume self]
 }
 
 impl Stack {
@@ -41,29 +41,29 @@ impl ListStack<T> {
     }
 
     /// Returns the number of stacked values.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.values.length
     }
 
     /// Returns whether the stack contains no values.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from top to bottom.
-    pub func iterator(self) -> Iterator<T> {
+    pub func iterator(self: Self) -> Iterator<T> {
         reverse(self.values, []).iterator()
     }
 
     /// Returns a stack with `value` placed on top.
-    pub func push(self, value: T) -> ListStack<T> [consume self, consume value] {
+    pub func push(self: Self, value: T) -> ListStack<T> [consume self, consume value] {
         ListStack {
             values: self.values.append(value)
         }
     }
 
     /// Removes the top value and returns the remaining stack.
-    pub func pop(self) -> Option<StackItem<T, ListStack<T>>> [consume self] {
+    pub func pop(self: Self) -> Option<StackItem<T, ListStack<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> pop_values(move self.values, [])

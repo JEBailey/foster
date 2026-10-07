@@ -29,6 +29,7 @@ fn execution_packages_build_without_compiler_dependencies() {
         names,
         BTreeSet::from([
             "foster",
+            "foster-bootstrap",
             "foster-compiler",
             "foster-vm",
             "foster-bytecode",
@@ -64,7 +65,7 @@ fn execution_packages_build_without_compiler_dependencies() {
                 continue;
             }
             assert!(
-                !matches!(package, "foster" | "foster-compiler"),
+                !matches!(package, "foster" | "foster-compiler" | "foster-bootstrap"),
                 "{root} depends on {package}"
             );
             if let Some(children) = dependencies.get(package) {

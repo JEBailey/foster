@@ -40,7 +40,7 @@ func connect(provider: NetworkProvider<Connection, Listener>, port: Int) -> Int 
 
 type Worker = {}
 impl Worker {
-    func check(self, port: Int) -> Int {
+    func check(self: Self, port: Int) -> Int {
         connect(RuntimeHost.new(), port)
     }
 }

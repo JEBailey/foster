@@ -19,15 +19,15 @@ import std.path.Path
 /// Supplies located file resources. Implementations choose their own resource type.
 pub type FileProvider<F> = {
     /// Resolves a location to a resource without requiring an OS file handle.
-    pub func file(self, location: paths::Path) -> Result<F, IoError> [read self, consume location]
+    pub func file(self: Self, location: paths::Path) -> Result<F, IoError> [read self, consume location]
 }
 
 /// Supplies connected streams and listeners, including in-memory implementations.
 pub type NetworkProvider<C, L> = {
     /// Connects to an endpoint using this provider's namespace and policy.
-    pub func connect(self, address: String, port: Int) -> Result<C, NetworkError> [read self, consume address]
+    pub func connect(self: Self, address: String, port: Int) -> Result<C, NetworkError> [read self, consume address]
     /// Binds an endpoint using this provider's namespace and policy.
-    pub func listen(self, address: String, port: Int) -> Result<L, NetworkError> [read self, consume address]
+    pub func listen(self: Self, address: String, port: Int) -> Result<L, NetworkError> [read self, consume address]
 }
 
 /// File and TCP adapters backed by the runtime's installed host provider.
@@ -39,15 +39,15 @@ impl RuntimeHost {
         RuntimeHost {}
     }
     /// Creates a located file; actual I/O may subsequently fail.
-    pub func file(self, location: paths::Path) -> Result<File, IoError> [consume location] {
+    pub func file(self: Self, location: paths::Path) -> Result<File, IoError> [consume location] {
         Result.Ok(File.at(move location))
     }
     /// Connects through the installed runtime provider.
-    pub func connect(self, address: String, port: Int) -> Result<Connection, NetworkError> [consume address] {
+    pub func connect(self: Self, address: String, port: Int) -> Result<Connection, NetworkError> [consume address] {
         tcp::connect(move address, port)
     }
     /// Binds through the installed runtime provider.
-    pub func listen(self, address: String, port: Int) -> Result<Listener, NetworkError> [consume address] {
+    pub func listen(self: Self, address: String, port: Int) -> Result<Listener, NetworkError> [consume address] {
         tcp::listen(move address, port)
     }
 }

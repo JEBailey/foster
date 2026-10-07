@@ -1774,8 +1774,8 @@ func main() -> String {
 fn callable_contract_members_dispatch_through_structural_types() {
     let source = r#"
 type Identified = {
-    pub func id(self) -> Int [read self]
-    pub func offset(self, amount: Int) -> Int [read self]
+    pub func id(self: Self) -> Int [read self]
+    pub func offset(self: Self, amount: Int) -> Int [read self]
 }
 
 type User = & Identified & {
@@ -2270,11 +2270,11 @@ func main() -> Int { 0 }
 fn composed_contracts_require_callable_members_when_instantiated() {
     let contracts = r#"
 type Reads = {
-    pub func read(self) -> Int
+    pub func read(self: Self) -> Int
 }
 
 type Writes = {
-    pub func write(self, value: Int) -> Int
+    pub func write(self: Self, value: Int) -> Int
 }
 
 type WithEmptyRecord = & Reads & Writes & {}
@@ -2344,7 +2344,7 @@ fn variants_support_shared_contract_bodies_and_instance_methods() {
 enum Choice = Number(Int)
     | Empty
     & {
-        pub func score(self) -> Int
+        pub func score(self: Self) -> Int
     }
 impl Choice {
     func score(self: Choice) -> Int {
@@ -2372,7 +2372,7 @@ func main() -> Int { Choice.Number(42).score() }
 fn variants_compose_method_only_contracts() {
     let source = r#"
 type Scored = {
-    pub func score(self) -> Int
+    pub func score(self: Self) -> Int
 }
 
 enum Choice = Number(Int)
@@ -3347,11 +3347,11 @@ func main() -> String {
 fn composed_contracts_merge_and_dispatch_overloaded_requirements() {
     let source = r#"
 type IntegerRenderer = {
-    pub func render(self, value: Int) -> String [read self]
+    pub func render(self: Self, value: Int) -> String [read self]
 }
 
 type CodePointRenderer = {
-    pub func render(self, value: CodePoint) -> String [read self]
+    pub func render(self: Self, value: CodePoint) -> String [read self]
 }
 
 type Renderer = & IntegerRenderer & CodePointRenderer & {}
@@ -3377,7 +3377,7 @@ func main() -> String { render(Formatter {}) }
 fn generic_contract_methods_use_structural_dispatch_keys() {
     let source = r#"
 type Renderer<T> = {
-    pub func render(self, value: T) -> String [read self]
+    pub func render(self: Self, value: T) -> String [read self]
 }
 
 type Formatter<T> = & Renderer<T> & {}

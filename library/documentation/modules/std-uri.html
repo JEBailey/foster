@@ -12,9 +12,9 @@ an appropriate resource implementation.</p>
     value: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-private">private</span>
     scheme_value: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-private">private</span>
     path_value: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-private">private</span>
-    pub func as_string(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self.value]
-    pub func scheme(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self.scheme_value]
-    pub func path(self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self.path_value]
+    pub func as_string(self: Self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self.value]
+    pub func scheme(self: Self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self.scheme_value]
+    pub func path(self: Self) -&gt; <a class="type-link" href="core-string.html#String" title="core.string.String">String</a> [read self.path_value]
 }</code></pre><p>A parsed URI resource identifier.</p>
 <p><code>Uri</code> implements <code>ResourceIdentifier</code> but deliberately provides no resource or I/O capability.
 Protocol providers convert it into their typed locations—such as <code>TcpEndpoint</code>—before creating

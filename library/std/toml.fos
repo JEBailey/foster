@@ -29,10 +29,10 @@ pub type TomlDocument = {
     // Required public operations; implementations live in impl blocks.
     /// Consumes the document and renders entries in stored order, using inline tables.
     /// Returns an error for duplicate keys or invalid `DateTime` text; comments and formatting are not retained.
-    pub func render(self) -> Result<String, TomlError> [consume self]
+    pub func render(self: Self) -> Result<String, TomlError> [consume self]
     /// Consumes the document and `key`, returning the first exact top-level match.
     /// Returns `None` when absent; dots in `key` are literal, not path separators.
-    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self]
+    pub func get(self: Self, key: String) -> Option<TomlValue> [consume key, consume self]
 }
 
 /// A key-value entry in a TOML table.
@@ -58,7 +58,7 @@ pub enum TomlValue = String(String)
         // Required public operations; implementations live in impl blocks.
         /// Consumes `self` and `key`, returning the first exact entry when `self` is a table.
         /// Returns `None` for a missing key or a non-table value; dots in `key` are literal.
-        pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self]
+        pub func get(self: Self, key: String) -> Option<TomlValue> [consume key, consume self]
     }
 
 /// A TOML parsing or rendering failure.
@@ -101,7 +101,7 @@ type Parser = {
 
 impl PathPart {
     /// Copies a path component while preserving the original path.
-    func copy(self) -> self {
+    func copy(self: Self) -> Self {
         branch self {
             PathPart.Key(key) -> PathPart.Key(key.copy())
             PathPart.ArrayItem(key, index) -> PathPart.ArrayItem(key.copy(), index)
@@ -111,7 +111,7 @@ impl PathPart {
 
 impl TomlEntry {
     /// Copies this entry and its complete TOML value.
-    pub func copy(self) -> self {
+    pub func copy(self: Self) -> Self {
         TomlEntry {
             key: self.key.copy(), value: self.value.copy()
         }
@@ -120,7 +120,7 @@ impl TomlEntry {
 
 impl TomlValue {
     /// Copies the complete TOML tree without consuming the source.
-    pub func copy(self) -> self {
+    pub func copy(self: Self) -> Self {
         branch self {
             TomlValue.String(value) -> TomlValue.String(value.copy())
             TomlValue.Int(value) -> TomlValue.Int(value)
@@ -134,7 +134,7 @@ impl TomlValue {
 
     /// Consumes `self` and `key`, returning the first exact entry when `self` is a table.
     /// Returns `None` for a missing key or a non-table value; dots in `key` are literal.
-    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
+    pub func get(self: Self, key: String) -> Option<TomlValue> [consume key, consume self] {
         branch self {
             TomlValue.Table(entries) -> find_entry(move entries, move key)
             _ -> Option.None
@@ -159,13 +159,13 @@ pub func parse(source: String) -> Result<TomlDocument, TomlError> {
 impl TomlDocument {
     /// Consumes the document and renders entries in stored order, using inline tables.
     /// Returns an error for duplicate keys or invalid `DateTime` text; comments and formatting are not retained.
-    pub func render(self) -> Result<String, TomlError> [consume self] {
+    pub func render(self: Self) -> Result<String, TomlError> [consume self] {
         render_entries(move self.entries, "")
     }
 
     /// Consumes the document and `key`, returning the first exact top-level match.
     /// Returns `None` when absent; dots in `key` are literal, not path separators.
-    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
+    pub func get(self: Self, key: String) -> Option<TomlValue> [consume key, consume self] {
         find_entry(move self.entries, move key)
     }
 }
@@ -181,7 +181,7 @@ func find_entry(entries: List<TomlEntry>, key: String) -> Option<TomlValue> {
 
 impl Parser {
     /// Stops at the first recorded error; materializes the flat paths only on success.
-    func parse_document(self) -> Result<TomlDocument, TomlError> [mut self] {
+    func parse_document(self: Self) -> Result<TomlDocument, TomlError> [mut self] {
         self.skip_document_space()
         self.parse_statements()
         branch {
@@ -193,7 +193,7 @@ impl Parser {
     }
 
     /// Reads assignments and table headers until input ends or an error is recorded.
-    func parse_statements(self) -> () [mut self] {
+    func parse_statements(self: Self) -> () [mut self] {
         while !self.failed?() && !self.remaining.empty? {
             branch {
                 self.remaining.starts_with?("[[") -> self.parse_header(true)
@@ -206,7 +206,7 @@ impl Parser {
     }
 
     /// Resolves a dotted assignment relative to the active table context.
-    func parse_key_value(self) -> () [mut self] {
+    func parse_key_value(self: Self) -> () [mut self] {
         let keys = self.parse_key_path()
         self.skip_horizontal_space()
         return self.fail("expected `=` after key") if not self.peek?('=')
@@ -219,7 +219,7 @@ impl Parser {
     }
 
     /// Reads a table header and changes the context used by subsequent assignments.
-    func parse_header(self, array_header: Bool) -> () [mut self] {
+    func parse_header(self: Self, array_header: Bool) -> () [mut self] {
         self.take()
         self.take_array_header_open(array_header)
         self.skip_horizontal_space()
@@ -232,14 +232,14 @@ impl Parser {
     }
 
     /// Consumes the second opening bracket only for an array-of-tables header.
-    func take_array_header_open(self, array_header: Bool) -> () [mut self(remaining, column)] {
+    func take_array_header_open(self: Self, array_header: Bool) -> () [mut self(remaining, column)] {
         return () if not array_header
         self.take()
         ()
     }
 
     /// Requires both closing brackets before declaring the next array table.
-    func close_array_header(self, keys: List<String>) -> () [consume self.errors, read self.line, mut self(errors, remaining, column), consume self.entries, mut self(entries, context), consume keys] {
+    func close_array_header(self: Self, keys: List<String>) -> () [consume self.errors, read self.line, mut self(errors, remaining, column), consume self.entries, mut self(entries, context), consume keys] {
         return self.fail("expected `]]` after array-of-tables header") if not self.remaining.starts_with?("]]" )
         self.take()
         self.take()
@@ -247,7 +247,7 @@ impl Parser {
     }
 
     /// Accepts only horizontal space, a comment, and a newline or EOF after a statement.
-    func finish_statement(self) -> () [mut self] {
+    func finish_statement(self: Self) -> () [mut self] {
         return () if self.failed?()
         self.skip_horizontal_space()
         self.skip_comment()
@@ -259,7 +259,7 @@ impl Parser {
     }
 
     /// Skips blank lines and comments while maintaining diagnostic positions.
-    func skip_document_space(self) -> () [mut self] {
+    func skip_document_space(self: Self) -> () [mut self] {
         while !self.failed?() {
             self.skip_horizontal_space()
             self.skip_comment()
@@ -269,20 +269,20 @@ impl Parser {
     }
 
     /// Consumes spaces and tabs without crossing a line boundary.
-    func skip_horizontal_space(self) -> () [mut self] {
+    func skip_horizontal_space(self: Self) -> () [mut self] {
         let prefix = self.remaining.scalar_take_while((character: CodePoint) -> character == ' ' || character == '\t')
         self.consume_text(prefix)
     }
 
     /// Consumes a comment when present, leaving its newline for the caller.
-    func skip_comment(self) -> () [mut self] {
+    func skip_comment(self: Self) -> () [mut self] {
         return () if not self.peek?('#')
         self.take()
         self.skip_comment_text()
     }
 
     /// Stops before the newline and rejects control characters other than tabs.
-    func skip_comment_text(self) -> () [mut self] {
+    func skip_comment_text(self: Self) -> () [mut self] {
         return () if self.remaining.empty?
         return () if self.newline?()
         return self.fail("control character is not allowed in a comment") if control_character?(self.remaining.scalar_head())
@@ -291,19 +291,19 @@ impl Parser {
     }
 
     /// Recognizes LF and CRLF; a bare carriage return is not a newline.
-    func newline?(self) -> Bool {
+    func newline?(self: Self) -> Bool {
         self.remaining.starts_with?("\n") || self.remaining.starts_with?("\r\n")
     }
 
     /// Consumes LF or CRLF as one line break; records an error for other input.
-    func take_newline(self) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
+    func take_newline(self: Self) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
         return self.take_crlf() if self.remaining.starts_with?("\r\n")
         return self.take_lf() if self.remaining.starts_with?("\n")
         self.fail("expected a newline")
     }
 
     /// Consumes a known CRLF pair and resets the one-based column.
-    func take_crlf(self) -> () [mut self(remaining, line, column)] {
+    func take_crlf(self: Self) -> () [mut self(remaining, line, column)] {
         self.remaining = self.remaining.scalar_rest().scalar_rest()
         self.line = self.line + 1
         self.column = 1
@@ -311,7 +311,7 @@ impl Parser {
     }
 
     /// Consumes a known LF and resets the one-based column.
-    func take_lf(self) -> () [mut self(remaining, line, column)] {
+    func take_lf(self: Self) -> () [mut self(remaining, line, column)] {
         self.remaining = self.remaining.scalar_rest()
         self.line = self.line + 1
         self.column = 1
@@ -319,7 +319,7 @@ impl Parser {
     }
 
     /// Compares the next Unicode scalar without advancing; EOF never matches.
-    func peek?(self, expected: CodePoint) -> Bool {
+    func peek?(self: Self, expected: CodePoint) -> Bool {
         branch {
             self.remaining.empty? -> false
             _ -> self.remaining.scalar_head() == expected
@@ -327,7 +327,7 @@ impl Parser {
     }
 
     /// Consumes one scalar and increments the column; requires nonempty input. Newlines use `take_newline`.
-    func take(self) -> CodePoint [mut self(remaining, column)] {
+    func take(self: Self) -> CodePoint [mut self(remaining, column)] {
         let character = self.remaining.scalar_head()
         self.remaining = self.remaining.scalar_rest()
         self.column = self.column + 1
@@ -335,12 +335,12 @@ impl Parser {
     }
 
     /// Reports whether a diagnostic has already been recorded.
-    func failed?(self) -> Bool {
+    func failed?(self: Self) -> Bool {
         not self.errors.empty?
     }
 
     /// Records only the first error at the current scalar position.
-    func fail(self, message: String) -> () [consume self.errors, read self(line, column), mut self.errors, consume message] {
+    func fail(self: Self, message: String) -> () [consume self.errors, read self(line, column), mut self.errors, consume message] {
         return () if self.failed?()
         self.errors = self.errors.append(TomlError {
             message: move message,
@@ -351,7 +351,7 @@ impl Parser {
     }
 
     /// Records only the first error at a saved position, such as an opening delimiter.
-    func fail_at(self, message: String, line: Int, column: Int) -> () [consume self.errors, mut self.errors, consume message] {
+    func fail_at(self: Self, message: String, line: Int, column: Int) -> () [consume self.errors, mut self.errors, consume message] {
         return () if self.failed?()
         self.errors = self.errors.append(TomlError {
             message: move message,
@@ -362,14 +362,14 @@ impl Parser {
     }
 
     /// Reads a dotted key as separate components, preserving quoted components.
-    func parse_key_path(self) -> List<String> [mut self] {
+    func parse_key_path(self: Self) -> List<String> [mut self] {
         let first = self.parse_key()
         return [] if self.failed?()
         self.parse_key_tail([first])
     }
 
     /// Accepts whitespace around dots and extends the parsed key path.
-    func parse_key_tail(self, keys: List<String>) -> List<String> [mut self, consume keys] {
+    func parse_key_tail(self: Self, keys: List<String>) -> List<String> [mut self, consume keys] {
         self.skip_horizontal_space()
         return keys if not self.peek?('.')
         self.take()
@@ -379,7 +379,7 @@ impl Parser {
     }
 
     /// Selects quoted or bare key syntax; quoted dots remain part of the key.
-    func parse_key(self) -> String [mut self] {
+    func parse_key(self: Self) -> String [mut self] {
         branch {
             self.remaining.starts_with?("\"") -> self.parse_basic_string(false)
             self.remaining.starts_with?("'") -> self.parse_literal_string(false)
@@ -388,45 +388,45 @@ impl Parser {
     }
 
     /// Consumes ASCII letters, digits, underscores, and hyphens; rejects an empty key.
-    func parse_bare_key(self) -> String [mut self] {
+    func parse_bare_key(self: Self) -> String [mut self] {
         let output = self.remaining.scalar_take_while(bare_key_character?)
         self.consume_text(output)
         self.finish_bare_key(move output)
     }
 
     /// Returns the scanned key after recording an error if it is empty.
-    func finish_bare_key(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func finish_bare_key(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail_empty_key(output.empty?)
         output
     }
 
     /// Records a missing-key error only when the bare-key scan produced no text.
-    func fail_empty_key(self, empty: Bool) -> () [consume self.errors, read self(line, column), mut self.errors] {
+    func fail_empty_key(self: Self, empty: Bool) -> () [consume self.errors, read self(line, column), mut self.errors] {
         return () if not empty
         self.fail("expected a key")
     }
 
     /// Reads a double-quoted string, interpreting escapes and multiline folding.
-    func parse_basic_string(self, multiline: Bool) -> String [mut self] {
+    func parse_basic_string(self: Self, multiline: Bool) -> String [mut self] {
         self.open_basic_string(multiline)
         self.parse_basic_characters("", multiline)
     }
 
     /// Consumes the known single or multiline basic-string opener.
-    func open_basic_string(self, multiline: Bool) -> () [mut self] {
+    func open_basic_string(self: Self, multiline: Bool) -> () [mut self] {
         return self.open_multiline_basic() if multiline
         self.take()
         ()
     }
 
     /// Consumes the known triple-quote opener and discards one initial newline.
-    func open_multiline_basic(self) -> () [mut self] {
+    func open_multiline_basic(self: Self) -> () [mut self] {
         self.consume_text("\"\"\"")
         self.trim_multiline_first_newline()
     }
 
     /// Accumulates decoded text until a closing delimiter or a string error.
-    func parse_basic_characters(self, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func parse_basic_characters(self: Self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.unterminated_basic(move output) if self.remaining.empty?
         return self.close_multiline_basic(move output) if multiline && self.remaining.starts_with?("\"\"\"")
         return self.close_basic(move output) if not multiline && self.peek?('\"')
@@ -438,50 +438,50 @@ impl Parser {
     }
 
     /// Records a missing closing quote and returns the partial text for error unwinding.
-    func unterminated_basic(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func unterminated_basic(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("unterminated basic string")
         output
     }
 
     /// Consumes the terminator; a fourth or fifth quote contributes literal text.
-    func close_multiline_basic(self, output: String) -> String [mut self, consume output] {
+    func close_multiline_basic(self: Self, output: String) -> String [mut self, consume output] {
         self.consume_text("\"\"\"")
         self.take_extra_quotes(move output, 0)
     }
 
     /// Consumes the known closing quote and returns decoded text.
-    func close_basic(self, output: String) -> String [mut self(remaining, column), consume output] {
+    func close_basic(self: Self, output: String) -> String [mut self(remaining, column), consume output] {
         self.take()
         output
     }
 
     /// Consumes the backslash before dispatching the escape that follows.
-    func start_escape(self, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func start_escape(self: Self, output: String, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         self.parse_escape(move output, multiline)
     }
 
     /// Normalizes LF or CRLF to LF in multiline strings; rejects single-line newlines.
-    func basic_newline(self, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func basic_newline(self: Self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.invalid_basic_newline(move output) if not multiline
         self.take_newline()
         self.parse_basic_characters(output + "\n", true)
     }
 
     /// Records a forbidden single-line newline and returns partial text for error unwinding.
-    func invalid_basic_newline(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_basic_newline(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("newline is not allowed in a basic string")
         output
     }
 
     /// Records an unescaped control scalar and returns partial text for error unwinding.
-    func forbidden_basic(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func forbidden_basic(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("control character is not allowed in a string")
         output
     }
 
     /// Decodes an escape after its backslash has been consumed.
-    func parse_escape(self, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func parse_escape(self: Self, output: String, multiline: Bool) -> String [mut self, consume output] {
         branch {
             multiline && self.escape_fold_start?() -> self.fold_escape(move output)
             self.remaining.empty? -> self.unterminated_escape(move output)
@@ -501,37 +501,37 @@ impl Parser {
     }
 
     /// Discards a multiline continuation and resumes without adding whitespace.
-    func fold_escape(self, output: String) -> String [mut self, consume output] {
+    func fold_escape(self: Self, output: String) -> String [mut self, consume output] {
         self.skip_escape_fold()
         self.parse_basic_characters(move output, true)
     }
 
     /// Records EOF after a backslash and returns partial text for error unwinding.
-    func unterminated_escape(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func unterminated_escape(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("unterminated escape sequence")
         output
     }
 
     /// Records an unknown escape and returns partial text for error unwinding.
-    func invalid_escape(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_escape(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("invalid basic-string escape sequence")
         output
     }
 
     /// Consumes the escape letter and appends its decoded text before resuming.
-    func escaped_character(self, output: String, escaped: String, multiline: Bool) -> String [mut self, consume output] {
+    func escaped_character(self: Self, output: String, escaped: String, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         self.parse_basic_characters(output + escaped, multiline)
     }
 
     /// Consumes the escape letter and appends its known-valid scalar before resuming.
-    func escaped_code_point(self, output: String, value: Int, multiline: Bool) -> String [mut self, consume output] {
+    func escaped_code_point(self: Self, output: String, value: Int, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         self.parse_basic_characters(output + from_code_point(value).string, multiline)
     }
 
     /// Reads the selected escape width and rejects values outside the Unicode scalar range.
-    func parse_unicode_escape(self, output: String, digits: Int, multiline: Bool) -> String [mut self, consume output] {
+    func parse_unicode_escape(self: Self, output: String, digits: Int, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         let value = self.take_hex_digits(digits, 0)
         branch CodePoint.from(value) {
@@ -541,13 +541,13 @@ impl Parser {
     }
 
     /// Records a non-scalar escape value and returns partial text for error unwinding.
-    func invalid_unicode_escape(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_unicode_escape(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("escape does not name a Unicode scalar value")
         output
     }
 
     /// Accumulates exactly `remaining` hexadecimal digits or records the first malformed digit.
-    func take_hex_digits(self, remaining: Int, value: Int) -> Int [mut self] {
+    func take_hex_digits(self: Self, remaining: Int, value: Int) -> Int [mut self] {
         return value if remaining == 0
         return self.incomplete_hex(value) if self.remaining.empty?
         return self.invalid_hex(value) if not hex_digit?(self.remaining.scalar_head())
@@ -556,69 +556,69 @@ impl Parser {
     }
 
     /// Records EOF within an escape and returns the partial numeric accumulator.
-    func incomplete_hex(self, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+    func incomplete_hex(self: Self, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("incomplete hexadecimal escape")
         value
     }
 
     /// Records a non-hexadecimal escape digit and returns the partial accumulator.
-    func invalid_hex(self, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+    func invalid_hex(self: Self, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("expected a hexadecimal digit in escape")
         value
     }
 
     /// Checks whether spaces or tabs lead to a newline after an escape backslash.
-    func escape_fold_start?(self) -> Bool {
+    func escape_fold_start?(self: Self) -> Bool {
         fold_space_then_newline?(self.remaining)
     }
 
     /// Consumes the continuation newline and all following multiline whitespace.
-    func skip_escape_fold(self) -> () [mut self] {
+    func skip_escape_fold(self: Self) -> () [mut self] {
         self.skip_horizontal_space()
         self.take_newline()
         self.skip_multiline_whitespace()
     }
 
     /// Skips spaces, tabs, LF, and CRLF while updating line and column.
-    func skip_multiline_whitespace(self) -> () [mut self] {
+    func skip_multiline_whitespace(self: Self) -> () [mut self] {
         return self.skip_one_multiline_space() if self.peek?(' ') || self.peek?('\t')
         return self.skip_one_multiline_newline() if self.newline?()
         ()
     }
 
     /// Consumes one known space or tab before continuing whitespace folding.
-    func skip_one_multiline_space(self) -> () [mut self] {
+    func skip_one_multiline_space(self: Self) -> () [mut self] {
         self.take()
         self.skip_multiline_whitespace()
     }
 
     /// Updates line state for one newline before continuing whitespace folding.
-    func skip_one_multiline_newline(self) -> () [mut self] {
+    func skip_one_multiline_newline(self: Self) -> () [mut self] {
         self.take_newline()
         self.skip_multiline_whitespace()
     }
 
     /// Reads single-quoted text without interpreting backslash escapes.
-    func parse_literal_string(self, multiline: Bool) -> String [mut self] {
+    func parse_literal_string(self: Self, multiline: Bool) -> String [mut self] {
         self.open_literal_string(multiline)
         self.parse_literal_characters("", multiline)
     }
 
     /// Consumes the known single or multiline literal-string opener.
-    func open_literal_string(self, multiline: Bool) -> () [mut self] {
+    func open_literal_string(self: Self, multiline: Bool) -> () [mut self] {
         return self.open_multiline_literal() if multiline
         self.take()
         ()
     }
 
     /// Consumes the known triple-apostrophe opener and discards one initial newline.
-    func open_multiline_literal(self) -> () [mut self] {
+    func open_multiline_literal(self: Self) -> () [mut self] {
         self.consume_text("'''")
         self.trim_multiline_first_newline()
     }
 
     /// Accumulates literal scalars until the matching delimiter or a string error.
-    func parse_literal_characters(self, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func parse_literal_characters(self: Self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.unterminated_literal(move output) if self.remaining.empty?
         return self.close_multiline_literal(move output) if multiline && self.remaining.starts_with?("'''")
         return self.close_literal(move output) if not multiline && self.peek?('\'')
@@ -629,71 +629,71 @@ impl Parser {
     }
 
     /// Records a missing closing apostrophe and returns partial text for error unwinding.
-    func unterminated_literal(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func unterminated_literal(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("unterminated literal string")
         output
     }
 
     /// Consumes the terminator; a fourth or fifth apostrophe contributes literal text.
-    func close_multiline_literal(self, output: String) -> String [mut self, consume output] {
+    func close_multiline_literal(self: Self, output: String) -> String [mut self, consume output] {
         self.consume_text("'''")
         self.take_extra_apostrophes(move output, 0)
     }
 
     /// Consumes the known closing apostrophe and returns the literal text.
-    func close_literal(self, output: String) -> String [mut self(remaining, column), consume output] {
+    func close_literal(self: Self, output: String) -> String [mut self(remaining, column), consume output] {
         self.take()
         output
     }
 
     /// Normalizes multiline line breaks to LF; rejects them in single-line literals.
-    func literal_newline(self, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func literal_newline(self: Self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.invalid_literal_newline(move output) if not multiline
         self.take_newline()
         self.parse_literal_characters(output + "\n", true)
     }
 
     /// Records a forbidden single-line newline and returns partial text for error unwinding.
-    func invalid_literal_newline(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_literal_newline(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("newline is not allowed in a literal string")
         output
     }
 
     /// Records a forbidden control scalar and returns partial text for error unwinding.
-    func forbidden_literal(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func forbidden_literal(self: Self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("control character is not allowed in a string")
         output
     }
 
     /// Includes at most two quotes beyond a multiline closing delimiter in the value.
-    func take_extra_quotes(self, output: String, count: Int) -> String [mut self, consume output] {
+    func take_extra_quotes(self: Self, output: String, count: Int) -> String [mut self, consume output] {
         return output if count >= 2 || not self.peek?('\"')
         self.take()
         self.take_extra_quotes(output + "\"", count + 1)
     }
 
     /// Includes at most two apostrophes beyond a multiline closing delimiter in the value.
-    func take_extra_apostrophes(self, output: String, count: Int) -> String [mut self, consume output] {
+    func take_extra_apostrophes(self: Self, output: String, count: Int) -> String [mut self, consume output] {
         return output if count >= 2 || not self.peek?('\'')
         self.take()
         self.take_extra_apostrophes(output + "'", count + 1)
     }
 
     /// Drops one optional newline immediately after a multiline opener.
-    func trim_multiline_first_newline(self) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
+    func trim_multiline_first_newline(self: Self) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
         return () if not self.newline?()
         self.take_newline()
     }
 
     /// Advances by the scalar length of a known newline-free prefix; does not compare its contents.
-    func consume_text(self, text: String) -> () [mut self] {
+    func consume_text(self: Self, text: String) -> () [mut self] {
         return () if text.empty?
         self.take()
         self.consume_text(text.scalar_rest())
     }
 
     /// Dispatches on delimiters before scanning an unquoted scalar token.
-    func parse_value(self) -> TomlValue [mut self] {
+    func parse_value(self: Self) -> TomlValue [mut self] {
         branch {
             self.remaining.starts_with?("\"\"\"") -> TomlValue.String(self.parse_basic_string(true))
             self.remaining.starts_with?("'''") -> TomlValue.String(self.parse_literal_string(true))
@@ -706,7 +706,7 @@ impl Parser {
     }
 
     /// Saves the opening position so an unterminated array can report its origin.
-    func parse_array(self) -> TomlValue [mut self] {
+    func parse_array(self: Self) -> TomlValue [mut self] {
         let {
             line: start_line, column: start_column
         } = self
@@ -717,13 +717,13 @@ impl Parser {
     }
 
     /// Consumes the known closing bracket of an empty array.
-    func empty_array(self) -> TomlValue [mut self(remaining, column)] {
+    func empty_array(self: Self) -> TomlValue [mut self(remaining, column)] {
         self.take()
         TomlValue.Array([])
     }
 
     /// Reads comma-separated values, accepting comments, line breaks, and a trailing comma.
-    func parse_array_values(self, values: List<TomlValue>, start_line: Int, start_column: Int) -> TomlValue [mut self, consume values] {
+    func parse_array_values(self: Self, values: List<TomlValue>, start_line: Int, start_column: Int) -> TomlValue [mut self, consume values] {
         return self.unterminated_array(move values, start_line, start_column) if self.remaining.empty?
         let value = self.parse_value()
         return TomlValue.Array(move values) if self.failed?()
@@ -739,25 +739,25 @@ impl Parser {
     }
 
     /// Reports the opening position and returns partial data that the failed parse will discard.
-    func unterminated_array(self, values: List<TomlValue>, line: Int, column: Int) -> TomlValue [consume self.errors, mut self.errors, consume values] {
+    func unterminated_array(self: Self, values: List<TomlValue>, line: Int, column: Int) -> TomlValue [consume self.errors, mut self.errors, consume values] {
         self.fail_at("unterminated array", line, column)
         TomlValue.Array(move values)
     }
 
     /// Consumes the known closing bracket and wraps the accumulated values.
-    func close_array(self, values: List<TomlValue>) -> TomlValue [mut self(remaining, column), consume values] {
+    func close_array(self: Self, values: List<TomlValue>) -> TomlValue [mut self(remaining, column), consume values] {
         self.take()
         TomlValue.Array(move values)
     }
 
     /// Records a missing separator or closing bracket and retains partial values for error unwinding.
-    func invalid_array(self, values: List<TomlValue>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume values] {
+    func invalid_array(self: Self, values: List<TomlValue>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume values] {
         self.fail("expected `,` or `]` in array")
         TomlValue.Array(move values)
     }
 
     /// Reads a braced table, including TOML 1.1 line breaks and trailing commas.
-    func parse_inline_table(self) -> TomlValue [mut self] {
+    func parse_inline_table(self: Self) -> TomlValue [mut self] {
         self.take()
         self.skip_value_space()
         return self.empty_inline_table() if self.peek?('}')
@@ -765,13 +765,13 @@ impl Parser {
     }
 
     /// Consumes the known closing brace of an empty inline table.
-    func empty_inline_table(self) -> TomlValue [mut self(remaining, column)] {
+    func empty_inline_table(self: Self) -> TomlValue [mut self(remaining, column)] {
         self.take()
         TomlValue.Table([])
     }
 
     /// Expands dotted keys and rejects duplicate or conflicting inline-table entries.
-    func parse_inline_entries(self, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
+    func parse_inline_entries(self: Self, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
         let keys = self.parse_key_path()
         self.skip_horizontal_space()
         return TomlValue.Table(move entries) if not self.expect_character('=', "expected `=` after inline-table key")
@@ -786,13 +786,13 @@ impl Parser {
     }
 
     /// Records a duplicate or conflicting inline key; the empty table is an error placeholder.
-    func invalid_inline_insert(self, message: String) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume message] {
+    func invalid_inline_insert(self: Self, message: String) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume message] {
         self.fail(move message)
         TomlValue.Table([])
     }
 
     /// Requires a closing brace or comma; permits a trailing comma before the brace.
-    func finish_inline_entry(self, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
+    func finish_inline_entry(self: Self, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
         self.skip_value_space()
         return self.close_inline_table(move entries) if self.peek?('}')
         return self.invalid_inline_table(move entries) if not self.peek?(',')
@@ -803,19 +803,19 @@ impl Parser {
     }
 
     /// Consumes the known closing brace and wraps the accumulated entries.
-    func close_inline_table(self, entries: List<TomlEntry>) -> TomlValue [mut self(remaining, column), consume entries] {
+    func close_inline_table(self: Self, entries: List<TomlEntry>) -> TomlValue [mut self(remaining, column), consume entries] {
         self.take()
         TomlValue.Table(move entries)
     }
 
     /// Records a missing separator or closing brace and retains partial entries for error unwinding.
-    func invalid_inline_table(self, entries: List<TomlEntry>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume entries] {
+    func invalid_inline_table(self: Self, entries: List<TomlEntry>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume entries] {
         self.fail("expected `,` or `}` in inline table")
         TomlValue.Table(move entries)
     }
 
     /// Skips whitespace and comments between array or inline-table components.
-    func skip_value_space(self) -> () [mut self] {
+    func skip_value_space(self: Self) -> () [mut self] {
         self.skip_horizontal_space()
         self.skip_comment()
         return () if not self.newline?()
@@ -824,20 +824,20 @@ impl Parser {
     }
 
     /// Consumes a matching scalar, or records the supplied diagnostic without advancing.
-    func expect_character(self, expected: CodePoint, message: String) -> Bool [mut self(remaining, column), consume self.errors, read self.line, mut self.errors, consume message] {
+    func expect_character(self: Self, expected: CodePoint, message: String) -> Bool [mut self(remaining, column), consume self.errors, read self.line, mut self.errors, consume message] {
         return self.take_expected_character() if self.peek?(expected)
         self.fail(move message)
         false
     }
 
     /// Consumes an already matched scalar and reports success.
-    func take_expected_character(self) -> Bool [mut self(remaining, column)] {
+    func take_expected_character(self: Self) -> Bool [mut self(remaining, column)] {
         self.take()
         true
     }
 
     /// Classifies a complete unquoted token before converting numbers or retaining date-time text.
-    func parse_bare_value(self) -> TomlValue [mut self] {
+    func parse_bare_value(self: Self) -> TomlValue [mut self] {
         let token = self.take_bare_value("")
         branch {
             token.empty? -> self.missing_value()
@@ -855,19 +855,19 @@ impl Parser {
     }
 
     /// Records a missing value; the empty string is discarded when the parse fails.
-    func missing_value(self) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
+    func missing_value(self: Self) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("expected a TOML value")
         TomlValue.String("")
     }
 
     /// Records invalid token syntax; the empty string is discarded when the parse fails.
-    func invalid_value(self) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
+    func invalid_value(self: Self) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("invalid TOML value")
         TomlValue.String("")
     }
 
     /// Stops at whitespace or delimiters except for a date/time separator space.
-    func take_bare_value(self, output: String) -> String [mut self, consume output] {
+    func take_bare_value(self: Self, output: String) -> String [mut self, consume output] {
         return output if self.remaining.empty?
         return self.take_date_time_space(move output) if date_time_space?(output, self.remaining)
         return output if bare_value_end?(self.remaining.scalar_head())
@@ -876,13 +876,13 @@ impl Parser {
     }
 
     /// Replaces the recognized date/time separator space with `T` in retained text.
-    func take_date_time_space(self, output: String) -> String [mut self, consume output] {
+    func take_date_time_space(self: Self, output: String) -> String [mut self, consume output] {
         self.take()
         self.take_bare_value(output + "T")
     }
 
     /// Converts validated integer syntax using its radix and sign.
-    func parse_integer(self, text: String) -> Int [mut self, consume text] {
+    func parse_integer(self: Self, text: String) -> Int [mut self, consume text] {
         let negative = text.starts_with?("-")
         let unsigned = drop_sign(move text)
         branch {
@@ -894,7 +894,7 @@ impl Parser {
     }
 
     /// Checks signed 64-bit bounds before each multiply and add or subtract. Negative accumulation admits Int minimum.
-    func accumulate_integer(self, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
+    func accumulate_integer(self: Self, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
         return value if text.empty?
         return self.accumulate_integer(text.scalar_rest(), base, negative, value) if text.scalar_head() == '_'
         let digit = hex_value(text.scalar_head())
@@ -907,13 +907,13 @@ impl Parser {
     }
 
     /// Records overflow; the zero placeholder cannot become a successful parse result.
-    func integer_overflow(self) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+    func integer_overflow(self: Self) -> Int [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("integer is outside the signed 64-bit range")
         0
     }
 
     /// Rejects duplicate paths and value/table conflicts before adding a flat entry.
-    func insert_value(self, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
+    func insert_value(self: Self, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
         return self.fail("duplicate key or table/value conflict") if path_conflict?(self.entries, path)
         self.entries = self.entries.append(FlatEntry {
             path: move path, value: FlatValue.Value(move value)
@@ -922,7 +922,7 @@ impl Parser {
     }
 
     /// Resolves array ancestors, rejects redefinition, and sets the assignment context.
-    func declare_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
+    func declare_table(self: Self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
         let path = resolve_header_path(self.entries, [], move keys)
         return self.fail("table is already defined") if exact_path?(self.entries, path)
         return self.fail("table conflicts with an existing value") if scalar_prefix_conflict?(self.entries, path)
@@ -935,7 +935,7 @@ impl Parser {
     }
 
     /// Appends the next indexed table and makes it the active assignment context.
-    func declare_array_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
+    func declare_array_table(self: Self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
         return self.fail("array-of-tables header requires a key") if keys.empty?
         let parents = keys.take(keys.length - 1)
         let name = keys.last().unwrap_or("")

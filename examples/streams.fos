@@ -23,7 +23,7 @@ type MemoryWriter = & Writer<StreamError> & {
 }
 
 impl MemoryReader {
-    func read(self, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
+    func read(self: Self, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
         let amount = branch {
             self.remaining.length < maximum -> self.remaining.length
             _ -> maximum
@@ -35,7 +35,7 @@ impl MemoryReader {
 }
 
 impl MemoryWriter {
-    func write(self, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
+    func write(self: Self, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
         // Deliberately accept at most two bytes to exercise partial-write retrying.
         let amount = branch {
             contents.length < 2 -> contents.length
@@ -45,7 +45,7 @@ impl MemoryWriter {
         Result.Ok(amount)
     }
 
-    func flush(self) -> Result<(), StreamError> {
+    func flush(self: Self) -> Result<(), StreamError> {
         let scratch = ByteBuffer.empty()
         Result.Ok(scratch.reserve(0))
     }

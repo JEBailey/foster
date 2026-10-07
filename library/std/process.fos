@@ -68,16 +68,23 @@ impl SpawnOptions {
 /// the direct child only. Descendants holding output pipes can delay await.
 pub type Process = & Future<Result<ProcessOutput, ProcessError>> & {
     token: Int, identifier: Int
+    /// Returns the OS process identifier. The handle retains its own distinct identity.
+    pub func pid(self: Self) -> Int [read self.identifier]
+    /// Checks the direct child's state without waiting for completion.
+    pub func poll(self: Self) -> Result<ProcessStatus, ProcessError> [mut self.token]
+    /// Requests immediate termination of a running direct child. Await still collects
+    /// its exit status and captured output. An already exited child is unchanged.
+    pub func terminate(self: Self) -> Result<(), ProcessError> [mut self.token]
 }
 
 impl Process {
     /// Returns the OS process identifier. The handle retains its own distinct identity.
-    pub func pid(self) -> Int [read self.identifier] {
+    pub func pid(self: Self) -> Int [read self.identifier] {
         self.identifier
     }
 
     /// Checks the direct child's state without waiting for completion.
-    pub func poll(self) -> Result<ProcessStatus, ProcessError> [mut self.token] {
+    pub func poll(self: Self) -> Result<ProcessStatus, ProcessError> [mut self.token] {
         self.token = self.token
         let fields = try response(ProcessHost.exchange(1, self.token, "", "", "", 0))
         branch fields[0] {
@@ -88,14 +95,14 @@ impl Process {
 
     /// Requests immediate termination of a running direct child. Await still collects
     /// its exit status and captured output. An already exited child is unchanged.
-    pub func terminate(self) -> Result<(), ProcessError> [mut self.token] {
+    pub func terminate(self: Self) -> Result<(), ProcessError> [mut self.token] {
         self.token = self.token
         let fields = try response(ProcessHost.exchange(3, self.token, "", "", "", 0))
         Result.Ok(())
     }
 
     /// Consumes the handle, waits for exit and both output streams, and reaps the child.
-    pub func resolve(self) -> Result<ProcessOutput, ProcessError> [consume self, suspend] {
+    pub func resolve(self: Self) -> Result<ProcessOutput, ProcessError> [consume self, suspend] {
         loop {
             let fields = try response(ProcessHost.wait_step(self.token))
             continue if fields[0] == "R"
@@ -108,7 +115,7 @@ impl Process {
     }
 
     /// Kills and reaps a remaining direct child, including on unwinding.
-    func deinit(self) -> () {
+    func deinit(self: Self) -> () {
         ProcessHost.release(self.token)
     }
 }

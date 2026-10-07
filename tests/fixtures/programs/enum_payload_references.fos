@@ -2,11 +2,11 @@ pub type Item = {
     pub value: Int, pub text: String
 }
 pub type BorrowItem = {
-    pub func borrow(self) -> ref[self] Item
+    pub func borrow(self: Self) -> ref[self] Item
 }
 pub enum Choice = Empty | Stored(Item) & BorrowItem
 impl Choice {
-    pub func borrow(self) -> ref[self] Item {
+    pub func borrow(self: Self) -> ref[self] Item {
         branch self {
             Choice.Empty -> panic("empty choice")
             Choice.Stored(item) -> ref item

@@ -23,7 +23,7 @@ not automatically an obsolete language contract.
 | Record destructuring | The JSON example names successful `token`, `rest`, and `value` fields directly after selected propagation. Ownership still follows field-binding rules. |
 | `panic` and `Never` | Unrecoverable time-zone invariants no longer fabricate offsets, dates, instants, or integers after failing. Explicit failure arms in library tests, tools, and guide examples use `panic(message)`. |
 | String interpolation | The endpoint example and benchmark CSV output use triple-quoted substitutions. Substitutions retain the required conversion imports. |
-| Generic implementation parameters and inferred `self` | Library collection and iterator implementations already use these forms. Explicit reference and specialized receiver annotations remain necessary. |
+| Generic implementation parameters and `self: Self` | Library collection and iterator implementations use explicit receiver annotations. Reference and specialized receivers retain their corresponding explicit types. |
 | Structural constraints and type branches | The writing guide and `impl_constraints` / `type_branch` fixtures exercise concrete-type-preserving constraints and capability checks. |
 | Named scopes and parameter groups | Ownership examples and the `named_scopes` / `parameter_groups` fixtures exercise lifetime boundaries and returned loans. |
 | Deferred fields | The writing guide and `deferred_initialization` fixture demonstrate `??` with definite initialization. Fully available records do not benefit from artificial deferred construction. |

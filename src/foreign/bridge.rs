@@ -106,7 +106,7 @@ mod tests {
                 {"name":"type_","type":"i32"},
                 {"name":"c_type","type":"i32"},
                 {"name":"copy","type":"i32"}
-            ]}],
+            ]},{"name":"self","c_type":"UserSelf","fields":[{"name":"value","type":"i32"}]}],
             "constants":[{"name":"C_ANSWER","type":"i32","value":42}],
             "operations":[
                 {"name":"c_original","symbol":"c_original","parameters":[],"result":"i32"},
@@ -118,13 +118,14 @@ mod tests {
         .unwrap();
         let source = manifest.foster_source(Path::new("unused.dll")).unwrap();
         assert!(source.contains("pub type Color ="));
+        assert!(source.contains("pub type Self_ ="));
         assert!(source.contains("pub type CMode = Int"));
         assert!(source.contains("pub const C_ANSWER = 42"));
         assert!(source.contains("pub func c_original()"));
         assert!(source.contains("pub func type_()"));
         assert!(source.contains("pub func roundTrip(p0: Color) -> Result<Color, CError>"));
         assert!(source.contains("Calls the C symbol `RoundTrip`"));
-        let program = crate::compile(&(source + "\nfunc main() -> Int {\nlet color = Color { type_: 1, type__: 2, c_type: 3, copy_: 4 }\nlet copied = color.copy()\nassert(copied.type_ + copied.type__ + copied.c_type + copied.copy_ == 10)\nC_ANSWER\n}\n")).unwrap();
+        let program = crate::compile(&(source + "\nfunc main() -> Int {\nlet color = Color { type_: 1, type__: 2, c_type: 3, copy_: 4 }\nlet copied = color.copy()\nassert(copied.type_ + copied.type__ + copied.c_type + copied.copy_ == 10)\nlet escaped = Self_ { value: 42 }.copy()\nassert(escaped.value == 42)\nC_ANSWER\n}\n")).unwrap();
         assert_eq!(crate::vm::run(&program).unwrap().to_string(), "42");
     }
     #[test]

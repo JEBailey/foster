@@ -464,7 +464,7 @@ Cranelift frames or treating placeholder return values as owned results. Allocat
 exercise successful exits and failures in both optimization modes, checking for leaks and duplicate
 deallocation, including opaque host response buffers.
 
-`deinit(self) -> ()` runs once at ownership end before child values are
+`deinit(self: Self) -> ()` runs once at ownership end before child values are
 released. Compiler-owned Copy/Drop dispatch slots select concrete implementations, and generated
 layout destructors invoke the callback while the receiver is intact. A header flag transfers the
 cleanup obligation across internal copy-on-write updates and prevents recursive invocation.

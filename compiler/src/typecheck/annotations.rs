@@ -31,6 +31,9 @@ impl Checker<'_> {
                 Ok(Ty::Intersection(members))
             }
             TypeExpr::Named(name, arguments) => {
+                if name == "Self" && !generics.contains_key(name) {
+                    return Err(FosterError::runtime("`Self` is only available in implementation signatures and required methods"));
+                }
                 if let Some(generic) = generics.get(name) {
                     if !arguments.is_empty() {
                         return Err(FosterError::runtime(format!(

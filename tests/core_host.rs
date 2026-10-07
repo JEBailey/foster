@@ -126,6 +126,7 @@ func main() -> Int { 0 }
         );
     }
     let mut checked = 0;
+    let mut undocumented = Vec::new();
     for (id, function) in compilation.hir.functions.iter() {
         let module = &compilation.hir.modules[function.module].name;
         if !(module.starts_with("core.") || module.starts_with("std."))
@@ -136,16 +137,20 @@ func main() -> Int { 0 }
             continue;
         }
         checked += 1;
-        assert!(
-            function
-                .documentation
-                .as_deref()
-                .is_some_and(|documentation| !documentation.trim().is_empty()),
-            "{module}.{} is missing documentation",
-            function.name
-        );
+        if !function
+            .documentation
+            .as_deref()
+            .is_some_and(|documentation| !documentation.trim().is_empty())
+        {
+            undocumented.push(format!("{module}.{}", function.name));
+        }
     }
-    assert_eq!(checked, 1087);
+    assert!(
+        undocumented.is_empty(),
+        "missing documentation: {}",
+        undocumented.join(", ")
+    );
+    assert_eq!(checked, 1145);
 
     let mut modules = 0;
     let mut types = 0;

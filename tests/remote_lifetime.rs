@@ -6,7 +6,7 @@ import core.remote_error
 import core.remote_error.*
 import static core.remote_error.*
 type Worker = {}
-impl Worker { func work(self) -> Int { 42 } }
+impl Worker { func work(self: Self) -> Int { 42 } }
 "#;
 
 #[test]
@@ -15,7 +15,7 @@ fn custom_future_cannot_hide_an_uncompleted_request_field() {
         "{PRELUDE}\n{}",
         r#"
 type Discard = & Future<Int> & { pending: Future<Result<Int, RemoteError>> }
-impl Discard { func resolve(self) -> Int [consume self] { 0 } }
+impl Discard { func resolve(self: Self) -> Int [consume self] { 0 } }
 func identity(value: Discard) -> Discard [consume value] { move value }
 func main() -> Int {
     let worker = remote Worker {}
@@ -44,7 +44,7 @@ fn ready_future_helper_cannot_prove_remote_fifo_completion() {
         "{PRELUDE}\n{}",
         r#"
 type Ready = & Future<Int> & {}
-impl Ready { func resolve(self) -> Int [consume self] { 0 } }
+impl Ready { func resolve(self: Self) -> Int [consume self] { 0 } }
 func ready(worker: Remote<Worker>) -> Future<Int> { Ready {} }
 func main() -> Int {
     let worker = remote Worker {}
@@ -166,7 +166,7 @@ fn futures_stored_in_records_retain_request_identity() {
 #[test]
 fn remote_message_arguments_do_not_own_the_receivers_request() {
     let source = format!(
-        "{PRELUDE}\nimpl Worker {{ func accept(self, other: Remote<Worker>) -> Int [consume other] {{ 42 }} }}\nfunc main() -> Int {{ let worker = remote Worker {{}}\nlet other = remote Worker {{}}\nawait worker.accept(move other)\n0 }}"
+        "{PRELUDE}\nimpl Worker {{ func accept(self: Self, other: Remote<Worker>) -> Int [consume other] {{ 42 }} }}\nfunc main() -> Int {{ let worker = remote Worker {{}}\nlet other = remote Worker {{}}\nawait worker.accept(move other)\n0 }}"
     );
     foster::compile(&source).unwrap();
 }

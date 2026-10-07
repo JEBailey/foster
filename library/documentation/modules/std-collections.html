@@ -6,8 +6,8 @@ and structural contracts for algorithms that accept several implementations.</p>
 <p>Collection access borrows the value. Creating an iterator produces an independent
 cursor over the collection's read-only value view.</p>
 <h4>Contracts</h4><ul><li><code><a class="type-link" href="std-iter.html#Iterable" title="std.iter.Iterable">Iterable</a>&lt;T&gt;</code></li></ul><h4>Required methods</h4><ul><li><code>length</code><br><small>Returns the number of elements in this collection.</small></li><li><code>empty?</code><br><small>Returns whether this collection contains no elements.</small></li></ul></article></div></section></div><article id="Collection"><h2><a class="anchor" href="#Collection">Collection</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Collection&lt;T&gt; = &amp; <a class="type-link" href="std-iter.html#Iterable" title="std.iter.Iterable">Iterable</a>&lt;T&gt; &amp; {
-    pub func length(self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
-    pub func empty?(self) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>
+    pub func length(self: Self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
+    pub func empty?(self: Self) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a>
 }</code></pre><p>A repeatable collection with a known number of elements.</p>
 <p>Collection access borrows the value. Creating an iterator produces an independent
 cursor over the collection's read-only value view.</p>

@@ -6,8 +6,8 @@ fn reordered_intersection_requirements_share_dispatch_identity() {
 type A = { pub first: Int }
 type B = { pub second: Int }
 type Item = { pub first: Int, pub second: Int }
-type First = { pub func apply(self, value: A & B) -> Int }
-type Second = { pub func apply(self, value: B & A) -> Int }
+type First = { pub func apply(self: Self, value: A & B) -> Int }
+type Second = { pub func apply(self: Self, value: B & A) -> Int }
 type Implementation = & First & {}
 impl Implementation {
     func apply(self: Implementation, value: ORDER) -> Int { value.first }
@@ -31,8 +31,8 @@ fn reordered_generic_intersections_preserve_later_parameter_relationships() {
 type A<T> = { pub first: T }
 type B<T> = { pub second: T }
 type Item = { pub first: Int, pub second: Bool }
-type First = { pub func apply<T, U>(self, value: A<T> & B<U>, marker: T) -> Int }
-type Second = { pub func apply<X, Y>(self, value: B<Y> & A<X>, marker: X) -> Int }
+type First = { pub func apply<T, U>(self: Self, value: A<T> & B<U>, marker: T) -> Int }
+type Second = { pub func apply<X, Y>(self: Self, value: B<Y> & A<X>, marker: X) -> Int }
 type Implementation = & First & {}
 impl Implementation {
     func apply<T, U>(self: Implementation, value: ORDER, marker: T) -> Int { 21 }

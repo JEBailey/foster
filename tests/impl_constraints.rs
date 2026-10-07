@@ -4,9 +4,9 @@
 fn function_bounds_preserve_concrete_handler_types() {
     runs(
         r#"
-pub type Handler = { pub func event(self, n: Int) -> Int [mut self] }
+pub type Handler = { pub func event(self: Self, n: Int) -> Int [mut self] }
 pub type Counter = { count: Int }
-impl Counter { pub func event(self, n: Int) -> Int [mut self.count] { self.count = self.count + n
+impl Counter { pub func event(self: Self, n: Int) -> Int [mut self.count] { self.count = self.count + n
     self.count } }
 func invoke<H & Handler>(handler: H, n: Int) -> Int [mut handler] { handler.event(n) }
 func main() -> Int { let handler = Counter { count: 20 }
@@ -15,12 +15,14 @@ func main() -> Int { let handler = Counter { count: 20 }
         42,
     );
     let invalid = foster::compile(
-        "type Handler = { pub func event(self) -> Int }\nfunc invoke<H & Handler>(handler: H) -> Int { handler.event() }\nfunc main() -> Int { invoke(42) }",
+        "type Handler = { pub func event(self: Self) -> Int }\nfunc invoke<H & Handler>(handler: H) -> Int { handler.event() }\nfunc main() -> Int { invoke(42) }",
     );
     assert!(invalid.is_err());
     assert!(
-        foster::compile("type A = {}\nimpl A { func f<T & A>(self, value: T) {} }\nfunc main() {}")
-            .is_err()
+        foster::compile(
+            "type A = {}\nimpl A { func f<T & A>(self: Self, value: T) {} }\nfunc main() {}"
+        )
+        .is_err()
     );
 }
 
@@ -38,7 +40,7 @@ fn symbolic_constraints_are_order_independent_and_deduplicated() {
     let mut descriptors = Vec::new();
     for requirements in ["A & B", "B & A", "A & B & A"] {
         let source = format!(
-            "type A = {{ pub value: Int }}\ntype B = {{ pub flag: Bool }}\ntype Box<T> = {{ value: T }}\nimpl Box<T & {requirements}> {{ func answer(self) -> Int {{ 42 }} }}\nfunc main() -> Int {{ 42 }}"
+            "type A = {{ pub value: Int }}\ntype B = {{ pub flag: Bool }}\ntype Box<T> = {{ value: T }}\nimpl Box<T & {requirements}> {{ func answer(self: Self) -> Int {{ 42 }} }}\nfunc main() -> Int {{ 42 }}"
         );
         let compilation = foster::compile(&source).unwrap();
         let program = foster::vm::compile(&compilation).unwrap();
@@ -67,7 +69,7 @@ import core.copy.*
 import static core.copy.*
 type Box<T> = { value: T }
 impl Box<T & Copy> {
-    func copied(self) -> T [read self] {
+    func copied(self: Self) -> T [read self] {
         let duplicate = (value: T) -> value.copy()
         duplicate(self.value)
     }
@@ -89,7 +91,7 @@ fn constraints_expose_required_fields_without_erasing_values() {
 type HasValue = { pub value: Int }
 type Item = { pub value: Int, extra: Bool }
 type Box<T> = { value: T }
-impl Box<T & HasValue> { func answer(self) -> Int [read self] { self.value.value } }
+impl Box<T & HasValue> { func answer(self: Self) -> Int [read self] { self.value.value } }
 func main() -> Int { Box { value: Item { value: 42, extra: true } }.answer() }
 "#,
         42,
@@ -100,12 +102,12 @@ func main() -> Int { Box { value: Item { value: 42, extra: true } }.answer() }
 fn parameterized_requirements_keep_argument_identity() {
     runs(
         r#"
-type Reads<U> = { pub func read(self) -> U [read self] }
+type Reads<U> = { pub func read(self: Self) -> U [read self] }
 type Item = { value: Int }
-impl Item { func read(self) -> Int [read self] { self.value } }
+impl Item { func read(self: Self) -> Int [read self] { self.value } }
 type Pair<K, V> = { key: K, value: V }
 impl Pair<K, V & Reads<K>> {
-    func read(self) -> K [read self] { self.value.read() }
+    func read(self: Self) -> K [read self] { self.value.read() }
 }
 func main() -> Int { Pair { key: 0, value: Item { value: 42 } }.read() }
 "#,
@@ -119,9 +121,9 @@ fn structural_arguments_check_conditional_method_availability() {
 import core.copy
 import core.copy.*
 import static core.copy.*
-type Answer = { pub func answer(self) -> Int }
+type Answer = { pub func answer(self: Self) -> Int }
 pub type Box<T> = { value: T }
-impl Box<T & Copy> { pub func answer(self) -> Int { 42 } }
+impl Box<T & Copy> { pub func answer(self: Self) -> Int { 42 } }
 type Item = { value: Int }
 func answer(value: Answer) -> Int { value.answer() }
 func main() -> Int { answer(Box { value: 1 }) }
@@ -139,7 +141,7 @@ import core.copy
 import core.copy.*
 import static core.copy.*
 type Box<T> = { value: T }
-impl Box<T & Copy> { func answer(self) -> Int { 42 } }
+impl Box<T & Copy> { func answer(self: Self) -> Int { 42 } }
 func answer<T>(value: Box<T>) -> Int { value.answer() }
 func main() -> Int { answer(Box { value: 1 }) }
 "#;
@@ -149,7 +151,7 @@ func main() -> Int { answer(Box { value: 1 }) }
 
 #[test]
 fn invalid_requirement_is_rejected_even_without_a_call() {
-    let error = foster::compile("type Box<T> = { value: T }\nimpl Box<T & Int> { func answer(self) -> Int { 42 } }\nfunc main() -> Int { 42 }").err().unwrap();
+    let error = foster::compile("type Box<T> = { value: T }\nimpl Box<T & Int> { func answer(self: Self) -> Int { 42 } }\nfunc main() -> Int { 42 }").err().unwrap();
     assert!(
         error.message.contains("structural record requirements"),
         "{}",
@@ -160,8 +162,8 @@ fn invalid_requirement_is_rejected_even_without_a_call() {
 #[test]
 fn conditional_runtime_hooks_are_rejected() {
     for member in [
-        "copy(self) -> self [read self] { self }",
-        "deinit(self) -> () { () }",
+        "copy(self: Self) -> Self [read self] { self }",
+        "deinit(self: Self) -> () { () }",
     ] {
         let source = format!(
             "import core.copy\nimport core.copy.*\nimport static core.copy.*\ntype Box<T> = {{ value: T }}\nimpl Box<T & Copy> {{ func {member} }}\nfunc main() -> Int {{ 42 }}"
@@ -183,8 +185,8 @@ import core.copy.*
 import static core.copy.*
 type Item = { value: Int }
 type Box<T> = { value: T }
-impl Box<T & Copy> { func answer(self, value: Int) -> Int { value } }
-impl Box<T> { func answer(self, value: Bool) -> Int { 42 } }
+impl Box<T & Copy> { func answer(self: Self, value: Int) -> Int { value } }
+impl Box<T> { func answer(self: Self, value: Bool) -> Int { 42 } }
 func main() -> Int { Box { value: Item { value: 1 } }.answer(true) }
 "#;
     runs(source, 42);
@@ -201,16 +203,16 @@ fn multiple_requirements_and_generic_forwarding() {
 import core.copy
 import core.copy.*
 import static core.copy.*
-type Number = { pub func number(self) -> Int [read self] }
+type Number = { pub func number(self: Self) -> Int [read self] }
 pub type Item = { value: Int }
 impl Item {
-    pub func copy(self) -> self [read self] { Item { value: self.value } }
-    pub func number(self) -> Int [read self] { self.value }
+    pub func copy(self: Self) -> Self [read self] { Item { value: self.value } }
+    pub func number(self: Self) -> Int [read self] { self.value }
 }
 type Box<T> = { value: T }
 impl Box<T & Number & Copy> {
-    func copied(self) -> T [read self] { self.value.copy() }
-    func number(self) -> Int [read self] { self.copied().number() }
+    func copied(self: Self) -> T [read self] { self.value.copy() }
+    func number(self: Self) -> Int [read self] { self.copied().number() }
 }
 func main() -> Int { Box { value: Item { value: 42 } }.number() }
 "#,
@@ -246,8 +248,8 @@ fn conditional_methods_do_not_discharge_unconditional_contracts() {
 import core.copy
 import core.copy.*
 import static core.copy.*
-pub type Box<T> = { value: T, pub func answer(self) -> Int }
-impl Box<T & Copy> { pub func answer(self) -> Int { 42 } }
+pub type Box<T> = { value: T, pub func answer(self: Self) -> Int }
+impl Box<T & Copy> { pub func answer(self: Self) -> Int { 42 } }
 func main() -> Int { 42 }
 "#,
     )
@@ -259,8 +261,8 @@ func main() -> Int { 42 }
 #[test]
 fn requirement_checks_result_and_effects() {
     for implementation in [
-        "pub func copy(self) -> Int [read self] { self.value }",
-        "pub func copy(self) -> self [mut self] { self.value = 1\n Item { value: self.value } }",
+        "pub func copy(self: Self) -> Int [read self] { self.value }",
+        "pub func copy(self: Self) -> Self [mut self] { self.value = 1\n Item { value: self.value } }",
     ] {
         let source = format!(
             r#"
@@ -270,7 +272,7 @@ import static core.copy.*
 pub type Item = {{ value: Int }}
 impl Item {{ {implementation} }}
 type Box<T> = {{ value: T }}
-impl Box<T & Copy> {{ func answer(self) -> Int {{ 42 }} }}
+impl Box<T & Copy> {{ func answer(self: Self) -> Int {{ 42 }} }}
 func main() -> Int {{ Box {{ value: Item {{ value: 1 }} }}.answer() }}
 "#
         );
@@ -286,9 +288,9 @@ fn runtime_conformance_cannot_erase_conditional_methods() {
 import core.copy
 import core.copy.*
 import static core.copy.*
-type Answer = { pub func answer(self) -> Int }
+type Answer = { pub func answer(self: Self) -> Int }
 pub type Box<T> = { value: T }
-impl Box<T & Copy> { pub func answer(self) -> Int { 42 } }
+impl Box<T & Copy> { pub func answer(self: Self) -> Int { 42 } }
 type Item = { value: Int }
 func inspect<T>(value: T) -> Int {
     branch value {
@@ -315,8 +317,8 @@ func main() -> Int {
 #[test]
 fn constraints_do_not_create_ordered_specialization() {
     for methods in [
-        "impl Box<T> { func answer(self) -> Int { 0 } }\nimpl Box<T & Copy> { func answer(self) -> Int { 42 } }",
-        "impl Box<T & Copy> { func answer(self) -> Int { 42 } }\nimpl Box<T> { func answer(self) -> Int { 0 } }",
+        "impl Box<T> { func answer(self: Self) -> Int { 0 } }\nimpl Box<T & Copy> { func answer(self: Self) -> Int { 42 } }",
+        "impl Box<T & Copy> { func answer(self: Self) -> Int { 42 } }\nimpl Box<T> { func answer(self: Self) -> Int { 0 } }",
     ] {
         let source = format!(
             "import core.copy\nimport core.copy.*\nimport static core.copy.*\ntype Box<T> = {{ value: T }}\n{methods}\nfunc main() -> Int {{ 42 }}"
@@ -334,7 +336,7 @@ import core.copy.*
 import static core.copy.*
 type Box<T> = { value: T }
 impl Box<T & Copy> {
-    func copied(self) -> T [read self] { self.value.copy() }
+    func copied(self: Self) -> T [read self] { self.value.copy() }
 }
 func main() -> Int { Box { value: 42 }.copied() }
 "#,
@@ -356,7 +358,7 @@ import core.copy.*
 import static core.copy.*
 type NoCopy = { value: Int }
 type Box<T> = { value: T }
-impl Box<T & Copy> { func answer(self) -> Int { 42 } }
+impl Box<T & Copy> { func answer(self: Self) -> Int { 42 } }
 func main() -> Int { Box { value: NoCopy { value: 1 } }.answer() }
 "#,
     )
@@ -373,9 +375,9 @@ import core.copy
 import core.copy.*
 import static core.copy.*
 pub type Item = { value: Int }
-impl Item { pub func copy(self) -> self [read self] { Item { value: self.value } } }
+impl Item { pub func copy(self: Self) -> Self [read self] { Item { value: self.value } } }
 type Box<T> = { value: T }
-impl Box<T & Copy> { func copied(self) -> T [read self] { self.value.copy() } }
+impl Box<T & Copy> { func copied(self: Self) -> T [read self] { self.value.copy() } }
 func main() -> Int { Box { value: Item { value: 42 } }.copied().value }
 "#,
     )

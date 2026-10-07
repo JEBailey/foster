@@ -56,13 +56,13 @@ func identifier_part(c: CodePoint) -> Bool {
 }
 
 impl Scanner {
-    func peek(self, ahead: Int) -> CodePoint {
+    func peek(self: Self, ahead: Int) -> CodePoint {
         branch {
             self.index + ahead < self.chars.length -> self.chars[self.index + ahead]
             _ -> ' '
         }
     }
-    func advance(self) -> CodePoint {
+    func advance(self: Self) -> CodePoint {
         let c = self.chars[self.index]
         self.index = self.index + 1
         let scalar = c.as_int()
@@ -83,17 +83,17 @@ impl Scanner {
         }
         c
     }
-    func fail(self, message: String, line: Int, column: Int) -> () {
+    func fail(self: Self, message: String, line: Int, column: Int) -> () {
         self.error = message.copy()
         self.error_line = line
         self.error_column = column
         ()
     }
-    func text(self, start: Int) -> String {
+    func text(self: Self, start: Int) -> String {
         String.from_code_points(self.chars.slice(start, self.index))
     }
     // Retain the raw interior: interpolation and escape decoding belong to the parser.
-    func interpolated(self, line: Int, column: Int) -> String {
+    func interpolated(self: Self, line: Int, column: Int) -> String {
         self.advance()
         self.advance()
         self.advance()
@@ -134,7 +134,7 @@ impl Scanner {
     }
 
     // Skip expression syntax without treating quotes, comments, or record braces as delimiters.
-    func interpolation_expression(self) -> () {
+    func interpolation_expression(self: Self) -> () {
         let braces = 0
         let comment = 0
         while self.index < self.chars.length {
@@ -193,7 +193,7 @@ impl Scanner {
         self.fail("expected `}%` after interpolation expression", self.line, self.column)
     }
 
-    func quoted(self, quote: CodePoint, line: Int, column: Int) -> String {
+    func quoted(self: Self, quote: CodePoint, line: Int, column: Int) -> String {
         self.advance()
         let content_start = self.index
         self.quoted_raw = quote == '"'

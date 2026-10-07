@@ -13,13 +13,13 @@ import core.option.Option
 /// A double-ended queue.
 pub type Deque<T> = & Collection<T> & {
     /// Returns a deque with `value` added at the front.
-    pub func push_front(self, value: T) -> self [consume self, consume value]
+    pub func push_front(self: Self, value: T) -> Self [consume self, consume value]
     /// Returns a deque with `value` added at the back.
-    pub func push_back(self, value: T) -> self [consume self, consume value]
+    pub func push_back(self: Self, value: T) -> Self [consume self, consume value]
     /// Removes the front value and returns the remaining deque.
-    pub func pop_front(self) -> Option<DequeItem<T, self>> [consume self]
+    pub func pop_front(self: Self) -> Option<DequeItem<T, Self>> [consume self]
     /// Removes the back value and returns the remaining deque.
-    pub func pop_back(self) -> Option<DequeItem<T, self>> [consume self]
+    pub func pop_back(self: Self) -> Option<DequeItem<T, Self>> [consume self]
 }
 
 impl Deque {
@@ -43,36 +43,36 @@ impl ListDeque<T> {
     }
 
     /// Returns the number of values in the deque.
-    pub func length(self) -> Int {
+    pub func length(self: Self) -> Int {
         self.values.length
     }
 
     /// Returns whether the deque contains no values.
-    pub func empty?(self) -> Bool {
+    pub func empty?(self: Self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from front to back.
-    pub func iterator(self) -> Iterator<T> {
+    pub func iterator(self: Self) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns a deque with `value` added at the front.
-    pub func push_front(self, value: T) -> ListDeque<T> [consume self, consume value] {
+    pub func push_front(self: Self, value: T) -> ListDeque<T> [consume self, consume value] {
         ListDeque {
             values: append_all(move self.values, [value])
         }
     }
 
     /// Returns a deque with `value` added at the back.
-    pub func push_back(self, value: T) -> ListDeque<T> [consume self, consume value] {
+    pub func push_back(self: Self, value: T) -> ListDeque<T> [consume self, consume value] {
         ListDeque {
             values: self.values.append(value)
         }
     }
 
     /// Removes the front value and returns the remaining deque.
-    pub func pop_front(self) -> Option<DequeItem<T, ListDeque<T>>> [consume self] {
+    pub func pop_front(self: Self) -> Option<DequeItem<T, ListDeque<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> Option.Some(DequeItem {
@@ -84,7 +84,7 @@ impl ListDeque<T> {
     }
 
     /// Removes the back value and returns the remaining deque.
-    pub func pop_back(self) -> Option<DequeItem<T, ListDeque<T>>> [consume self] {
+    pub func pop_back(self: Self) -> Option<DequeItem<T, ListDeque<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> pop_back_values(move self.values, [])

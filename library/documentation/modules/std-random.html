@@ -20,8 +20,8 @@ Drawing entropy changes external state, not this Foster value.</p>
 
 }</code></pre><p>Private namespace for operating-system entropy.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomSource"><h2><a class="anchor" href="#RandomSource">RandomSource</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type RandomSource = {
-    pub func next(self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut self]
-    pub func maximum(self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
+    pub func next(self: Self) -&gt; <a class="type-link" href="core-result.html#Result" title="core.result.Result">Result</a>&lt;<a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>, <a class="type-link" href="#RandomError" title="std.random.RandomError">RandomError</a>&gt; [mut self]
+    pub func maximum(self: Self) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>
 }</code></pre><p>A stateful source of uniformly distributed nonnegative integers.</p>
 <p><code>next</code> must return a value in the inclusive range from zero through <code>maximum</code>. Every value in
 that range must be equally likely. Source failure is explicit so host entropy and deterministic
@@ -31,10 +31,10 @@ generators share one contract without hiding environmental errors.</p>
     maximum_value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-private">private</span>
 }</code></pre><p>Deterministic source used to exercise generic random operations.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SeedableRandom"><h2><a class="anchor" href="#SeedableRandom">SeedableRandom</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SeedableRandom = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; {
-    pub func reseed(self, seed: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; () [mut self]
+    pub func reseed(self: Self, seed: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a>) -&gt; () [mut self]
 }</code></pre><p>A random source whose deterministic state can be reset from an integer seed.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SplittableRandom"><h2><a class="anchor" href="#SplittableRandom">SplittableRandom</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SplittableRandom = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; {
-    pub func split(self) -&gt; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> [mut self]
+    pub func split(self: Self) -&gt; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> [mut self]
 }</code></pre><p>A random source which can derive another deterministic stream.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="SystemRandom"><h2><a class="anchor" href="#SystemRandom">SystemRandom</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type SystemRandom = &amp; <a class="type-link" href="#RandomSource" title="std.random.RandomSource">RandomSource</a> &amp; <a class="type-link" href="std-random-secure.html#EntropySource" title="std.random.secure.EntropySource">secure::EntropySource</a> &amp; {
     marker: <a class="type-link" href="core-symbol.html#Symbol" title="core.symbol.Symbol">Symbol</a><span class="badge visibility-private">private</span>

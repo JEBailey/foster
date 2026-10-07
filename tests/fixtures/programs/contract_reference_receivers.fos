@@ -2,13 +2,13 @@ pub type Item = {
     value: Int
 }
 pub type BorrowItem = {
-    pub func borrow(self) -> ref[self] Item
+    pub func borrow(self: Self) -> ref[self] Item
 }
 pub type Holder = & BorrowItem & {
     item: Item
 }
 impl Holder {
-    pub func borrow(self) -> ref[self] Item {
+    pub func borrow(self: Self) -> ref[self] Item {
         ref self.item
     }
 }

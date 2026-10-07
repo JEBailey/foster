@@ -96,6 +96,13 @@ impl Parser {
             self.expect_ident(message)
         }
     }
+    pub(super) fn expect_type_binding(&mut self, message: &str) -> Result<String, FosterError> {
+        let name = self.expect_ident(message)?;
+        if name == "Self" {
+            return Err(self.error("`Self` is reserved for the implementing type"));
+        }
+        Ok(name)
+    }
     pub(super) fn error(&self, message: &str) -> FosterError {
         FosterError::new(message, self.peek().line, self.peek().column)
     }

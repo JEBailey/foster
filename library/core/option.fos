@@ -12,26 +12,26 @@ pub enum Option<T> = Some(T)
     & {
         // Required public operations; implementations live in impl blocks.
         /// Applies `transform` to a present value and preserves `None`.
-        pub func map<U>(self, transform: func(T) -> U) -> Option<U> [read self, read transform]
+        pub func map<U>(self: Self, transform: func(T) -> U) -> Option<U> [read self, read transform]
         /// Applies an optional-producing transform to a present value and flattens the result.
-        pub func and_then<U>(self, transform: func(T) -> Option<U>) -> Option<U> [read self, read transform]
+        pub func and_then<U>(self: Self, transform: func(T) -> Option<U>) -> Option<U> [read self, read transform]
         /// Returns the contained value, or `fallback` for `None`.
         /// The fallback is evaluated before this call, even for `Some`; use
         /// `unwrap_or_else` to defer computation.
-        pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self]
+        pub func unwrap_or(self: Self, fallback: T) -> T [consume fallback, read self]
         /// Returns whether the option contains a value.
-        pub func present?(self) -> Bool [read self]
+        pub func present?(self: Self) -> Bool [read self]
         /// Returns whether the option contains no value.
-        pub func absent?(self) -> Bool [read self]
+        pub func absent?(self: Self) -> Bool [read self]
         /// Returns the contained value; calls `fallback` exactly once only for `None`.
-        pub func unwrap_or_else(self, fallback: Supplier<T>) -> T [read fallback, read self]
+        pub func unwrap_or_else(self: Self, fallback: Supplier<T>) -> T [read fallback, read self]
         /// Preserves a present value, or computes another option when this option is `None`.
-        pub func or_else(self, fallback: Supplier<Option<T>>) -> Option<T> [read fallback, read self]
+        pub func or_else(self: Self, fallback: Supplier<Option<T>>) -> Option<T> [read fallback, read self]
     }
 
 impl Option<T> {
     /// Applies `transform` to a present value and preserves `None`.
-    pub func map<U>(self, transform: func(T) -> U) -> Option<U> {
+    pub func map<U>(self: Self, transform: func(T) -> U) -> Option<U> {
         branch self {
             Option.Some(value) -> Option.Some(transform(value))
             Option.None -> Option.None
@@ -39,7 +39,7 @@ impl Option<T> {
     }
 
     /// Applies an optional-producing transform to a present value and flattens the result.
-    pub func and_then<U>(self, transform: func(T) -> Option<U>) -> Option<U> {
+    pub func and_then<U>(self: Self, transform: func(T) -> Option<U>) -> Option<U> {
         branch self {
             Option.Some(value) -> transform(value)
             Option.None -> Option.None
@@ -49,7 +49,7 @@ impl Option<T> {
     /// Returns the contained value, or `fallback` for `None`.
     /// The fallback is evaluated before this call, even for `Some`; use
     /// `unwrap_or_else` to defer computation.
-    pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self] {
+    pub func unwrap_or(self: Self, fallback: T) -> T [consume fallback, read self] {
         branch self {
             Option.Some(value) -> value
             Option.None -> fallback
@@ -57,7 +57,7 @@ impl Option<T> {
     }
 
     /// Returns whether the option contains a value.
-    pub func present?(self) -> Bool {
+    pub func present?(self: Self) -> Bool {
         branch self {
             Option.Some(_) -> true
             Option.None -> false
@@ -65,7 +65,7 @@ impl Option<T> {
     }
 
     /// Returns whether the option contains no value.
-    pub func absent?(self) -> Bool {
+    pub func absent?(self: Self) -> Bool {
         branch self {
             Option.Some(_) -> false
             Option.None -> true
@@ -73,7 +73,7 @@ impl Option<T> {
     }
 
     /// Returns the contained value; calls `fallback` exactly once only for `None`.
-    pub func unwrap_or_else(self, fallback: Supplier<T>) -> T {
+    pub func unwrap_or_else(self: Self, fallback: Supplier<T>) -> T {
         branch self {
             Option.Some(value) -> value
             Option.None -> fallback()
@@ -81,7 +81,7 @@ impl Option<T> {
     }
 
     /// Preserves a present value, or computes another option when this option is `None`.
-    pub func or_else(self, fallback: Supplier<Option<T>>) -> Option<T> {
+    pub func or_else(self: Self, fallback: Supplier<Option<T>>) -> Option<T> {
         branch self {
             Option.Some(value) -> Option.Some(value)
             Option.None -> fallback()
