@@ -37,16 +37,18 @@ func main() -> Int {
 }
 ```
 
-An import exposes public names and a module qualifier: `import core.option`
-supports both `Option` and `option::Option`. Use qualifiers for ambiguous names.
+A module import binds its namespace: `import core.option` supports
+`option::Option`. Add `import core.option.Option` for the unqualified type name,
+or `import core.option.*` for public types. Use `import static core.option.*`
+for public module functions and constants.
 Receiver methods serve operations such as `text.slice(0, 3)`; module functions
 serve algorithms such as `sha256::digest(bytes)` and `io::copy(reader, writer)`.
 
 Generate the API reference from the repository root:
 
 ```powershell
-foster docs library
-foster docs library --serve
+foster documentation library --output library/documentation
+foster documentation library --output library/documentation --serve
 ```
 
 The site is written to `library/documentation`. Edit source comments and
@@ -215,7 +217,7 @@ From the repository root:
 ```powershell
 foster test library
 foster test tests/foster
-foster docs library
+foster documentation library --output library/documentation
 ```
 
 Portable tests live beside their implementations. Rust integration tests cover

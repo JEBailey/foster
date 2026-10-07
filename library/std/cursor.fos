@@ -9,7 +9,8 @@
 //!
 //! ```foster
 //! import core.string
-//! import core.option
+//! import core.string.StringCursor
+//! import core.option.Option
 //! func main() -> Int {
 //!     let reader = StringCursor.from("Aλ🙂")
 //!     assert(reader.next() == Option.Some('A'))

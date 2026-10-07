@@ -6,7 +6,8 @@ Checkpoints carry no source identity: callers must use the same source snapshot.
 restore validates bounds (and text boundaries); a failed restore does not move.
 span copies a half-open region without moving the cursor.</p>
 <pre><code class="language-foster">import core.string
-import core.option
+import core.string.StringCursor
+import core.option.Option
 func main() -&gt; Int {
     let reader = StringCursor.from("Aλ🙂")
     assert(reader.next() == Option.Some('A'))

@@ -90,3 +90,13 @@ code fences, and duplicate declarations. Run library tests and documentation
 coverage checks as appropriate. Rebuild the compiler to distribute updated
 embedded comments to installed LSP clients; HTML generation does not update an
 already installed language server.
+
+Run `cargo test --test library_documentation` after editing examples or the library
+guide. This test discovers every `foster` fence in `.fos` documentation comments
+and `library/README.md`, compiles each as a complete program, and executes it with
+and without optimization. Use assertions for the behavior an example promises.
+These examples must be deterministic and need no external files, network, or
+interactive devices. Use a `text` fence for deliberately non-runnable sketches.
+The test also validates the guide's CLI command names and options using `--help`.
+Comment coverage alone does not verify behavioral claims; review implementations
+and boundary tests when documenting failures or ownership.
