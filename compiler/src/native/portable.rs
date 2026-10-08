@@ -989,7 +989,7 @@ pub(super) fn lower_portable_native(
             store_physical_value(
                 builder,
                 receiver,
-                objects.layouts.physical.get(layout).header.size + slot.index as u32,
+                objects.layouts.physical.get(layout).header.size + slot.index,
                 initialized,
             );
             Ok(None)

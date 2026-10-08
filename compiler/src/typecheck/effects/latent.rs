@@ -228,18 +228,18 @@ impl EffectDerivation<'_, '_> {
         if let Some(element) = self.checker.list_element(&ty) {
             return self.retains_callbacks(element);
         }
-        match ty {
+        !matches!(
+            ty,
             Ty::Unit
-            | Ty::Never
-            | Ty::Bool
-            | Ty::Int
-            | Ty::RawInt
-            | Ty::Float
-            | Ty::CodePoint
-            | Ty::Byte
-            | Ty::RawBytes
-            | Ty::RawByteBuffer => false,
-            _ => true,
-        }
+                | Ty::Never
+                | Ty::Bool
+                | Ty::Int
+                | Ty::RawInt
+                | Ty::Float
+                | Ty::CodePoint
+                | Ty::Byte
+                | Ty::RawBytes
+                | Ty::RawByteBuffer
+        )
     }
 }

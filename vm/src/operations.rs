@@ -88,10 +88,10 @@ pub fn binary(operator: BinaryOp, left: &Value, right: &Value) -> Result<Value, 
                 if let Some(shared) = a.string_shared() {
                     return Ok(shared);
                 }
-            } else if a.string_bytes().unwrap().is_empty() {
-                if let Some(shared) = b.string_shared() {
-                    return Ok(shared);
-                }
+            } else if a.string_bytes().unwrap().is_empty()
+                && let Some(shared) = b.string_shared()
+            {
+                return Ok(shared);
             }
             let mut value = a.string_bytes().unwrap().to_vec();
             value.extend_from_slice(b.string_bytes().unwrap());

@@ -67,19 +67,16 @@ fn compile_backend(
     Ok(program)
 }
 
+/// Source-local bytecode registers indexed by function and local declaration.
+pub type DebugLocalRegisters = std::collections::HashMap<
+    crate::hir::FunctionId,
+    std::collections::HashMap<crate::hir::LocalId, super::Register>,
+>;
+
 /// Generate unoptimized bytecode and the source-local register map used by a debugger.
 pub fn compile_debug(
     compilation: &Compilation,
-) -> Result<
-    (
-        Program,
-        std::collections::HashMap<
-            crate::hir::FunctionId,
-            std::collections::HashMap<crate::hir::LocalId, super::Register>,
-        >,
-    ),
-    FosterError,
-> {
+) -> Result<(Program, DebugLocalRegisters), FosterError> {
     let mut locals = std::collections::HashMap::new();
     let shared = crate::codegen::program::compile_with_locals(compilation, Some(&mut locals))?;
     let mut program = crate::codegen::vm::lower_shared_program(shared)

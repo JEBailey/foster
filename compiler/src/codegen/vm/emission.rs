@@ -263,7 +263,7 @@ pub(super) fn lower_verified_function(
     Ok(vm::BytecodeFunction {
         name: function.name.clone(),
         intrinsic_stub: metadata.intrinsic_stub,
-        parameters: parameters,
+        parameters,
         returns_reference: metadata.returns_reference,
         captures: u16::try_from(function.captures.len())
             .map_err(|_| LowerError("too many function captures".into()))?,

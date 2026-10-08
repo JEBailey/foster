@@ -288,8 +288,8 @@ fn dispatch_core(
                 return Ok(Value::bytes(crate::foreign::runtime::remote_error()));
             }
             Ok(Value::bytes(crate::foreign::runtime::exchange(
-                &path.string_text()?,
-                &schema.string_text()?,
+                path.string_text()?,
+                schema.string_text()?,
                 *operation,
                 *token,
                 *create,

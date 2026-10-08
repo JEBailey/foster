@@ -20,8 +20,7 @@ func invalid(value: ref[value] Int) -> List<Int> [read value] {
 }
 "#,
     )
-    .err()
-    .expect("container hid callback mutation");
+    .expect_err("container hid callback mutation");
     assert!(error.message.contains("effect"), "{error:?}");
 }
 
@@ -38,8 +37,7 @@ func mutate(values: List<Int>) -> Int { values.push(2)
 func main() -> Int { apply(mutate, [1]) }
 "#,
     )
-    .err()
-    .expect("capture capability granted argument mutation");
+    .expect_err("capture capability granted argument mutation");
     assert!(error.message.contains("callable contract"), "{error:?}");
 }
 
@@ -58,8 +56,7 @@ func main() -> Int {
 }
 "#,
     )
-    .err()
-    .expect("iterator used an invalidated capture");
+    .expect_err("iterator used an invalidated capture");
     assert!(
         error.message.contains("invalid") || error.message.contains("borrow"),
         "{error:?}"
@@ -90,8 +87,7 @@ func invalid(value: ref[value] Int) -> Int [read value] {
 }
 "#,
     )
-    .err()
-    .expect("immediate callback hid mutation");
+    .expect_err("immediate callback hid mutation");
     assert!(error.message.contains("effect"), "{error:?}");
 }
 
@@ -110,8 +106,7 @@ func main() -> Int {
 }
 "#,
     )
-    .err()
-    .expect("temporary callback hid reshaping");
+    .expect_err("temporary callback hid reshaping");
     assert!(
         error.message.contains("invalid") || error.message.contains("borrow"),
         "{error:?}"
@@ -140,9 +135,7 @@ func invalid(visited: List<Int>, flag: Bool) -> List<Int> [read visited, read fl
 }}
 "#
         );
-        let error = foster_compiler::compile(&source)
-            .err()
-            .expect("alias hid callback mutation");
+        let error = foster_compiler::compile(&source).expect_err("alias hid callback mutation");
         assert!(error.message.contains("effect"), "{error:?}");
     }
 }
@@ -199,8 +192,7 @@ func main() -> Int {
 }
 "#,
     )
-    .err()
-    .expect("mutation erased into pure callback");
+    .expect_err("mutation erased into pure callback");
     assert!(error.message.contains("callable contract"), "{error:?}");
 }
 
@@ -221,8 +213,7 @@ func invalid(visited: List<Int>) -> List<Int> [read visited] {
 }
 "#,
     )
-    .err()
-    .expect("returned iterator hid mutation");
+    .expect_err("returned iterator hid mutation");
     assert!(error.message.contains("effect"), "{error:?}");
 }
 #[test]
@@ -240,8 +231,7 @@ func invalid() {
 }
 "#,
     )
-    .err()
-    .expect("invalid callback accepted");
+    .expect_err("invalid callback accepted");
     assert!(error.message.contains("borrow"), "{error:?}");
 }
 
@@ -259,8 +249,7 @@ func invalid(visited: List<Int>) -> List<Int> [read visited] {
 }
 "#,
     )
-    .err()
-    .expect("invalid callback accepted");
+    .expect_err("invalid callback accepted");
     assert!(error.message.contains("effect"), "{error:?}");
 }
 
@@ -281,8 +270,7 @@ func main() -> Int {
 }
 "#,
     )
-    .err()
-    .expect("invalid callback accepted");
+    .expect_err("invalid callback accepted");
     assert!(
         error.message.contains("invalid") || error.message.contains("borrow"),
         "{error:?}"

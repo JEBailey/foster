@@ -538,7 +538,7 @@ impl Workspace {
         let qualifier = qualifier_before(source, start);
 
         if let Some(ref qualifier) = qualifier {
-            if !add_associated_completions(&compilation, module_id, &qualifier, &mut items)
+            if !add_associated_completions(&compilation, module_id, qualifier, &mut items)
                 && let Some(target) = module.imports.get(qualifier)
             {
                 add_module_completions(&compilation, *target, true, &mut items);

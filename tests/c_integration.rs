@@ -51,8 +51,7 @@ fn c_resources_are_private_and_cannot_cross_remote_boundaries() {
         "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nimport core.result.*\ntype Box = { value: Result<CResource, Int> }\nfunc transfer(value: Box) { remote value }\nfunc main() {}",
     ] {
         let error = foster::compile(source)
-            .err()
-            .expect("unsafe C ownership must be rejected")
+            .expect_err("unsafe C ownership must be rejected")
             .to_string();
         assert!(
             error.contains("private fields") || error.contains("remote-object boundary"),
@@ -213,8 +212,7 @@ func main(arguments: Arguments) -> Result<(), CError> {
         vec![0; 9]
     );
     let error = foster::native::compile_object(&generic, Default::default())
-        .err()
-        .expect("native generic resource transfer must fail")
+        .expect_err("native generic resource transfer must fail")
         .to_string();
     assert!(error.contains("C resources cannot cross"), "{error}");
 }

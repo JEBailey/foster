@@ -66,11 +66,15 @@ extern "C" fn foster_rt_v5_c_callback_new(
     owned: u8,
 ) -> usize {
     let callback = NativeCallback {
-        code: unsafe { std::mem::transmute(code) },
+        code: unsafe {
+            std::mem::transmute::<usize, unsafe extern "C" fn(usize, usize) -> usize>(code)
+        },
         environment,
         owner,
-        release: unsafe { std::mem::transmute(release) },
-        release_packet: unsafe { std::mem::transmute(release_packet) },
+        release: unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(usize) -> u8>(release) },
+        release_packet: unsafe {
+            std::mem::transmute::<usize, unsafe extern "C" fn(usize) -> u8>(release_packet)
+        },
     };
     let result = if may::coroutine::is_coroutine() {
         Err("C callbacks cannot be registered in remote tasks".into())

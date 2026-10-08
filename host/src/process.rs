@@ -74,12 +74,12 @@ fn encode(bytes: &[u8]) -> String {
 }
 
 fn argument(value: &str) -> Result<String, String> {
-    if value.len() % 2 != 0 {
+    let (pairs, remainder) = value.as_bytes().as_chunks::<2>();
+    if !remainder.is_empty() {
         return Err("invalid process argument encoding".into());
     }
-    let bytes = value
-        .as_bytes()
-        .chunks_exact(2)
+    let bytes = pairs
+        .iter()
         .map(|pair| {
             let digit = |byte: u8| {
                 (byte as char)

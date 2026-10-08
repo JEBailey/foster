@@ -434,6 +434,228 @@ impl Workspace {
     }
 }
 
+fn type_candidate(item: &CompletionItem) -> bool {
+    matches!(
+        item.kind,
+        Some(
+            CompletionItemKind::STRUCT
+                | CompletionItemKind::ENUM
+                | CompletionItemKind::CLASS
+                | CompletionItemKind::INTERFACE
+                | CompletionItemKind::TYPE_PARAMETER
+        )
+    )
+}
+
+// A conservative spelling suggestion: one insertion/deletion/substitution or
+// adjacent transposition. Short names require a transposition to avoid noisy fixes.
+fn similar(left: &str, right: &str) -> bool {
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    if left == right || left.len().abs_diff(right.len()) > 1 {
+        return false;
+    }
+    if left.len() == right.len() {
+        let changed = (0..left.len())
+            .filter(|index| left[*index] != right[*index])
+            .collect::<Vec<_>>();
+        return (left.len() >= 3 && changed.len() == 1)
+            || (changed.len() == 2
+                && changed[1] == changed[0] + 1
+                && left[changed[0]] == right[changed[1]]
+                && left[changed[1]] == right[changed[0]]);
+    }
+    let (short, long) = if left.len() < right.len() {
+        (&left, &right)
+    } else {
+        (&right, &left)
+    };
+    if short.len() < 3 {
+        return false;
+    }
+    let split = short
+        .iter()
+        .zip(long)
+        .position(|(a, b)| a != b)
+        .unwrap_or(short.len());
+    short[split..] == long[split + 1..]
+}
+
+fn import_edit(source: &str, program: &ast::Program, module: &str) -> Option<TextEdit> {
+    let newline = if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let (offset, prefix) = if let Some(import) = program.imports.iter().rfind(|import| {
+        !import
+            .alias
+            .as_ref()
+            .is_some_and(|name| name.starts_with('$'))
+    }) {
+        match source[import.span.end..].find('\n') {
+            Some(end) => (import.span.end + end + 1, ""),
+            None => (source.len(), newline),
+        }
+    } else {
+        // Keep module documentation and ordinary leading comments in place, but
+        // insert before declaration documentation so it stays with its declaration.
+        let tokens = crate::lexer::lex(source).ok()?;
+        let token = tokens.iter().find(|token| {
+            !matches!(
+                token.kind,
+                TokenKind::Newline | TokenKind::ModuleDocComment(_)
+            )
+        })?;
+        let line_start = source[..token.range.start]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
+        (line_start, "")
+    };
+    Some(TextEdit {
+        range: byte_range_to_lsp(source, offset..offset),
+        new_text: format!("{prefix}import {module}{newline}"),
+    })
+}
+
+impl Workspace {
+    pub(in crate::lsp) fn code_actions(
+        &self,
+        params: &lsp_types::CodeActionParams,
+    ) -> Option<lsp_types::CodeActionResponse> {
+        use lsp_types::{CodeAction, CodeActionKind, CodeActionOrCommand};
+        if params.context.only.as_ref().is_some_and(|kinds| {
+            !kinds
+                .iter()
+                .any(|kind| kind.as_str().is_empty() || kind == &CodeActionKind::QUICKFIX)
+        }) {
+            return Some(Vec::new());
+        }
+        let uri = &params.text_document.uri;
+        let document = self.documents.get(uri)?;
+        let source = &document.text;
+        let parsed = crate::parse_recovering(source).ok()?;
+        let tokens = crate::lexer::lex(source).ok()?;
+        let mut actions = Vec::new();
+        let mut seen = HashSet::new();
+        let mut exports = None;
+        for diagnostic in &params.context.diagnostics {
+            if diagnostic.source.as_deref() != Some("foster")
+                || diagnostic
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("fosterVersion"))
+                    .and_then(serde_json::Value::as_i64)
+                    != Some(i64::from(document.version))
+                || diagnostic.range.end < params.range.start
+                || params.range.end < diagnostic.range.start
+            {
+                continue;
+            }
+            let message = diagnostic.message.lines().next().unwrap_or_default();
+            let message = if message.starts_with("in `") {
+                message
+                    .split_once("`: ")
+                    .map_or(message, |(_, message)| message)
+            } else {
+                message
+            };
+            let (name, is_type) = if let Some(name) = message
+                .strip_prefix("unknown name `")
+                .and_then(|name| name.strip_suffix('`'))
+            {
+                (name, false)
+            } else if let Some(name) = message
+                .strip_prefix("unknown type `")
+                .and_then(|name| name.strip_suffix('`'))
+            {
+                (name, true)
+            } else {
+                continue;
+            };
+            let matches = tokens
+                .iter()
+                .filter(|token| {
+                    token.kind == TokenKind::Ident(name.into()) && {
+                        let range = byte_range_to_lsp(source, token.range.clone());
+                        range.start <= diagnostic.range.end && diagnostic.range.start < range.end
+                    }
+                })
+                .collect::<Vec<_>>();
+            let [token] = matches.as_slice() else {
+                continue;
+            };
+            let range = byte_range_to_lsp(source, token.range.clone());
+            let mut offer = |title: String, edit: TextEdit| {
+                if !seen.insert((title.clone(), range.start.line, range.start.character)) {
+                    return;
+                }
+                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                    title,
+                    kind: Some(CodeActionKind::QUICKFIX),
+                    diagnostics: Some(vec![diagnostic.clone()]),
+                    edit: Some(WorkspaceEdit {
+                        document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
+                            text_document: OptionalVersionedTextDocumentIdentifier {
+                                uri: uri.clone(),
+                                version: Some(document.version),
+                            },
+                            edits: vec![OneOf::Left(edit)],
+                        }])),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }));
+            };
+            if let Some(candidates) = self.editing_completions(uri, source, token.range.end) {
+                for item in candidates
+                    .values()
+                    .filter(|item| (!is_type || type_candidate(item)) && similar(name, &item.label))
+                    .take(5)
+                {
+                    offer(
+                        format!("Change `{name}` to `{}`", item.label),
+                        TextEdit {
+                            range,
+                            new_text: item.label.clone(),
+                        },
+                    );
+                }
+            }
+            for (module, members) in exports
+                .get_or_insert_with(|| self.edit_exports(uri, None))
+                .iter()
+            {
+                if !members
+                    .get(name)
+                    .is_some_and(|item| !is_type || type_candidate(item))
+                {
+                    continue;
+                }
+                let item_is_type = members.get(name).is_some_and(type_candidate);
+                let path = format!("{module}.{name}");
+                if parsed.program.imports.iter().any(|import| {
+                    (import.path.join(".") == path && !import.wildcard)
+                        || (import.wildcard
+                            && import.path.join(".") == *module
+                            && import.static_ != item_is_type)
+                }) {
+                    continue;
+                }
+                let declaration = if item_is_type {
+                    path
+                } else {
+                    format!("static {path}")
+                };
+                if let Some(edit) = import_edit(source, &parsed.program, &declaration) {
+                    offer(format!("Import `{name}` from `{module}`"), edit);
+                }
+            }
+        }
+        Some(actions)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -736,232 +958,5 @@ mod tests {
                 .start,
             Position::new(0, 0)
         );
-    }
-}
-
-fn type_candidate(item: &CompletionItem) -> bool {
-    matches!(
-        item.kind,
-        Some(
-            CompletionItemKind::STRUCT
-                | CompletionItemKind::ENUM
-                | CompletionItemKind::CLASS
-                | CompletionItemKind::INTERFACE
-                | CompletionItemKind::TYPE_PARAMETER
-        )
-    )
-}
-
-// A conservative spelling suggestion: one insertion/deletion/substitution or
-// adjacent transposition. Short names require a transposition to avoid noisy fixes.
-fn similar(left: &str, right: &str) -> bool {
-    let left = left.chars().collect::<Vec<_>>();
-    let right = right.chars().collect::<Vec<_>>();
-    if left == right || left.len().abs_diff(right.len()) > 1 {
-        return false;
-    }
-    if left.len() == right.len() {
-        let changed = (0..left.len())
-            .filter(|index| left[*index] != right[*index])
-            .collect::<Vec<_>>();
-        return (left.len() >= 3 && changed.len() == 1)
-            || (changed.len() == 2
-                && changed[1] == changed[0] + 1
-                && left[changed[0]] == right[changed[1]]
-                && left[changed[1]] == right[changed[0]]);
-    }
-    let (short, long) = if left.len() < right.len() {
-        (&left, &right)
-    } else {
-        (&right, &left)
-    };
-    if short.len() < 3 {
-        return false;
-    }
-    let split = short
-        .iter()
-        .zip(long)
-        .position(|(a, b)| a != b)
-        .unwrap_or(short.len());
-    short[split..] == long[split + 1..]
-}
-
-fn import_edit(source: &str, program: &ast::Program, module: &str) -> Option<TextEdit> {
-    let newline = if source.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let (offset, prefix) = if let Some(import) = program
-        .imports
-        .iter()
-        .filter(|import| {
-            !import
-                .alias
-                .as_ref()
-                .is_some_and(|name| name.starts_with('$'))
-        })
-        .last()
-    {
-        match source[import.span.end..].find('\n') {
-            Some(end) => (import.span.end + end + 1, ""),
-            None => (source.len(), newline),
-        }
-    } else {
-        // Keep module documentation and ordinary leading comments in place, but
-        // insert before declaration documentation so it stays with its declaration.
-        let tokens = crate::lexer::lex(source).ok()?;
-        let token = tokens.iter().find(|token| {
-            !matches!(
-                token.kind,
-                TokenKind::Newline | TokenKind::ModuleDocComment(_)
-            )
-        })?;
-        let line_start = source[..token.range.start]
-            .rfind('\n')
-            .map_or(0, |index| index + 1);
-        (line_start, "")
-    };
-    Some(TextEdit {
-        range: byte_range_to_lsp(source, offset..offset),
-        new_text: format!("{prefix}import {module}{newline}"),
-    })
-}
-
-impl Workspace {
-    pub(in crate::lsp) fn code_actions(
-        &self,
-        params: &lsp_types::CodeActionParams,
-    ) -> Option<lsp_types::CodeActionResponse> {
-        use lsp_types::{CodeAction, CodeActionKind, CodeActionOrCommand};
-        if params.context.only.as_ref().is_some_and(|kinds| {
-            !kinds
-                .iter()
-                .any(|kind| kind.as_str().is_empty() || kind == &CodeActionKind::QUICKFIX)
-        }) {
-            return Some(Vec::new());
-        }
-        let uri = &params.text_document.uri;
-        let document = self.documents.get(uri)?;
-        let source = &document.text;
-        let parsed = crate::parse_recovering(source).ok()?;
-        let tokens = crate::lexer::lex(source).ok()?;
-        let mut actions = Vec::new();
-        let mut seen = HashSet::new();
-        let mut exports = None;
-        for diagnostic in &params.context.diagnostics {
-            if diagnostic.source.as_deref() != Some("foster")
-                || diagnostic
-                    .data
-                    .as_ref()
-                    .and_then(|data| data.get("fosterVersion"))
-                    .and_then(serde_json::Value::as_i64)
-                    != Some(i64::from(document.version))
-                || diagnostic.range.end < params.range.start
-                || params.range.end < diagnostic.range.start
-            {
-                continue;
-            }
-            let message = diagnostic.message.lines().next().unwrap_or_default();
-            let message = if message.starts_with("in `") {
-                message
-                    .split_once("`: ")
-                    .map_or(message, |(_, message)| message)
-            } else {
-                message
-            };
-            let (name, is_type) = if let Some(name) = message
-                .strip_prefix("unknown name `")
-                .and_then(|name| name.strip_suffix('`'))
-            {
-                (name, false)
-            } else if let Some(name) = message
-                .strip_prefix("unknown type `")
-                .and_then(|name| name.strip_suffix('`'))
-            {
-                (name, true)
-            } else {
-                continue;
-            };
-            let matches = tokens
-                .iter()
-                .filter(|token| {
-                    token.kind == TokenKind::Ident(name.into()) && {
-                        let range = byte_range_to_lsp(source, token.range.clone());
-                        range.start <= diagnostic.range.end && diagnostic.range.start < range.end
-                    }
-                })
-                .collect::<Vec<_>>();
-            let [token] = matches.as_slice() else {
-                continue;
-            };
-            let range = byte_range_to_lsp(source, token.range.clone());
-            let mut offer = |title: String, edit: TextEdit| {
-                if !seen.insert((title.clone(), range.start.line, range.start.character)) {
-                    return;
-                }
-                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                    title,
-                    kind: Some(CodeActionKind::QUICKFIX),
-                    diagnostics: Some(vec![diagnostic.clone()]),
-                    edit: Some(WorkspaceEdit {
-                        document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
-                            text_document: OptionalVersionedTextDocumentIdentifier {
-                                uri: uri.clone(),
-                                version: Some(document.version),
-                            },
-                            edits: vec![OneOf::Left(edit)],
-                        }])),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }));
-            };
-            if let Some(candidates) = self.editing_completions(uri, source, token.range.end) {
-                for item in candidates
-                    .values()
-                    .filter(|item| (!is_type || type_candidate(item)) && similar(name, &item.label))
-                    .take(5)
-                {
-                    offer(
-                        format!("Change `{name}` to `{}`", item.label),
-                        TextEdit {
-                            range,
-                            new_text: item.label.clone(),
-                        },
-                    );
-                }
-            }
-            for (module, members) in exports
-                .get_or_insert_with(|| self.edit_exports(uri, None))
-                .iter()
-            {
-                if !members
-                    .get(name)
-                    .is_some_and(|item| !is_type || type_candidate(item))
-                {
-                    continue;
-                }
-                let item_is_type = members.get(name).is_some_and(type_candidate);
-                let path = format!("{module}.{name}");
-                if parsed.program.imports.iter().any(|import| {
-                    (import.path.join(".") == path && !import.wildcard)
-                        || (import.wildcard
-                            && import.path.join(".") == *module
-                            && import.static_ != item_is_type)
-                }) {
-                    continue;
-                }
-                let declaration = if item_is_type {
-                    path
-                } else {
-                    format!("static {path}")
-                };
-                if let Some(edit) = import_edit(source, &parsed.program, &declaration) {
-                    offer(format!("Import `{name}` from `{module}`"), edit);
-                }
-            }
-        }
-        Some(actions)
     }
 }

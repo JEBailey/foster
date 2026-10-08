@@ -287,10 +287,10 @@ mod tests {
             }))
             .unwrap(),
         );
-        let files = index.refresh().unwrap();
-        assert_eq!(files.len(), 2);
         let uri = path_to_uri(&path).unwrap();
-        let original = files[&uri].clone();
+        let mut entries = index.refresh().unwrap().into_iter();
+        assert_eq!(entries.len(), 2);
+        let original = entries.find(|(key, _)| key == &uri).unwrap().1;
         assert_eq!(original[0].name, "unopened");
         assert!(Arc::ptr_eq(&original, &index.refresh().unwrap()[&uri]));
         index.invalidate(std::slice::from_ref(&path));
@@ -300,10 +300,11 @@ mod tests {
         assert_eq!(index.refresh().unwrap()[&uri][0].name, "renamed");
         std::fs::remove_file(&path).unwrap();
         std::fs::write(first.join("new.fos"), "const Answer = 42").unwrap();
-        let files = index.refresh().unwrap();
-        assert!(!files.contains_key(&uri));
+        assert!(!index.refresh().unwrap().contains_key(&uri));
         assert!(
-            files
+            index
+                .refresh()
+                .unwrap()
                 .values()
                 .any(|values| values.iter().any(|value| value.name == "Answer"))
         );

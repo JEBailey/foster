@@ -37,7 +37,7 @@ fn signals() -> &'static Mutex<HashMap<i64, Arc<Signal>>> {
 pub fn register(signature: &str, queued: bool, handler: Box<Handler>) -> Result<i64, String> {
     let signature = u64::from_str_radix(signature, 16).map_err(|_| "invalid callback signature")?;
     let token = NEXT
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
         .map_err(|_| "callback token space exhausted")?;
     let signal = Arc::new(Signal {
         owner: std::thread::current().id(),
@@ -134,6 +134,13 @@ pub fn take_error(token: i64) -> Result<(), String> {
 
 /// Installed in a generated DLL. UINT64_MAX is a signature/liveness probe.
 /// All real arguments and results are copied packets bounded by LIMIT.
+///
+/// # Safety
+/// For non-probe calls, non-null `input` must be readable for `length` bytes,
+/// `output` must be writable for `capacity` bytes when capacity is nonzero, and
+/// `written` must be aligned and writable for one u64. These regions must remain
+/// valid throughout the call and must not alias in a way that violates Rust's
+/// slice or pointer access rules. Probe calls do not access the packet pointers.
 pub unsafe extern "C" fn invoke(
     token: i64,
     signature: u64,

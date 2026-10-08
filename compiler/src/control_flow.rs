@@ -135,6 +135,17 @@ impl LoopCfg {
     }
 }
 
+/// A failed nested literal test does not exclude its enclosing enum case.
+pub(crate) fn pattern_is_irrefutable(pattern: &hir::Pattern) -> bool {
+    match pattern.unspanned() {
+        hir::Pattern::Wildcard | hir::Pattern::Binding(_) => true,
+        hir::Pattern::Record { fields } => fields
+            .iter()
+            .all(|(_, field)| pattern_is_irrefutable(field)),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,16 +188,5 @@ mod tests {
                 completed: None,
             }
         );
-    }
-}
-
-/// A failed nested literal test does not exclude its enclosing enum case.
-pub(crate) fn pattern_is_irrefutable(pattern: &hir::Pattern) -> bool {
-    match pattern.unspanned() {
-        hir::Pattern::Wildcard | hir::Pattern::Binding(_) => true,
-        hir::Pattern::Record { fields } => fields
-            .iter()
-            .all(|(_, field)| pattern_is_irrefutable(field)),
-        _ => false,
     }
 }

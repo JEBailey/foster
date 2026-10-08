@@ -1415,6 +1415,12 @@ func main() -> Bool {{
     let prepared = native::prepare(&compilation).unwrap();
     let scratch = Scratch::new("tcp-drop");
     for optimize in [false, true] {
+        // Compilation can exceed the server's accept deadline under parallel CI load.
+        // Prepare both backends before starting the server's I/O timeouts.
+        let program = vm::compile_with_options(&compilation, vm::CompileOptions { optimize })
+            .unwrap()
+            .into_verified()
+            .unwrap();
         let executable = scratch
             .0
             .join(format!("tcp-{optimize}{}", std::env::consts::EXE_SUFFIX));
@@ -1464,19 +1470,22 @@ func main() -> Bool {{
                     String::from_utf8_lossy(&output.stderr).into_owned(),
                 )
             } else {
-                match vm::run_with_options(&compilation, vm::CompileOptions { optimize }) {
+                match vm::Machine::new(&program).run_main() {
                     Ok(value) => (true, value.to_string(), String::new()),
                     Err(error) => (false, String::new(), error.to_string()),
                 }
             };
             let server_result = server.join().unwrap();
             assert!(
+                server_result.is_ok(),
+                "native={native_run}, optimize={optimize}: TCP server failed: {server_result:?}"
+            );
+            assert!(
                 result.0,
                 "native={native_run}, optimize={optimize}: {}",
                 result.2
             );
             assert_eq!(result.1, "true");
-            server_result.unwrap();
         }
     }
 }

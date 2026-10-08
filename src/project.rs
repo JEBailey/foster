@@ -1,5 +1,30 @@
 use crate::{error::FosterError, tooling, vm::Value};
 use std::collections::BTreeMap;
+impl crate::package::ProjectInputs for Project {
+    fn source(&self) -> crate::package::ProjectSource {
+        crate::package::ProjectSource {
+            name: self.name.clone(),
+            root: self.root.clone(),
+            source_root: self.source_root.clone(),
+            entry: self.entry.clone(),
+        }
+    }
+    fn dependency_sources(&self) -> Result<Vec<crate::package::DependencySource>, FosterError> {
+        Ok(self
+            .resolve_dependencies()?
+            .into_iter()
+            .map(|dependency| crate::package::DependencySource {
+                name: dependency.name,
+                project: dependency
+                    .project
+                    .as_ref()
+                    .map(crate::package::ProjectInputs::source),
+                artifact: dependency.artifact,
+            })
+            .collect())
+    }
+}
+
 #[cfg(test)]
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -611,30 +636,5 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
-    }
-}
-
-impl crate::package::ProjectInputs for Project {
-    fn source(&self) -> crate::package::ProjectSource {
-        crate::package::ProjectSource {
-            name: self.name.clone(),
-            root: self.root.clone(),
-            source_root: self.source_root.clone(),
-            entry: self.entry.clone(),
-        }
-    }
-    fn dependency_sources(&self) -> Result<Vec<crate::package::DependencySource>, FosterError> {
-        Ok(self
-            .resolve_dependencies()?
-            .into_iter()
-            .map(|dependency| crate::package::DependencySource {
-                name: dependency.name,
-                project: dependency
-                    .project
-                    .as_ref()
-                    .map(crate::package::ProjectInputs::source),
-                artifact: dependency.artifact,
-            })
-            .collect())
     }
 }

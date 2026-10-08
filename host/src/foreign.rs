@@ -148,11 +148,11 @@ unsafe extern "C" fn resolve_resource(
                     return Err("C resource has a different kind or bridge");
                 }
             }
-            if !frame.pointers.contains_key(&token) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = frame.pointers.entry(token) {
                 let lease = ResourceLease::acquire(resource.clone())
                     .map_err(|_| "C resource is already in use")?;
                 let value = resource.borrow();
-                frame.pointers.insert(token, (value.kind, value.pointer));
+                entry.insert((value.kind, value.pointer));
                 frame.leases.push(lease);
             }
             let pointer = frame.pointers[&token].1;
@@ -380,7 +380,7 @@ pub fn exchange(
         if mode == 2 {
             let resource = resource.ok_or("C constructor returned null")?;
             let token = NEXT_TOKEN
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
                 .map_err(|_| "C resource token space exhausted")?;
             STATE.with(|state| {
                 state
@@ -548,14 +548,22 @@ impl Library {
                 std::mem::transmute(module.symbol(b"foster_c_schema\0")?);
             Ok(Self {
                 schema: format!("{:016x}", schema()),
-                describe: std::mem::transmute(module.symbol(b"foster_c_describe\0")?),
-                call: std::mem::transmute(module.symbol(b"foster_c_call\0")?),
-                destroy: std::mem::transmute(module.symbol(b"foster_c_destroy\0")?),
-                close: std::mem::transmute(module.symbol(b"foster_c_close\0")?),
+                describe: std::mem::transmute::<*mut std::ffi::c_void, Describe>(
+                    module.symbol(b"foster_c_describe\0")?,
+                ),
+                call: std::mem::transmute::<*mut std::ffi::c_void, Call>(
+                    module.symbol(b"foster_c_call\0")?,
+                ),
+                destroy: std::mem::transmute::<*mut std::ffi::c_void, Destroy>(
+                    module.symbol(b"foster_c_destroy\0")?,
+                ),
+                close: std::mem::transmute::<*mut std::ffi::c_void, Close>(
+                    module.symbol(b"foster_c_close\0")?,
+                ),
                 forget: module
                     .symbol(b"foster_c_forget\0")
                     .ok()
-                    .map(|symbol| std::mem::transmute(symbol)),
+                    .map(|symbol| std::mem::transmute::<*mut std::ffi::c_void, Forget>(symbol)),
                 _module: module,
             })
         }

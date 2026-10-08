@@ -1066,7 +1066,10 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
 
 #[test]
 fn docs_rejects_server_only_options_without_serve() {
-    let output = foster().args(["documentation", "--no-open"]).output().unwrap();
+    let output = foster()
+        .args(["documentation", "--no-open"])
+        .output()
+        .unwrap();
 
     assert!(!output.status.success());
     assert!(

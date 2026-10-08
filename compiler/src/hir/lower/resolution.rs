@@ -92,13 +92,14 @@ impl FunctionLowerer<'_> {
         path: &[String],
         enum_accessor: bool,
     ) -> Result<VariantId, FosterError> {
-        if enum_accessor && path.len() >= 2 {
-            if let Some(variant) = self.resolve_variant_constructor(
+        if enum_accessor
+            && path.len() >= 2
+            && let Some(variant) = self.resolve_variant_constructor(
                 &path[..path.len() - 1].join("."),
                 &path[path.len() - 1],
-            )? {
-                return Ok(variant);
-            }
+            )?
+        {
+            return Ok(variant);
         }
         if path.len() == 1 {
             let local = self.hir.modules[self.module]
