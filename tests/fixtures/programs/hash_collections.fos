@@ -3,6 +3,7 @@ import core.option.Option
 
 import std.collections
 import std.collections.Collection
+import std.collections.Sized
 
 import std.collections.hash_map
 import std.collections.hash_map.HashMap
@@ -21,7 +22,7 @@ type Payload = {
     values: List<Int>
 }
 
-func count<T>(values: Collection<T>) -> Int {
+func count(values: Sized) -> Int {
     values.length()
 }
 

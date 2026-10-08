@@ -1,7 +1,10 @@
 # Host providers and socket readiness
 
 Foster applications can select implementations explicitly through `std.host.FileProvider<F>`,
-`std.host.NetworkProvider<C, L>`, and the existing `std.time.Clock<T>`. Resource types remain
+`std.host.Connector<C>`, `std.host.ListenerProvider<L>`, and the existing `std.time.Clock<T>`.
+`NetworkProvider<C, L>` composes outgoing connections and endpoint binding; require it only
+when a consumer needs both. A client-only provider needs no `listen` method or listener type,
+and a listener-only provider needs no `connect` method or connected-stream type. Resource types remain
 independent: an in-memory network provider may return its own stream and listener types implementing
 `Reader`, `Writer`, `Accepting`, or readiness contracts. `RuntimeHost.new()` supplies the standard
 `File`, `Connection`, and `Listener` adapters. Constructing a file resource does not perform I/O.

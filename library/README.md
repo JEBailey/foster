@@ -169,6 +169,17 @@ recognize an offset copied from an unrelated source.
 
 ## Choosing a collection
 
+Use `std.collections.Sized` when a consumer needs only `length()` and `empty?()`.
+Use `std.iter.Iterable<T>` for repeatable traversal. `Collection<T>` composes both.
+Use `std.collections.map.MapLookup<K, V>` for borrowed keyed access and
+`KeyMembership<K>` when only key presence matters. A lookup reference permits
+value mutation and remains tied to the provider's storage; it does not copy the value.
+Use `std.collections.set.Membership<T>` for value presence. `Map` and `Set`
+compose these capabilities with collection and update operations.
+`std.resource.Sized<E>` is a separate contract for a fallible resource byte length.
+For application networking, `std.host.Connector<C>` opens outgoing connections and
+`ListenerProvider<L>` binds listeners; `NetworkProvider<C, L>` composes both.
+
 `Map.empty` and `Set.empty` construct insertion-ordered list implementations with
 linear membership searches. Hash collections use caller-supplied hashes and have
 expected constant-time bucket lookup, with a linear worst case. Equal keys must

@@ -7,7 +7,7 @@ contract were reviewed separately. Private implementation types are outside this
 The review compares available public operations with each named contract's required
 operations, parameter and result types, receiver effects, and documented semantics.
 Transitive compositions count: for example, `HashMap` composes `Map`, which composes
-`Collection`, which composes `Iterable`. Repeating each ancestor in every declaration is unnecessary.
+`Collection`, which composes `Sized` and `Iterable`. Repeating each ancestor in every declaration is unnecessary.
 Structural compatibility alone does not prove a semantic promise.
 
 ## Deliberate non-relationships
@@ -46,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **151 public type declarations**.
+The library exposes **157 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -80,23 +80,27 @@ The library exposes **151 public type declarations**.
 | [core.string.StringCursor](../library/core/string.fos) | `Cursor<CodePoint>` |
 | [core.string.GraphemeCursor](../library/core/string.fos) | `Iterator<String>` |
 | [core.symbol.Symbol](../library/core/symbol.fos) | `Copy` |
+| [std.collections.Sized](../library/std/collections.fos) | None |
+| [std.collections.Collection](../library/std/collections.fos) | `Sized`, `Iterable<T>` |
 | [std.collections.deque.Deque](../library/std/collections/deque.fos) | `Collection<T>` |
 | [std.collections.deque.ListDeque](../library/std/collections/deque.fos) | `Deque<T>` |
 | [std.collections.deque.DequeItem](../library/std/collections/deque.fos) | None |
 | [std.collections.hash_map.HashMap](../library/std/collections/hash_map.fos) | `Map<K, V>` |
 | [std.collections.hash_set.HashSet](../library/std/collections/hash_set.fos) | `Set<T>` |
 | [std.collections.map.Entry](../library/std/collections/map.fos) | None |
-| [std.collections.map.Map](../library/std/collections/map.fos) | `Collection<Entry<K, V>>` |
+| [std.collections.map.MapLookup](../library/std/collections/map.fos) | None |
+| [std.collections.map.KeyMembership](../library/std/collections/map.fos) | None |
+| [std.collections.map.Map](../library/std/collections/map.fos) | `Collection<Entry<K, V>>`, `MapLookup<K, V>`, `KeyMembership<K>` |
 | [std.collections.map.ListMap](../library/std/collections/map.fos) | `Map<K, V>` |
 | [std.collections.queue.Queue](../library/std/collections/queue.fos) | `Collection<T>` |
 | [std.collections.queue.ListQueue](../library/std/collections/queue.fos) | `Queue<T>` |
 | [std.collections.queue.QueueItem](../library/std/collections/queue.fos) | None |
-| [std.collections.set.Set](../library/std/collections/set.fos) | `Collection<T>` |
+| [std.collections.set.Membership](../library/std/collections/set.fos) | None |
+| [std.collections.set.Set](../library/std/collections/set.fos) | `Collection<T>`, `Membership<T>` |
 | [std.collections.set.ListSet](../library/std/collections/set.fos) | `Set<T>` |
 | [std.collections.stack.Stack](../library/std/collections/stack.fos) | `Collection<T>` |
 | [std.collections.stack.ListStack](../library/std/collections/stack.fos) | `Stack<T>` |
 | [std.collections.stack.StackItem](../library/std/collections/stack.fos) | None |
-| [std.collections.Collection](../library/std/collections.fos) | `Iterable<T>` |
 | [std.cursor.Cursor](../library/std/cursor.fos) | `Iterator<T>` |
 | [std.cursor.ListCursor](../library/std/cursor.fos) | `Cursor<T>` |
 | [std.cursor.BytesCursor](../library/std/cursor.fos) | `Cursor<Byte>` |
@@ -108,7 +112,9 @@ The library exposes **151 public type declarations**.
 | [std.fs.File](../library/std/fs.fos) | `Resource<paths::Path>`, `ReadWrite<IoError>`, `TextWriter<IoError>`, `PositionedReadable<IoError>`, `Appendable<IoError>`, `Sized<IoError>` |
 | [std.io.IoError](../library/std/io.fos) | None |
 | [std.host.FileProvider](../library/std/host.fos) | None |
-| [std.host.NetworkProvider](../library/std/host.fos) | None |
+| [std.host.Connector](../library/std/host.fos) | None |
+| [std.host.ListenerProvider](../library/std/host.fos) | None |
+| [std.host.NetworkProvider](../library/std/host.fos) | `Connector<C>`, `ListenerProvider<L>` |
 | [std.host.RuntimeHost](../library/std/host.fos) | `FileProvider<File>`, `NetworkProvider<Connection, Listener>` |
 | [std.io.ReadReady](../library/std/io.fos) | None |
 | [std.io.WriteReady](../library/std/io.fos) | None |

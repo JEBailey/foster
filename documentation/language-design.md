@@ -1233,14 +1233,14 @@ method creates an independent iterator. An iterable is opened with `value.iterat
 
 Both contracts use the same static duck typing and zero-conversion dispatch as other composed
 types. A concrete type implements them with `type Cursor<T> = & Iterator<T> & { ... }` or
-`type Collection<T> = & Iterable<T> & { ... }`. The core adapter
+`type Collection<T> = & Sized & Iterable<T> & {}`. The core adapter
 `Iterator.from_sequence(values)` consumes a `Sequence<T>` into an independent iterator, so lists,
 strings, and user-defined sequence implementations can participate immediately.
 
 The standard collection hierarchy is behavioral rather than representational:
 
 ```text
-Iterable<T>
+Sized + Iterable<T>
 └── Collection<T>
     ├── Sequence<T> → List<T>, String as Sequence<String>, Range<T>
     ├── Set<T>

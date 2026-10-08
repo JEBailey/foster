@@ -2,6 +2,24 @@
 use foster::{native, vm};
 
 #[test]
+fn lookup_and_membership_contracts_agree_in_both_backends() {
+    check(
+        "membership-contracts",
+        include_str!("fixtures/programs/membership_contracts.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn small_capability_contracts_agree_in_both_backends() {
+    check(
+        "capability-contracts",
+        include_str!("fixtures/programs/capability_contracts.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn self_types_agree_in_both_backends() {
     check(
         "self-type",

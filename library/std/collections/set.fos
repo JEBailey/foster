@@ -3,16 +3,34 @@
 //! `Set` factories construct `ListSet`. `Equality` determines membership; adding an
 //! existing value does not create a duplicate. Use std.collections.hash_set for
 //! hashed membership. Iteration follows insertion order for `ListSet`.
+//! Require Membership<T> when a consumer only tests whether a value is present.
+//!
+//! ```foster
+//! import std.collections.set.Membership
+//! type Answers = {}
+//! impl Answers {
+//!     func contains?(self: Self, value: Int) -> Bool { value == 42 }
+//! }
+//! func accepts(provider: Membership<Int>) -> Bool { provider.contains?(42) }
+//! func main() -> Int {
+//!     assert(accepts(Answers {}))
+//!     0
+//! }
+//! ```
 
 import std.collections.Collection
 
 import std.iter.Iterator
 
-/// A collection of unique values with implementation-defined iteration order.
-/// Membership borrows the set; updates consume and preserve the concrete implementation.
-pub type Set<T> = & Collection<T> & {
+/// Value membership without requiring sizing, traversal, or collection updates.
+pub type Membership<T> = {
     /// Tests membership without consuming the set.
     pub func contains?(self: Self, value: T) -> Bool [read self, read value]
+}
+
+/// A collection of unique values with implementation-defined iteration order.
+/// Membership borrows the set; updates consume and preserve the concrete implementation.
+pub type Set<T> = & Collection<T> & Membership<T> & {
     /// Returns this implementation containing `value`.
     pub func insert(self: Self, value: T) -> Self [mut self, consume self, consume value]
     /// Returns this implementation without `value`.

@@ -43,14 +43,14 @@ being added accidentally.
 | `core.functions` | Reusable predicate, consuming consumer, and supplier callable type aliases |
 | `core.option` | Optional values, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries |
 | `std.iter` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
-| `std.collections` | The sized, repeatable `Collection<T>` contract |
+| `std.collections` | `Sized` for counting, `Collection<T>` for sized repeatable iteration |
 | `core.byte` | Bounded byte construction and `ByteError` |
 | `core.bytes` | Immutable compact bytes, hexadecimal conversion, and UTF-8 decoding |
 | `core.bytes.buffer` | Mutable growable byte storage |
 | `std.io` | Generic binary/text streams, timed read/write readiness contracts, and binary transfer algorithms |
-| `std.host` | Explicit `FileProvider<F>` and `NetworkProvider<C, L>` contracts with `RuntimeHost` adapters |
+| `std.host` | `FileProvider<F>`, `Connector<C>`, `ListenerProvider<L>`, and their `NetworkProvider<C, L>` composition |
 | `std.resource` | Typed resource association and independent I/O capability contracts |
-| `std.collections.set` | Storage-free `Set<T>` contract and insertion-ordered `ListSet<T>` |
+| `std.collections.set` | `Membership<T>` for value presence, composed `Set<T>`, and insertion-ordered `ListSet<T>` |
 | `std.collections.queue` | Storage-free FIFO `Queue<T>` contract and `ListQueue<T>` |
 | `std.collections.deque` | Storage-free double-ended `Deque<T>` contract and `ListDeque<T>` |
 | `std.collections.stack` | Storage-free LIFO `Stack<T>` contract and `ListStack<T>` |
@@ -60,7 +60,7 @@ being added accidentally.
 | `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
 | `std.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
 | `core.list` | Search, map, filter, folds, slicing, flattening, joining, and predicates |
-| `std.collections.map` | Storage-free `Map<K, V>` contract and insertion-ordered `ListMap<K, V>` |
+| `std.collections.map` | `MapLookup<K, V>` for borrowing, `KeyMembership<K>` for key presence, composed `Map<K, V>`, and `ListMap<K, V>` |
 | `std.collections.hash_map` | Foster-written `HashMap<K, V>` implementing `Map<K, V>` |
 | `std.collections.hash_set` | Foster-written `HashSet<T>` implementing `Set<T>` |
 | `std.collections.hashing` | Deterministic integer, text, and byte hash functions |
@@ -325,11 +325,12 @@ values.iterator().map(transform).filter(predicate).take(10).collect()
 Adaptors do no element work when constructed. Their `next` implementations pull only enough input
 to produce the next output, and terminal consumers in `std.iter` drive the pipeline.
 
-`std.collections` defines `Collection<T> & Iterable<T>` with `length` and `empty?`. The collection
+`std.collections.Sized` requires `length` and `empty?` without an element type or iteration.
+`Collection<T>` composes `Sized` with `Iterable<T>`. The collection
 family has this shape:
 
 ```text
-Iterable<T>
+Sized + Iterable<T>
 └── Collection<T>
     ├── Sequence<T>
     │   ├── List<T>

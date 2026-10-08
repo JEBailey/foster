@@ -3,6 +3,7 @@ import core.option.Option
 
 import std.collections.map
 import std.collections.map.Map
+import std.collections.map.MapLookup
 
 import std.collections.hash_map
 import std.collections.hash_map.HashMap
@@ -15,11 +16,11 @@ type Item = {
     value: Int, text: String
 }
 
-func lookup(values: Map<String, Item>, key: String) -> Option<ref[values] Item> {
+func lookup(values: MapLookup<String, Item>, key: String) -> Option<ref[values] Item> {
     values.borrow(key)
 }
 
-func exercise(values: Map<String, Item>) -> () {
+func exercise(values: MapLookup<String, Item>) -> () {
     branch lookup(values, "missing") {
         Option.Some(_) -> panic("unexpected entry")
         Option.None -> ()

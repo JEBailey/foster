@@ -2,7 +2,7 @@ import core.result
 import core.result.Result
 
 import std.host
-import std.host.NetworkProvider
+import std.host.Connector
 import std.host.RuntimeHost
 
 import std.io
@@ -31,7 +31,7 @@ func exercise(socket: Connection) -> Int [consume socket] {
     21
 }
 
-func connect(provider: NetworkProvider<Connection, Listener>, port: Int) -> Int {
+func connect(provider: Connector<Connection>, port: Int) -> Int {
     branch provider.connect("127.0.0.1", port) {
         Result.Ok(socket) -> exercise(move socket)
         Result.Error(_) -> -1

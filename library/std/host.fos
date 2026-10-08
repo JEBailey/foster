@@ -1,6 +1,8 @@
 //! Explicit provider contracts for applications. Pass a provider to choose resource
 //! implementations; the default adapters use the embedding runtime's HostContext.
 //! Clock providers use the existing std.time.Clock<T> contract.
+//! Require Connector<C> for outgoing connections and ListenerProvider<L> for
+//! binding endpoints. NetworkProvider<C, L> composes both capabilities.
 
 import core.result.Result
 
@@ -22,13 +24,23 @@ pub type FileProvider<F> = {
     pub func file(self: Self, location: paths::Path) -> Result<F, IoError> [read self, consume location]
 }
 
-/// Supplies connected streams and listeners, including in-memory implementations.
-pub type NetworkProvider<C, L> = {
+/// Supplies outgoing connections, including application-defined stream types.
+/// Does not require endpoint binding or a listener type.
+pub type Connector<C> = {
     /// Connects to an endpoint using this provider's namespace and policy.
     pub func connect(self: Self, address: String, port: Int) -> Result<C, NetworkError> [read self, consume address]
+}
+
+/// Supplies bound listeners, including application-defined listener types.
+/// Does not require outgoing connections or a connected-stream type.
+pub type ListenerProvider<L> = {
     /// Binds an endpoint using this provider's namespace and policy.
     pub func listen(self: Self, address: String, port: Int) -> Result<L, NetworkError> [read self, consume address]
 }
+
+/// Supplies both outgoing connections and bound listeners.
+/// Require Connector<C> or ListenerProvider<L> when only one operation is needed.
+pub type NetworkProvider<C, L> = & Connector<C> & ListenerProvider<L> & {}
 
 /// File and TCP adapters backed by the runtime's installed host provider.
 pub type RuntimeHost = & FileProvider<File> & NetworkProvider<Connection, Listener> & {}

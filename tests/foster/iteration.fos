@@ -5,6 +5,7 @@ import core.option.Option
 
 import std.collections
 import std.collections.Collection
+import std.collections.Sized
 
 import std.iter
 
@@ -25,7 +26,7 @@ func option_or(value: Option<Int>, fallback: Int) -> Int {
     }
 }
 
-func collection_size<T>(values: Collection<T>) -> Int {
+func collection_size(values: Sized) -> Int {
     values.length()
 }
 

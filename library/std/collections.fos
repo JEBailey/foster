@@ -1,19 +1,38 @@
 //! Shared contracts for sized, repeatable collections.
 //!
-//! `Collection<T>` describes length, emptiness, and independent iteration without
-//! choosing a storage representation. Use concrete collection types for construction
-//! and structural contracts for algorithms that accept several implementations.
+//! `Sized` describes length and emptiness without requiring iteration or an element
+//! type. `Collection<T>` combines sizing with independent iteration. Require Sized
+//! when an algorithm only counts elements, and Iterable<T> when it only traverses.
+//!
+//! ```foster
+//! import std.collections.Sized
+//!
+//! type CountOnly = { count: Int }
+//! impl CountOnly {
+//!     func length(self: Self) -> Int { self.count }
+//!     func empty?(self: Self) -> Bool { self.count == 0 }
+//! }
+//! func size(value: Sized) -> Int { value.length() }
+//! func main() -> Int {
+//!     assert(size(CountOnly { count: 42 }) == 42)
+//!     0
+//! }
+//! ```
 
 import std.iter.Iterable
 
-/// A repeatable collection with a known number of elements.
-///
-/// Collection access borrows the value. Creating an iterator produces an independent
-/// cursor over the collection's read-only value view.
-pub type Collection<T> = & Iterable<T> & {
-    /// Returns the number of elements in this collection.
+/// A value with a known nonnegative number of elements.
+/// Sizing borrows the value; empty? must agree with length() == 0.
+/// No iteration, element type, or element copying capability is required.
+pub type Sized = {
+    /// Returns the nonnegative number of elements without changing the value.
     pub func length(self: Self) -> Int
 
-    /// Returns whether this collection contains no elements.
+    /// Returns whether length() is zero without changing the value.
     pub func empty?(self: Self) -> Bool
 }
+
+/// A sized value supporting independent, repeatable iteration.
+/// Creating an iterator borrows the collection and produces an independent cursor
+/// over its read-only value view. Consumers needing only sizing should require Sized.
+pub type Collection<T> = & Sized & Iterable<T> & {}

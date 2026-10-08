@@ -1,4 +1,4 @@
-import std.collections.Collection
+import std.collections.Sized
 
 import core.option.Option
 
@@ -6,7 +6,7 @@ import core.range.Range
 
 import std.collections.set.Set
 
-func size<T>(values: Collection<T>) -> Int {
+func size(values: Sized) -> Int {
     values.length()
 }
 

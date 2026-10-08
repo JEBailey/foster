@@ -18,6 +18,7 @@ import std.collections.hashing
 
 import std.collections
 import std.collections.Collection
+import std.collections.Sized
 
 import std.iter
 import std.iter.Iterator
@@ -36,7 +37,7 @@ impl Bag {
         self.values.iterator()
     }
 }
-func collection_empty(values: Collection<Int>) -> Bool {
+func collection_empty(values: Sized) -> Bool {
     values.empty?()
 }
 

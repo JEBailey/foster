@@ -1,0 +1,90 @@
+//! Lookup and membership providers need no collection or update operations.
+import core.option.Option
+import std.collections.map.Map
+import std.collections.map.MapLookup
+import std.collections.map.KeyMembership
+import std.collections.set.Set
+import std.collections.set.Membership
+import std.collections.hash_map.HashMap
+import std.collections.hash_set.HashSet
+import std.collections.hashing
+
+type Item = {
+    value: Int, text: String
+}
+type LookupOnly = {
+    item: Item
+}
+impl LookupOnly {
+    func borrow(self: Self, key: String) -> Option<ref[self] Item> [read self, read key] {
+        branch {
+            key == "answer" -> Option.Some(ref self.item)
+            _ -> Option.None
+        }
+    }
+}
+type KeysOnly = {}
+impl KeysOnly {
+    func contains_key?(self: Self, key: String) -> Bool [read key] {
+        key == "answer"
+    }
+}
+type MembersOnly = {}
+impl MembersOnly {
+    func contains?(self: Self, value: Int) -> Bool [read value] {
+        value == 42
+    }
+}
+func lookup(provider: MapLookup<String, Item>, key: String) -> Option<ref[provider] Item> {
+    provider.borrow(key)
+}
+func exercise(provider: MapLookup<String, Item>) -> () {
+    branch lookup(provider, "missing") {
+        Option.None -> ()
+        Option.Some(_) -> panic("unexpected entry")
+    }
+    branch lookup(provider, "answer") {
+        Option.Some(item) -> {
+            item.value = item.value + 2
+        }
+        Option.None -> panic("missing entry")
+    }
+}
+func has_key(provider: KeyMembership<String>) -> Bool {
+    provider.contains_key?("answer") && not provider.contains_key?("missing")
+}
+func has_member(provider: Membership<Int>) -> Bool {
+    provider.contains?(42) && not provider.contains?(7)
+}
+func full_map(provider: Map<String, Item>) -> Int {
+    provider.length()
+}
+func full_set(provider: Set<Int>) -> Int {
+    provider.length()
+}
+func main() -> Int {
+    let lookup_only = LookupOnly {
+        item: Item {
+            value: 40, text: "kept alive"
+        }
+    }
+    exercise(lookup_only)
+    assert(lookup_only.item.value == 42 && lookup_only.item.text == "kept alive")
+    assert(has_key(KeysOnly {}))
+    assert(has_member(MembersOnly {}))
+    let ordered = Map.empty().put("answer", Item {
+        value: 40, text: "ordered"
+    })
+    let hashed = HashMap.empty(hashing::text).put("answer", Item {
+        value: 40, text: "hashed"
+    })
+    exercise(ordered)
+    exercise(hashed)
+    assert(has_key(ordered) && has_key(hashed))
+    assert(full_map(ordered) == 1 && full_map(hashed) == 1)
+    let members = Set.from([42])
+    let hash_members = HashSet.from([42], hashing::integer)
+    assert(has_member(members) && has_member(hash_members))
+    assert(full_set(members) == 1 && full_set(hash_members) == 1)
+    lookup_only.item.value
+}

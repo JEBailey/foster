@@ -9,6 +9,7 @@ import std.iter.Iterator
 
 import std.collections
 import std.collections.Collection
+import std.collections.Sized
 
 import std.collections.deque
 import std.collections.deque.Deque
@@ -25,7 +26,7 @@ import std.collections.stack.Stack
 import std.collections.stack.ListStack
 import std.collections.stack.StackItem
 
-func count<T>(collection: Collection<T>) -> Int {
+func count(collection: Sized) -> Int {
     collection.length()
 }
 func queue_push(fifo: Queue<Int>) -> Queue<Int> [consume fifo] {

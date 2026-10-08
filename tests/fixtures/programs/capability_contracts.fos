@@ -1,0 +1,109 @@
+//! Small structural capabilities and their combined contracts.
+import core.result.Result
+import core.bytes.buffer.ByteBuffer
+import core.string
+import std.collections.Sized
+import std.collections.Collection
+import std.host.Connector
+import std.host.ListenerProvider
+import std.host.NetworkProvider
+import std.host.RuntimeHost
+import std.net.tcp.NetworkError
+import std.net.tcp.Connection
+import std.net.tcp.Listener
+
+type CountOnly = {
+    count: Int
+}
+impl CountOnly {
+    func length(self: Self) -> Int [read self.count] {
+        self.count
+    }
+    func empty?(self: Self) -> Bool [read self.count] {
+        self.count == 0
+    }
+}
+
+type ClientOnly = {}
+impl ClientOnly {
+    func connect(self: Self, address: String, port: Int) -> Result<Int, NetworkError> [consume address] {
+        Result.Ok(port)
+    }
+}
+
+type ServerOnly = {}
+impl ServerOnly {
+    func listen(self: Self, address: String, port: Int) -> Result<Int, NetworkError> [consume address] {
+        Result.Ok(port + 1)
+    }
+}
+
+type Both = & NetworkProvider<Int, Int> & {}
+impl Both {
+    func connect(self: Self, address: String, port: Int) -> Result<Int, NetworkError> [consume address] {
+        Result.Ok(port)
+    }
+    func listen(self: Self, address: String, port: Int) -> Result<Int, NetworkError> [consume address] {
+        Result.Ok(port + 1)
+    }
+}
+
+func size(value: Sized) -> Int {
+    assert(value.empty?() == (value.length() == 0))
+    value.length()
+}
+
+func sequence_size(values: Sequence<Int>) -> Int {
+    size(values)
+}
+func collection_size(values: Collection<Int>) -> Int {
+    size(values)
+}
+func connect(provider: Connector<Int>) -> Int {
+    provider.connect("memory", 20).unwrap_or(-1)
+}
+func listen(provider: ListenerProvider<Int>) -> Int {
+    provider.listen("memory", 21).unwrap_or(-1)
+}
+func connected(provider: NetworkProvider<Int, Int>) -> Int {
+    connect(provider)
+}
+func listening(provider: NetworkProvider<Int, Int>) -> Int {
+    listen(provider)
+}
+
+// These functions check RuntimeHost conformance without opening sockets.
+func runtime_connector(provider: Connector<Connection>) -> Int {
+    1
+}
+func runtime_listener(provider: ListenerProvider<Listener>) -> Int {
+    1
+}
+
+func main() -> Int {
+    assert(size(CountOnly {
+        count: 42
+    }) == 42)
+    assert(size(CountOnly {
+        count: 0
+    }) == 0)
+    assert(size([1, 2, 3]) == 3)
+    assert(size([CountOnly {
+        count: 42
+    }]) == 1)
+    assert(size("abc") == 3)
+    assert(size("") == 0)
+    let buffer = ByteBuffer.empty()
+    assert(size(buffer) == 0)
+    assert(sequence_size([1, 2]) == 2)
+    assert(collection_size([1, 2]) == 2)
+    assert(connect(ClientOnly {}) == 20)
+    assert(listen(ServerOnly {}) == 22)
+    let both = Both {}
+    assert(connected(both) == 20)
+    assert(listening(both) == 22)
+    let host = RuntimeHost.new()
+    assert(runtime_connector(host) == 1)
+    assert(runtime_listener(host) == 1)
+    connect(ClientOnly {}) + listen(ServerOnly {})
+}

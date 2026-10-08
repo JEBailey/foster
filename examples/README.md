@@ -36,7 +36,7 @@ cargo run --bin foster -- build examples/arguments.fos --native -o arguments
 `type_composition.fos` demonstrates declaration-side composition, intersection parameters, and
 static duck typing without a wrapper or runtime conversion.
 
-`collections.fos` demonstrates the shared `Collection<T>` contract, a Foster-written `Set<T>`, the
+`collections.fos` demonstrates the element-independent `Sized` contract, a Foster-written `Set<T>`, the
 generic `Range<T>` sequence view, and borrowed `.iterator()` creation.
 
 `bytes.fos` demonstrates bounded `Byte` values, compact immutable `Bytes`, UTF-8 and hexadecimal

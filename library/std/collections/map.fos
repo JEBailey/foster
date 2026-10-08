@@ -3,6 +3,8 @@
 //! `Map<K, V>` defines the shared API. `Map.empty` constructs `ListMap`, whose key searches
 //! are linear. Use std.collections.hash_map for hashed lookup. borrow returns a reference;
 //! remove transfers a value and preserves the map. put consumes and returns the updated collection.
+//! Require MapLookup<K, V> for borrowing a value or KeyMembership<K> for testing keys
+//! when the consumer does not need the full collection and update contract.
 
 import core.option.Option
 
@@ -16,17 +18,26 @@ pub type Entry<K, V> = {
     pub value: V
 }
 
+/// Keyed access to stored values without requiring iteration or collection updates.
+/// Borrowed values may be mutated; their references remain tied to the provider's storage.
+pub type MapLookup<K, V> = {
+    /// Borrows the stored value; absent keys return `None`. No `Copy` is required.
+    /// The reference permits mutation and cannot outlive or survive reshaping its backing storage.
+    pub func borrow(self: Self, key: K) -> Option<ref[self] V> [read self, read key]
+}
+
+/// Key membership without requiring a value type, traversal, or collection updates.
+pub type KeyMembership<K> = {
+    /// Tests whether a key is present without consuming or changing the provider.
+    pub func contains_key?(self: Self, key: K) -> Bool [read self, read key]
+}
+
 /// An associative collection with unique keys and implementation-defined iteration order.
 /// Lookup borrows the stored value. Removal mutates the map and transfers the selected value.
 /// put consumes and returns the concrete implementation; membership checks borrow it.
-pub type Map<K, V> = & Collection<Entry<K, V>> & {
-    /// Borrows the stored value; absent keys return `None`. No `Copy` is required.
-    /// The reference permits mutation and cannot outlive or survive reshaping the map.
-    pub func borrow(self: Self, key: K) -> Option<ref[self] V> [read self, read key]
+pub type Map<K, V> = & Collection<Entry<K, V>> & MapLookup<K, V> & KeyMembership<K> & {
     /// Removes and returns the owned value, preserving all other entries; absent keys return `None`.
     pub func remove(self: Self, key: K) -> Option<V> [read key, reshape self]
-    /// Tests key membership without consuming the map.
-    pub func contains_key?(self: Self, key: K) -> Bool [read self, read key]
     /// Consumes the map, `key`, and `value`, returning the updated concrete implementation.
     /// Replaces an equal key and releases its previous entry; iteration order depends on the implementation.
     pub func put(self: Self, key: K, value: V) -> Self [mut self, consume self, consume key, consume value]
