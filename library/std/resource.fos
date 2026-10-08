@@ -3,6 +3,10 @@
 //! A resource identifier names a location; constructing one does not perform I/O.
 //! `Readable` and writable structural contracts describe the operations supported by
 //! a provider. Use std.fs or std.net.tcp for concrete host resources.
+//! Choose std.io.Reader or Writer for sequential streams. Readable reads an entire
+//! resource; Writable replaces its contents. Matching method signatures alone do
+//! not establish these behavioral promises. Sized<E> reports a fallible byte length,
+//! unlike std.collections.Sized, which counts elements without an error result.
 
 import core.bytes.Bytes
 

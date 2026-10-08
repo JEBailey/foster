@@ -83,6 +83,8 @@ func decode_text(contents: Bytes) -> Result<String, NetworkError> [consume conte
 }
 
 /// Describes a failed TCP operation at the host boundary.
+/// `operation` names the failing action; `message` contains explanatory host text.
+/// Message wording may vary by platform and is not a stable error code.
 pub type NetworkError = {
     pub operation: String
     pub message: String

@@ -2,7 +2,9 @@
 <p><code>Range</code> bounds are half-open. Invalid ranges and source failures return <code>RandomError</code>.
 The requested width must fit the source's advertised range. Use seeded generators
 for reproducibility and <code>SystemRandom</code> for operating-system entropy.</p>
-</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#RandomError">RandomError</a><span class="badge visibility-public">public</span></h3><p>Describes invalid random requests or unavailable host entropy.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#RandomError">RandomError</a><span class="badge visibility-public">public</span></h3><p>Describes invalid random requests or unavailable host entropy.
+<code>operation</code> names the request, <code>value</code> carries its relevant integer, and <code>message</code>
+explains the failure. Host message wording is not a stable error code.</p>
 <h4>Fields</h4><ul><li><code>operation: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li><li><code>value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span></code></li><li><code>message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#RandomSource">RandomSource</a><span class="badge visibility-public">public</span></h3><p>A stateful source of uniformly distributed nonnegative integers.</p>
 <p><code>next</code> must return a value in the inclusive range from zero through <code>maximum</code>. Every value in
 that range must be equally likely. Source failure is explicit so host entropy and deterministic
@@ -15,7 +17,9 @@ Drawing entropy changes external state, not this Foster value.</p>
     pub operation: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
     pub value: <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a><span class="badge visibility-public">public</span>
     pub message: <a class="type-link" href="core-string.html#String" title="core.string.String">String</a><span class="badge visibility-public">public</span>
-}</code></pre><p>Describes invalid random requests or unavailable host entropy.</p>
+}</code></pre><p>Describes invalid random requests or unavailable host entropy.
+<code>operation</code> names the request, <code>value</code> carries its relevant integer, and <code>message</code>
+explains the failure. Host message wording is not a stable error code.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RandomHost"><h2><a class="anchor" href="#RandomHost">RandomHost</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type RandomHost = {
 
 }</code></pre><p>Private namespace for operating-system entropy.</p>

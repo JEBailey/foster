@@ -4,6 +4,71 @@ use std::{fs, path::Path, process::Command};
 use foster::vm::CompileOptions;
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 
+#[test]
+fn public_source_types_have_comments_and_match_the_contract_inventory() {
+    // Source declarations include callable aliases that are absent from HIR records.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let library = root.join("library");
+    let mut declarations = std::collections::BTreeSet::new();
+    for entry in walkdir::WalkDir::new(&library) {
+        let path = entry.unwrap().into_path();
+        if path.extension().is_none_or(|extension| extension != "fos") {
+            continue;
+        }
+        let relative = path.strip_prefix(&library).unwrap().with_extension("");
+        let module = relative
+            .components()
+            .map(|part| part.as_os_str().to_str().unwrap())
+            .collect::<Vec<_>>()
+            .join(".");
+        let source = fs::read_to_string(&path).unwrap();
+        let mut documented = false;
+        for (index, line) in source.lines().enumerate() {
+            let line = line.trim();
+            if let Some(comment) = line.strip_prefix("///") {
+                documented |= !comment.trim().is_empty();
+                continue;
+            }
+            if let Some(declaration) = line
+                .strip_prefix("pub type ")
+                .or_else(|| line.strip_prefix("pub enum "))
+            {
+                let name = declaration
+                    .split(|character: char| !character.is_alphanumeric() && character != '_')
+                    .next()
+                    .unwrap();
+                assert!(
+                    documented,
+                    "{}:{}: {name} lacks a type comment",
+                    path.display(),
+                    index + 1
+                );
+                assert!(declarations.insert(format!("{module}.{name}")));
+            }
+            documented = false;
+        }
+    }
+    let audit = fs::read_to_string(root.join("documentation/library-contract-audit.md")).unwrap();
+    let mut inventory = std::collections::BTreeSet::new();
+    for line in audit.lines() {
+        if let Some(row) = line.strip_prefix("| [") {
+            let name = row.split_once("](").expect("inventory type link").0;
+            assert!(
+                inventory.insert(name.to_owned()),
+                "duplicate inventory entry: {name}"
+            );
+        }
+    }
+    assert_eq!(
+        inventory, declarations,
+        "contract inventory must cover every public source type"
+    );
+    assert!(audit.contains(&format!(
+        "**{} public type declarations**",
+        declarations.len()
+    )));
+}
+
 fn run_examples(path: &Path, markdown: &str) -> usize {
     let mut count = 0;
     let mut source = None;

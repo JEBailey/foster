@@ -24,7 +24,11 @@ operations on a value use <code>value.method(...)</code>.</p>
 <p>A contract describes what a value can do without choosing its storage. For
 example, <code>Map&lt;K, V&gt;</code> describes map operations; <code>ListMap</code> and <code>HashMap</code> provide
 different implementations. Choose a concrete implementation for construction
-and a contract when an algorithm should accept several implementations.</p>
+and a contract when an algorithm should accept several implementations.
+Require only the operations the algorithm uses: <code>Sized</code> for length and emptiness,
+<code>MapLookup&lt;K, V&gt;</code> for borrowed lookup, <code>KeyMembership&lt;K&gt;</code> or <code>Membership&lt;T&gt;</code> for
+presence checks, and <code>Connector&lt;C&gt;</code> or <code>ListenerProvider&lt;L&gt;</code> for one network role.
+<code>Collection</code>, <code>Map</code>, <code>Set</code>, and <code>NetworkProvider</code> compose these smaller contracts.</p>
 <p>Collection operations may borrow their input, consume it, or produce a snapshot.
 Iterator pipelines defer element work until they are advanced. Read the method's
 effects before reusing a collection or retaining references into it.</p>

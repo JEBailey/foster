@@ -39,6 +39,7 @@ impl Byte {
 }
 
 /// Describes an integer that cannot be represented by `Byte`.
+/// `value` is the rejected integer outside 0..255. `message` is explanatory text.
 pub type ByteError = {
     pub value: Int
     pub message: String

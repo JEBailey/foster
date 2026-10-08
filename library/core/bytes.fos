@@ -35,6 +35,9 @@ impl BytesHost {
 }
 
 /// Immutable binary data backed by compact private host storage.
+/// Construct with Bytes.empty(), Bytes.from(list), or Bytes.from_hex(text).
+/// Bytes.from consumes its list. Lengths and slice bounds count bytes; contents
+/// need not be valid UTF-8. Use String.from_utf8 to validate and decode text.
 pub type Bytes = & Copy & Sequence<Byte> & Collection<Byte> & Equality<Bytes> & Hashing & {
     value: RawBytes
 

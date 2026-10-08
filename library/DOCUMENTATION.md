@@ -100,3 +100,9 @@ interactive devices. Use a `text` fence for deliberately non-runnable sketches.
 The test also validates the guide's CLI command names and options using `--help`.
 Comment coverage alone does not verify behavioral claims; review implementations
 and boundary tests when documenting failures or ownership.
+
+The same test checks attached source comments for every public type, enum, and
+callable alias and compares their names with the contract audit's inventory.
+Keep that inventory and its declaration count current when adding or removing types.
+Compiled coverage in `tests/core_host.rs` also checks module overviews, public
+record and enum documentation, and required-method comments.

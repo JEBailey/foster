@@ -3,6 +3,10 @@
 //! Clock providers use the existing std.time.Clock<T> contract.
 //! Require Connector<C> for outgoing connections and ListenerProvider<L> for
 //! binding endpoints. NetworkProvider<C, L> composes both capabilities.
+//! Construct RuntimeHost.new() for the installed runtime adapter. Creating the
+//! adapter performs no I/O; connect and listen acquire resources and can fail.
+//! Providers choose their address namespace and policy, so a custom provider need
+//! not interpret an address as an operating-system hostname.
 
 import core.result.Result
 
@@ -43,6 +47,8 @@ pub type ListenerProvider<L> = {
 pub type NetworkProvider<C, L> = & Connector<C> & ListenerProvider<L> & {}
 
 /// File and TCP adapters backed by the runtime's installed host provider.
+/// Construct with RuntimeHost.new(); file creation names a location without opening
+/// it, while connect and listen perform fallible host operations.
 pub type RuntimeHost = & FileProvider<File> & NetworkProvider<Connection, Listener> & {}
 
 impl RuntimeHost {

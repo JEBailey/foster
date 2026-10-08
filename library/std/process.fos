@@ -30,11 +30,14 @@ pub type Arguments = {
 }
 
 /// An operating-system or output-capture failure.
+/// `message` explains the host failure or capture limit; its wording is not a stable code.
 pub type ProcessError = {
     pub message: String
 }
 
 /// A child's termination result. Signals may terminate it without an exit code.
+/// `success` records successful termination; `code` is Some(exit code) when available
+/// and None when termination has no numeric exit code.
 pub type ExitStatus = {
     pub success: Bool, pub code: Option<Int>
 }
@@ -43,6 +46,8 @@ pub type ExitStatus = {
 pub enum ProcessStatus = Running | Exited(ExitStatus)
 
 /// Completed binary-safe output. A nonzero exit code is a normal completion.
+/// `status` describes termination; `stdout` and `stderr` are separately captured bytes.
+/// Await consumes the Process and returns this value, or an error if capture fails.
 pub type ProcessOutput = {
     pub status: ExitStatus, pub stdout: Bytes, pub stderr: Bytes
 }

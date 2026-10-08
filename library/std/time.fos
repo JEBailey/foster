@@ -21,6 +21,8 @@ impl TimeHost {
 }
 
 /// Describes an invalid or impossible exact-time value.
+/// `value` is the integer relevant to the failed operation; `message` explains the
+/// invalid range or arithmetic overflow. Interpret it with the operation's contract.
 pub type TimeError = {
     pub value: Int
     pub message: String

@@ -4,6 +4,9 @@
 //! read_all, write_all, and copy propagate the first error without rolling back
 //! earlier I/O. write_all and copy flush on success. Implementations must honor
 //! the progress requirements in `Reader` and `Writer` to avoid nonterminating retries.
+//! Use Reader or Writer when only one direction is needed and Duplex for both.
+//! Resource replacement belongs to std.resource.Writable rather than stream Writer.
+//! Flushing makes output visible to the destination; it does not promise durable storage.
 
 import core.bytes.buffer.ByteBuffer
 

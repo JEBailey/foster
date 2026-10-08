@@ -2,7 +2,10 @@
 <p>Readers report EOF with an empty value. Writers may make partial progress.
 read_all, write_all, and copy propagate the first error without rolling back
 earlier I/O. write_all and copy flush on success. Implementations must honor
-the progress requirements in <code>Reader</code> and <code>Writer</code> to avoid nonterminating retries.</p>
+the progress requirements in <code>Reader</code> and <code>Writer</code> to avoid nonterminating retries.
+Use Reader or Writer when only one direction is needed and Duplex for both.
+Resource replacement belongs to std.resource.Writable rather than stream Writer.
+Flushing makes output visible to the destination; it does not promise durable storage.</p>
 </article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Duplex">Duplex</a><span class="badge visibility-public">public</span></h3><p>A bidirectional binary stream combining the <code>Reader&lt;E&gt;</code> and <code>Writer&lt;E&gt;</code> contracts.</p>
 <h4>Contracts</h4><ul><li><code><a class="type-link" href="#Reader" title="std.io.Reader">Reader</a>&lt;E&gt;</code></li><li><code><a class="type-link" href="#Writer" title="std.io.Writer">Writer</a>&lt;E&gt;</code></li></ul></article><article class="type-summary"><h3><a href="#IoError">IoError</a><span class="badge visibility-public">public</span></h3><p>Describes a failed host I/O operation.
 <code>operation</code> identifies the failing action and <code>path</code> its target when available.

@@ -5,6 +5,28 @@
 //! remove transfers a value and preserves the map. put consumes and returns the updated collection.
 //! Require MapLookup<K, V> for borrowing a value or KeyMembership<K> for testing keys
 //! when the consumer does not need the full collection and update contract.
+//!
+//! ```foster
+//! import core.option.Option
+//! import std.collections.map.Map
+//! import std.collections.map.MapLookup
+//! type Item = { value: Int }
+//! func update(provider: MapLookup<String, Item>) -> () {
+//!     branch provider.borrow("answer") {
+//!         Option.Some(item) -> { item.value = item.value + 2 }
+//!         Option.None -> { panic("missing entry") }
+//!     }
+//! }
+//! func main() -> Int {
+//!     let values = Map.empty().put("answer", Item { value: 40 })
+//!     update(values)
+//!     branch values.borrow("answer") {
+//!         Option.Some(item) -> { assert(item.value == 42) }
+//!         Option.None -> { assert(false) }
+//!     }
+//!     0
+//! }
+//! ```
 
 import core.option.Option
 
@@ -55,6 +77,9 @@ impl Map {
 }
 
 /// An insertion-ordered associative collection.
+/// Construct with ListMap.empty() or Map.empty(). Keys compare by equality;
+/// replacing a key preserves its position. Lookup is linear in the entry count.
+/// borrow does not copy values; put consumes the map, while remove mutates it in place.
 pub type ListMap<K, V> = & Map<K, V> & {
     entries: List<Entry<K, V>>
 }

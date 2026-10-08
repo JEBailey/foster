@@ -12,6 +12,8 @@ import std.iter.Iterator
 import core.option.Option
 
 /// A first-in, first-out collection.
+/// push and pop consume the collection. A successful pop returns an owned value
+/// and the remaining concrete collection; popping an empty queue returns None.
 pub type Queue<T> = & Collection<T> & {
     /// Returns a queue with `value` added at the back.
     pub func push(self: Self, value: T) -> Self [consume self, consume value]
@@ -75,6 +77,8 @@ impl ListQueue<T> {
 }
 
 /// The result of removing one value from a queue.
+/// `value` is the owned front element; `remaining` owns the rest in FIFO order.
+/// C preserves the original collection's concrete implementation type.
 pub type QueueItem<T, C> = {
     pub value: T
     // The remaining collection preserves its implementation type.

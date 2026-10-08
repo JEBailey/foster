@@ -57,6 +57,10 @@ import core.unicode as unicode
 
 /// Immutable Unicode text stored as validated UTF-8 bytes.
 /// Private storage preserves the validity invariant across every construction path.
+/// Construct with a string literal or validate bytes with String.from_utf8.
+/// length, iteration, and slice bounds count extended grapheme clusters; byte_length()
+/// measures UTF-8 bytes and scalar_length() counts Unicode scalars. StringCursor uses
+/// byte checkpoints and yields scalars. Casing does not normalize text or tailor to a locale.
 pub type String = & Copy & Sequence<String> & Collection<String> & {
     value: Bytes
 

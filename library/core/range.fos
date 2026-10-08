@@ -9,8 +9,9 @@ import std.iter.Iterator
 
 /// A reusable sequence view over a bounded list of values.
 ///
-/// This generic representation keeps range traversal independent of arithmetic. Numeric range
-/// constructors can be layered on it once constrained generic operators are available.
+/// Construct with `Range.from`, which takes ownership of the supplied list.
+/// This is stored data, not a lazy arithmetic interval; `Int.range` constructs integer lists.
+/// Iteration preserves stored order and creates an independent cursor.
 pub type Range<T> = & Sequence<T> & Collection<T> & {
     values: List<T>
 }

@@ -31,6 +31,10 @@
 //! example, `Map<K, V>` describes map operations; `ListMap` and `HashMap` provide
 //! different implementations. Choose a concrete implementation for construction
 //! and a contract when an algorithm should accept several implementations.
+//! Require only the operations the algorithm uses: `Sized` for length and emptiness,
+//! `MapLookup<K, V>` for borrowed lookup, `KeyMembership<K>` or `Membership<T>` for
+//! presence checks, and `Connector<C>` or `ListenerProvider<L>` for one network role.
+//! `Collection`, `Map`, `Set`, and `NetworkProvider` compose these smaller contracts.
 //!
 //! Collection operations may borrow their input, consume it, or produce a snapshot.
 //! Iterator pipelines defer element work until they are advanced. Read the method's

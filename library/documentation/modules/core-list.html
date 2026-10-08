@@ -29,7 +29,11 @@ func main() -&gt; Int {
     0
 }
 </code></pre>
-</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#List">List</a><span class="badge visibility-public">public</span></h3><p>An ordered value collection backed by private copy-on-write contiguous storage.</p>
+</article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#List">List</a><span class="badge visibility-public">public</span></h3><p>An ordered value collection backed by private copy-on-write contiguous storage.
+Construct with a list literal such as [1, 2, 3]. Indexes count elements from zero.
+Elements need not implement Copy: borrow returns a storage-bound mutable reference,
+and remove transfers an owned element. Operations returning independent elements
+may require Copy; read the individual method's failure and consumption contract.</p>
 <h4>Contracts</h4><ul><li><code><a class="type-link" href="std-sequence.html#module-overview" title="std.sequence.module-overview">Sequence</a>&lt;T&gt;</code></li><li><code><a class="type-link" href="std-collections.html#Collection" title="std.collections.Collection">Collection</a>&lt;T&gt;</code></li></ul><h4>Fields</h4><ul><li><code>value: <a class="type-link" href="#RawList" title="core.list.RawList">RawList</a>&lt;T&gt;<span class="badge visibility-private">private</span></code></li></ul><h4>Required methods</h4><ul><li><code>push</code><br><small>Appends `value` to this list in place.</small></li><li><code>append</code><br><small>Returns this list with `value` appended.</small></li><li><code>at</code><br><small>Copies the element at a zero-based index without removing it.
 Returns `OutOfBounds` for an invalid index and `NotCopyable` if copying is unsupported.
 Bounds are checked first.</small></li><li><code>contains?</code><br><small>Returns whether this list contains `expected`.</small></li><li><code>first</code><br><small>Copies the first element, or returns `None` when it is absent or not copyable.</small></li><li><code>last</code><br><small>Copies the final element, or returns `None` when it is absent or not copyable.</small></li><li><code>map</code><br><small>Applies `transform` to every element, from left to right.</small></li><li><code>filter</code><br><small>Returns independent copies of elements for which `include` evaluates to true.
@@ -76,7 +80,11 @@ Asserts if an input element lacks Copy. A singleton returns its copy without cal
     pub func count(self: Self, predicate: <a class="type-link" href="core-functions.html#Predicate" title="core.functions.Predicate">Predicate</a>&lt;T&gt;) -&gt; <a class="type-link" href="core-int.html#Int" title="core.int.Int">Int</a> [read predicate, read self]
     pub func none?(self: Self, predicate: <a class="type-link" href="core-functions.html#Predicate" title="core.functions.Predicate">Predicate</a>&lt;T&gt;) -&gt; <a class="type-link" href="core-bool.html#module-overview" title="core.bool.module-overview">Bool</a> [read predicate, read self]
     pub func reduce(self: Self, combine: func(T, T) -&gt; T) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;T&gt; [read combine, read self]
-}</code></pre><p>An ordered value collection backed by private copy-on-write contiguous storage.</p>
+}</code></pre><p>An ordered value collection backed by private copy-on-write contiguous storage.
+Construct with a list literal such as [1, 2, 3]. Indexes count elements from zero.
+Elements need not implement Copy: borrow returns a storage-bound mutable reference,
+and remove transfers an owned element. Operations returning independent elements
+may require Copy; read the individual method's failure and consumption contract.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="RawList"><h2><a class="anchor" href="#RawList">RawList</a><span class="badge kind">type</span><span class="badge visibility-private">private</span></h2><pre><code>type RawList&lt;T&gt; = {
 
 }</code></pre><p>Private descriptor-backed contiguous list storage shared by executable backends.</p>

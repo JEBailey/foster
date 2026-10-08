@@ -4,9 +4,32 @@ are linear. Use std.collections.hash_map for hashed lookup. borrow returns a ref
 remove transfers a value and preserves the map. put consumes and returns the updated collection.
 Require MapLookup&lt;K, V&gt; for borrowing a value or KeyMembership<K> for testing keys
 when the consumer does not need the full collection and update contract.</p>
+<pre><code class="language-foster">import core.option.Option
+import std.collections.map.Map
+import std.collections.map.MapLookup
+type Item = { value: Int }
+func update(provider: MapLookup&lt;String, Item&gt;) -&gt; () {
+    branch provider.borrow("answer") {
+        Option.Some(item) -&gt; { item.value = item.value + 2 }
+        Option.None -&gt; { panic("missing entry") }
+    }
+}
+func main() -&gt; Int {
+    let values = Map.empty().put("answer", Item { value: 40 })
+    update(values)
+    branch values.borrow("answer") {
+        Option.Some(item) -&gt; { assert(item.value == 42) }
+        Option.None -&gt; { assert(false) }
+    }
+    0
+}
+</code></pre>
 </article><section aria-labelledby="provided-types"><h2 id="provided-types">Provided types</h2><div class="type-grid"><article class="type-summary"><h3><a href="#Entry">Entry</a><span class="badge visibility-public">public</span></h3><p>A key-value pair yielded while iterating a map.</p>
 <h4>Fields</h4><ul><li><code>key: K<span class="badge visibility-public">public</span></code></li><li><code>value: V<span class="badge visibility-public">public</span></code></li></ul></article><article class="type-summary"><h3><a href="#KeyMembership">KeyMembership</a><span class="badge visibility-public">public</span></h3><p>Key membership without requiring a value type, traversal, or collection updates.</p>
-<h4>Required methods</h4><ul><li><code>contains_key?</code><br><small>Tests whether a key is present without consuming or changing the provider.</small></li></ul></article><article class="type-summary"><h3><a href="#ListMap">ListMap</a><span class="badge visibility-public">public</span></h3><p>An insertion-ordered associative collection.</p>
+<h4>Required methods</h4><ul><li><code>contains_key?</code><br><small>Tests whether a key is present without consuming or changing the provider.</small></li></ul></article><article class="type-summary"><h3><a href="#ListMap">ListMap</a><span class="badge visibility-public">public</span></h3><p>An insertion-ordered associative collection.
+Construct with ListMap.empty() or Map.empty(). Keys compare by equality;
+replacing a key preserves its position. Lookup is linear in the entry count.
+borrow does not copy values; put consumes the map, while remove mutates it in place.</p>
 <h4>Contracts</h4><ul><li><code><a class="type-link" href="#Map" title="std.collections.map.Map">Map</a>&lt;K, V&gt;</code></li></ul><h4>Fields</h4><ul><li><code>entries: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;<span class="badge visibility-private">private</span></code></li></ul><h4>Functions and methods</h4><ul><li><a href="#ListMap.borrow"><code>borrow</code></a><br><small>Borrows the stored value; absent keys return `None`. No `Copy` is required.</small></li><li><a href="#ListMap.contains_key?"><code>contains_key?</code></a><br><small>Returns whether the map contains `key` without consuming the map.</small></li><li><a href="#ListMap.empty"><code>empty</code></a><br><small>Creates an empty map.</small></li><li><a href="#ListMap.empty?"><code>empty?</code></a><br><small>Returns whether the map contains no entries.</small></li><li><a href="#ListMap.iterator"><code>iterator</code></a><br><small>Creates an independent iterator in insertion order.</small></li><li><a href="#ListMap.keys"><code>keys</code></a><br><small>Consumes the map and returns its keys in storage order.</small></li><li><a href="#ListMap.length"><code>length</code></a><br><small>Returns the number of entries in the map.</small></li><li><a href="#ListMap.put"><code>put</code></a><br><small>Consumes the map, `key`, and `value`, returning the updated map.</small></li><li><a href="#ListMap.remove"><code>remove</code></a><br><small>Removes and returns the owned value, preserving the map and remaining insertion order.</small></li><li><a href="#ListMap.values"><code>values</code></a><br><small>Consumes the map and returns its values in storage order.</small></li></ul></article><article class="type-summary"><h3><a href="#Map">Map</a><span class="badge visibility-public">public</span></h3><p>An associative collection with unique keys and implementation-defined iteration order.
 Lookup borrows the stored value. Removal mutates the map and transfers the selected value.
 put consumes and returns the concrete implementation; membership checks borrow it.</p>
@@ -23,7 +46,10 @@ The reference permits mutation and cannot outlive or survive reshaping its backi
 }</code></pre><p>Key membership without requiring a value type, traversal, or collection updates.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="ListMap"><h2><a class="anchor" href="#ListMap">ListMap</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type ListMap&lt;K, V&gt; = &amp; <a class="type-link" href="#Map" title="std.collections.map.Map">Map</a>&lt;K, V&gt; &amp; {
     entries: <a class="type-link" href="core-list.html#List" title="core.list.List">List</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt;<span class="badge visibility-private">private</span>
-}</code></pre><p>An insertion-ordered associative collection.</p>
+}</code></pre><p>An insertion-ordered associative collection.
+Construct with ListMap.empty() or Map.empty(). Keys compare by equality;
+replacing a key preserves its position. Lookup is linear in the entry count.
+borrow does not copy values; put consumes the map, while remove mutates it in place.</p>
 <a class="back-to-navigation" href="#page-navigation">↑ On this page</a></article><article id="Map"><h2><a class="anchor" href="#Map">Map</a><span class="badge kind">type</span><span class="badge visibility-public">public</span></h2><pre><code>pub type Map&lt;K, V&gt; = &amp; <a class="type-link" href="std-collections.html#Collection" title="std.collections.Collection">Collection</a>&lt;<a class="type-link" href="#Entry" title="std.collections.map.Entry">Entry</a>&lt;K, V&gt;&gt; &amp; <a class="type-link" href="#MapLookup" title="std.collections.map.MapLookup">MapLookup</a>&lt;K, V&gt; &amp; <a class="type-link" href="#KeyMembership" title="std.collections.map.KeyMembership">KeyMembership</a>&lt;K&gt; &amp; {
     pub func remove(self: Self, key: K) -&gt; <a class="type-link" href="core-option.html#Option" title="core.option.Option">Option</a>&lt;V&gt; [read key, reshape self]
     pub func put(self: Self, key: K, value: V) -&gt; Self [mut self, consume self, consume key, consume value]

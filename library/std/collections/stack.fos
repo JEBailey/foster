@@ -13,6 +13,8 @@ import std.iter.Iterator
 import core.option.Option
 
 /// A last-in, first-out collection.
+/// push and pop consume the collection. A successful pop returns an owned value
+/// and the remaining concrete collection; popping an empty stack returns None.
 pub type Stack<T> = & Collection<T> & {
     /// Returns a stack with `value` placed on top.
     pub func push(self: Self, value: T) -> Self [consume self, consume value]
@@ -72,6 +74,8 @@ impl ListStack<T> {
 }
 
 /// The result of removing one value from a stack.
+/// `value` is the owned top element; `remaining` owns the rest in stack order.
+/// C preserves the original collection's concrete implementation type.
 pub type StackItem<T, C> = {
     pub value: T
     // The remaining collection preserves its implementation type.

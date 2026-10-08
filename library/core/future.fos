@@ -1,4 +1,10 @@
 //! Values whose result is obtained by consuming them with `await`.
+//!
+//! `Future<T>` is a completion contract, not a factory or a promise that work has
+//! started. The provider determines when work begins. Await consumes the future
+//! and yields its result once; failures belong in T, commonly Result<Value, Error>.
+//! Use std.process for child-process futures. RemoteFuture represents a request
+//! to a remote owner, which must remain alive until completion.
 
 /// A consuming, potentially suspending computation. Composes with other contracts.
 pub type Future<T> = {

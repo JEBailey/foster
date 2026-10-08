@@ -49,6 +49,9 @@ impl Set {
 }
 
 /// An insertion-ordered collection containing no duplicate values.
+/// Construct with ListSet.empty() or ListSet.from(values), which consumes the list.
+/// Equality determines membership. Repeated insertion retains the original position;
+/// insertion and removal consume the set. Membership searches are linear.
 pub type ListSet<T> = & Set<T> & {
     values: List<T>
 }

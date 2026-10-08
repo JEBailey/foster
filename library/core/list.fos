@@ -51,6 +51,10 @@ import core.string.StringBuilder
 intrinsic type RawList<T>
 
 /// An ordered value collection backed by private copy-on-write contiguous storage.
+/// Construct with a list literal such as [1, 2, 3]. Indexes count elements from zero.
+/// Elements need not implement Copy: borrow returns a storage-bound mutable reference,
+/// and remove transfers an owned element. Operations returning independent elements
+/// may require Copy; read the individual method's failure and consumption contract.
 pub type List<T> = & Sequence<T> & Collection<T> & {
     value: RawList<T>
 
