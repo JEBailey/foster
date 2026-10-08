@@ -19,13 +19,30 @@ pub struct GenerationReport {
     pub declarations: usize,
 }
 
-/// Generate a self-contained static documentation site from resolved compiler data.
+/// Visibility of declarations and members in a generated API reference.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GenerationOptions {
+    /// Include private implementation details as well as the public API.
+    pub include_private: bool,
+}
+
+/// Generate a self-contained public API site from resolved compiler data.
+/// Use `generate_with_options` to include private declarations and members.
 pub fn generate(
     compilation: &Compilation,
     output: impl AsRef<Path>,
 ) -> io::Result<GenerationReport> {
+    generate_with_options(compilation, output, GenerationOptions::default())
+}
+
+/// Generate documentation with explicit visibility options.
+pub fn generate_with_options(
+    compilation: &Compilation,
+    output: impl AsRef<Path>,
+    options: GenerationOptions,
+) -> io::Result<GenerationReport> {
     let output = output.as_ref();
-    let pages = render::write(compilation, output).map_err(io::Error::other)?;
+    let pages = render::write(compilation, output, options).map_err(io::Error::other)?;
 
     Ok(GenerationReport {
         output: output.to_path_buf(),

@@ -51,6 +51,9 @@ foster documentation library --output library/documentation
 foster documentation library --output library/documentation --serve
 ```
 
+The site shows the public API by default. Add `--include-private` when generating an
+internal reference with private declarations and members.
+
 The site is written to `library/documentation`. Edit source comments and
 regenerate; do not maintain generated HTML by hand.
 

@@ -86,8 +86,10 @@ Record implementation defects separately rather than silently changing code
 during an editorial pass.
 
 Run `foster documentation library --output library/documentation` and inspect generated module/type pages for paragraphs,
-code fences, and duplicate declarations. Run library tests and documentation
-coverage checks as appropriate. Rebuild the compiler to distribute updated
+code fences, and duplicate declarations. Generated references show the public API
+by default; add `--include-private` to inspect private declarations and members.
+Private source comments remain useful for maintainers and editor hovers. Run library
+tests and documentation coverage checks as appropriate. Rebuild the compiler to distribute updated
 embedded comments to installed LSP clients; HTML generation does not update an
 already installed language server.
 

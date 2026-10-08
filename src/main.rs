@@ -256,6 +256,12 @@ fn cli() -> Command {
                 .about("Generate static API documentation for Foster source")
                 .arg(path())
                 .arg(
+                    Arg::new("include-private")
+                        .long("include-private")
+                        .help("Include private declarations and members in the documentation")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("output")
                         .long("output")
                         .help("Write generated documentation to this directory")
@@ -796,7 +802,13 @@ fn docs(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|| default_documentation_directory(target.artifact_base()));
     let compilation = compile_target(&target)?;
     report_warnings(&compilation, None, None)?;
-    let report = foster::documentation::generate(&compilation, &output)?;
+    let report = foster::documentation::generate_with_options(
+        &compilation,
+        &output,
+        foster::documentation::GenerationOptions {
+            include_private: arguments.get_flag("include-private"),
+        },
+    )?;
     println!(
         "generated {} declaration{} in {} module{} at {}",
         report.declarations,

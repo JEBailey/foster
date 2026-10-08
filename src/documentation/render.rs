@@ -1,4 +1,5 @@
 //! Resolved compiler-data adapter for the Foster documentation renderer.
+use super::GenerationOptions;
 use super::type_links::TypeLinks;
 use crate::ast::{Effect, EffectKind, ParameterMode};
 use crate::compiler::Compilation;
@@ -66,20 +67,34 @@ impl Data {
 
 #[cfg(test)]
 pub(super) fn site(compilation: &Compilation) -> Result<Site, FosterError> {
-    render(compilation, "render", "")
+    site_with_options(compilation, GenerationOptions::default())
+}
+
+#[cfg(test)]
+pub(super) fn site_with_options(
+    compilation: &Compilation,
+    options: GenerationOptions,
+) -> Result<Site, FosterError> {
+    render(compilation, "render", "", options)
 }
 
 pub(super) fn write(
     compilation: &Compilation,
     output: &std::path::Path,
+    options: GenerationOptions,
 ) -> Result<Site, FosterError> {
     let output = output
         .to_str()
         .ok_or_else(|| FosterError::runtime("documentation output path must be valid UTF-8"))?;
-    render(compilation, "write", output)
+    render(compilation, "write", output, options)
 }
 
-fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Site, FosterError> {
+fn render(
+    compilation: &Compilation,
+    operation: &str,
+    output: &str,
+    options: GenerationOptions,
+) -> Result<Site, FosterError> {
     let mut data = Data::default();
     for text in [operation, output, STYLE, SCRIPT] {
         data.text(text);
@@ -95,14 +110,14 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
     for (id, module) in modules {
         data.text(&module.name);
         data.docs(module.documentation.as_deref());
-        provided_types(&mut data, compilation, id);
+        provided_types(&mut data, compilation, id, options);
         let records = module
             .records
             .values()
             .copied()
             .filter(|id| {
                 let ty = &compilation.hir.records[*id];
-                visible_type(ty.public, ty.documentation.as_deref())
+                visible_type(ty.public, options)
             })
             .collect::<Vec<_>>();
         let variants = module
@@ -111,7 +126,7 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
             .copied()
             .filter(|id| {
                 let ty = &compilation.hir.variant_types[*id];
-                visible_type(ty.public, ty.documentation.as_deref())
+                visible_type(ty.public, options)
             })
             .collect::<Vec<_>>();
         let functions = module
@@ -121,18 +136,24 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
                 overloads
                     .iter()
                     .copied()
-                    .filter(|id| visible_function(compilation, *id))
+                    .filter(|id| visible_function(compilation, *id, options))
                     .collect::<Vec<_>>()
             })
             .filter(|overloads| !overloads.is_empty())
             .collect::<Vec<_>>();
-        data.number(records.len() + variants.len() + module.constants.len() + functions.len());
+        let constants = module
+            .constants
+            .values()
+            .copied()
+            .filter(|id| visible_type(compilation.hir.constants[*id].public, options))
+            .collect::<Vec<_>>();
+        data.number(records.len() + variants.len() + constants.len() + functions.len());
         for id in records {
             let ty = &compilation.hir.records[id];
             data.group(&ty.name, "type", "", 1);
             data.overload(
                 ty.public,
-                record_signature(compilation, ty),
+                record_signature(compilation, ty, options),
                 ty.documentation.as_deref(),
             );
         }
@@ -141,16 +162,16 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
             data.group(&ty.name, "variant", "", 1);
             data.overload(
                 ty.public,
-                variant_signature(compilation, id),
+                variant_signature(compilation, id, options),
                 ty.documentation.as_deref(),
             );
         }
-        for id in module.constants.values().copied() {
+        for id in constants {
             let constant = &compilation.hir.constants[id];
             data.group(&constant.name, "constant", "", 1);
             data.overload(
                 constant.public,
-                constant_signature(compilation, id),
+                constant_signature(compilation, id, options),
                 constant.documentation.as_deref(),
             );
         }
@@ -159,11 +180,11 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
             let owner = function_owner(compilation, overloads[0]).filter(|owner| {
                 let hidden_record = module.records.get(owner).is_some_and(|id| {
                     let ty = &compilation.hir.records[*id];
-                    !visible_type(ty.public, ty.documentation.as_deref())
+                    !visible_type(ty.public, options)
                 });
                 let hidden_variant = module.variant_types.get(owner).is_some_and(|id| {
                     let ty = &compilation.hir.variant_types[*id];
-                    !visible_type(ty.public, ty.documentation.as_deref())
+                    !visible_type(ty.public, options)
                 });
                 !hidden_record && !hidden_variant
             });
@@ -177,7 +198,7 @@ fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Si
                 let function = &compilation.hir.functions[id];
                 data.overload(
                     function.public,
-                    function_signature(compilation, id),
+                    function_signature(compilation, id, options),
                     function.documentation.as_deref(),
                 );
             }
@@ -236,27 +257,32 @@ fn visibility_badge(public: bool) -> &'static str {
     }
 }
 
-pub(super) fn visible_type(public: bool, documentation: Option<&str>) -> bool {
-    public || documentation.is_some_and(|docs| !docs.trim().is_empty())
+pub(super) fn visible_type(public: bool, options: GenerationOptions) -> bool {
+    public || options.include_private
 }
 
-fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: ModuleId) {
+fn provided_types(
+    cards: &mut Data,
+    compilation: &Compilation,
+    module_id: ModuleId,
+    options: GenerationOptions,
+) {
     let module = &compilation.hir.modules[module_id];
     cards.number(
         module
             .records
             .values()
-            .filter(|id| compilation.hir.records[**id].public)
+            .filter(|id| visible_type(compilation.hir.records[**id].public, options))
             .count()
             + module
                 .variant_types
                 .values()
-                .filter(|id| compilation.hir.variant_types[**id].public)
+                .filter(|id| visible_type(compilation.hir.variant_types[**id].public, options))
                 .count(),
     );
     for record_id in module.records.values().copied() {
         let record = &compilation.hir.records[record_id];
-        if !record.public {
+        if !visible_type(record.public, options) {
             continue;
         }
         type_card(
@@ -269,11 +295,12 @@ fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: Module
             record
                 .fields
                 .iter()
+                .filter(|field| visible_type(field.public, options))
                 .map(|field| {
                     format!(
                         "{}: {}{}",
                         escape(&field.name),
-                        TypeLinks::new(compilation, module_id, &record.parameters)
+                        TypeLinks::new(compilation, module_id, &record.parameters, options)
                             .source(&field.ty),
                         visibility_badge(field.public)
                     )
@@ -283,14 +310,16 @@ fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: Module
             record
                 .methods
                 .iter()
+                .filter(|method| visible_type(method.public, options))
                 .map(|method| (method.name.as_str(), method.documentation.as_deref()))
                 .collect(),
             "Cases",
+            options,
         );
     }
     for variant_id in module.variant_types.values().copied() {
         let variant = &compilation.hir.variant_types[variant_id];
-        if !variant.public {
+        if !visible_type(variant.public, options) {
             continue;
         }
         type_card(
@@ -306,7 +335,7 @@ fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: Module
                 .iter()
                 .map(|id| {
                     variant_alternative_signature(
-                        &TypeLinks::new(compilation, module_id, &variant.parameters),
+                        &TypeLinks::new(compilation, module_id, &variant.parameters, options),
                         &compilation.hir.variants[*id],
                     )
                 })
@@ -314,6 +343,7 @@ fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: Module
             variant
                 .methods
                 .iter()
+                .filter(|method| visible_type(method.public, options))
                 .map(|method| (method.name.as_str(), method.documentation.as_deref()))
                 .collect(),
             if variant.kind == crate::ast::VariantKind::Enum {
@@ -321,6 +351,7 @@ fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: Module
             } else {
                 "Union members"
             },
+            options,
         );
     }
 }
@@ -337,6 +368,7 @@ fn type_card(
     variants: Vec<String>,
     requirements: Vec<(&str, Option<&str>)>,
     alternatives_title: &str,
+    options: GenerationOptions,
 ) {
     cards.text(name);
     cards.flag(public);
@@ -357,7 +389,7 @@ fn type_card(
             })
         });
     if let Some((parameters, compositions)) = contracts {
-        let links = TypeLinks::new(compilation, module_id, parameters);
+        let links = TypeLinks::new(compilation, module_id, parameters, options);
         type_members(
             cards,
             "Contracts",
@@ -389,10 +421,10 @@ fn type_card(
             overloads
                 .iter()
                 .copied()
-                .find(|id| compilation.hir.functions[*id].public)
+                .find(|id| visible_function(compilation, *id, options))
         })
         .filter(|id| {
-            compilation.hir.functions[*id].public
+            visible_function(compilation, *id, options)
                 && function_owner(compilation, *id).as_deref() == Some(name)
         })
         .collect::<Vec<_>>();
@@ -441,13 +473,31 @@ fn function_owner(compilation: &Compilation, id: FunctionId) -> Option<String> {
         .map(|ty| ty.split('<').next().unwrap_or(&ty).to_owned())
 }
 
-fn visible_function(compilation: &Compilation, id: FunctionId) -> bool {
-    !compilation.hir.functions[id].name.contains('$')
+fn visible_function(compilation: &Compilation, id: FunctionId, options: GenerationOptions) -> bool {
+    let function = &compilation.hir.functions[id];
+    if function.name.contains('$') || !visible_type(function.public, options) {
+        return false;
+    }
+    let module = &compilation.hir.modules[function.module];
+    function_owner(compilation, id).is_none_or(|owner| {
+        module
+            .records
+            .get(&owner)
+            .is_none_or(|id| visible_type(compilation.hir.records[*id].public, options))
+            && module
+                .variant_types
+                .get(&owner)
+                .is_none_or(|id| visible_type(compilation.hir.variant_types[*id].public, options))
+    })
 }
 
-fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
+fn constant_signature(
+    compilation: &Compilation,
+    id: ConstantId,
+    options: GenerationOptions,
+) -> String {
     let constant = &compilation.hir.constants[id];
-    let links = TypeLinks::new(compilation, constant.module, &[]);
+    let links = TypeLinks::new(compilation, constant.module, &[], options);
     let ty = compilation
         .types
         .constants
@@ -461,9 +511,18 @@ fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
     )
 }
 
-fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
+fn function_signature(
+    compilation: &Compilation,
+    id: FunctionId,
+    options: GenerationOptions,
+) -> String {
     let function = &compilation.hir.functions[id];
-    let links = TypeLinks::new(compilation, function.module, &function.type_parameters);
+    let links = TypeLinks::new(
+        compilation,
+        function.module,
+        &function.type_parameters,
+        options,
+    );
     let signature = compilation.types.function_type(id);
     let generic_entries = function
         .type_parameters
@@ -516,8 +575,12 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     )
 }
 
-fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> String {
-    let links = TypeLinks::new(compilation, record.module, &record.parameters);
+fn record_signature(
+    compilation: &Compilation,
+    record: &crate::hir::Record,
+    options: GenerationOptions,
+) -> String {
+    let links = TypeLinks::new(compilation, record.module, &record.parameters, options);
     let compositions = if record.compositions.is_empty() {
         String::new()
     } else {
@@ -534,6 +597,7 @@ fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> S
     let mut members = record
         .fields
         .iter()
+        .filter(|field| visible_type(field.public, options))
         .map(|field| {
             format!(
                 "    {}{}: {}{}",
@@ -544,30 +608,36 @@ fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> S
             )
         })
         .collect::<Vec<_>>();
-    members.extend(record.methods.iter().map(|method| {
-        let links = links.scoped(&method.type_parameters);
-        let parameters = method
-            .parameters
+    members.extend(
+        record
+            .methods
             .iter()
-            .map(|parameter| match &parameter.ty {
-                Some(ty) => format!("{}: {}", parameter.name, links.source(ty)),
-                None => parameter.name.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let result = method
-            .return_type
-            .as_ref()
-            .map(|ty| links.source(ty))
-            .unwrap_or_else(|| "()".into());
-        format!(
-            "    {}func {}{}({parameters}) -&gt; {result}{}",
-            if method.public { "pub " } else { "" },
-            method.name,
-            escape(&angled(&method.type_parameters)),
-            escape(&effects(&method.effects, method.suspends))
-        )
-    }));
+            .filter(|method| visible_type(method.public, options))
+            .map(|method| {
+                let links = links.scoped(&method.type_parameters);
+                let parameters = method
+                    .parameters
+                    .iter()
+                    .map(|parameter| match &parameter.ty {
+                        Some(ty) => format!("{}: {}", parameter.name, links.source(ty)),
+                        None => parameter.name.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let result = method
+                    .return_type
+                    .as_ref()
+                    .map(|ty| links.source(ty))
+                    .unwrap_or_else(|| "()".into());
+                format!(
+                    "    {}func {}{}({parameters}) -&gt; {result}{}",
+                    if method.public { "pub " } else { "" },
+                    method.name,
+                    escape(&angled(&method.type_parameters)),
+                    escape(&effects(&method.effects, method.suspends))
+                )
+            }),
+    );
     let members = members.join("\n");
     format!(
         "{}type {}{} ={compositions} {{\n{members}\n}}",
@@ -577,9 +647,13 @@ fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> S
     )
 }
 
-fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -> String {
+fn variant_signature(
+    compilation: &Compilation,
+    id: crate::hir::VariantTypeId,
+    options: GenerationOptions,
+) -> String {
     let variant = &compilation.hir.variant_types[id];
-    let links = TypeLinks::new(compilation, variant.module, &variant.parameters);
+    let links = TypeLinks::new(compilation, variant.module, &variant.parameters, options);
     let alternatives = variant
         .alternatives
         .iter()
@@ -699,7 +773,8 @@ mod tests {
             .hir
             .function_named(module, "Box.copied")
             .unwrap();
-        let rendered = super::function_signature(&compilation, method);
+        let rendered =
+            super::function_signature(&compilation, method, super::GenerationOptions::default());
         assert!(rendered.contains("T &amp; <a"), "{rendered}");
         assert!(rendered.contains("Copy</a>"), "{rendered}");
     }
@@ -767,6 +842,7 @@ func main() -> Int { 0 }
                 .hir
                 .function_named(compilation.hir.module_named("main").unwrap(), "generic")
                 .unwrap(),
+            super::GenerationOptions::default(),
         );
         assert!(
             generic.contains("func generic&lt;Item&gt;(value: consume Item) -&gt; Item"),
@@ -781,63 +857,78 @@ func main() -> Int { 0 }
     #[test]
     fn library_type_links_only_target_generated_pages_and_anchors() {
         let compilation = crate::check_package("library").unwrap();
-        let site = site(&compilation).unwrap();
-        let string = &site
-            .modules
-            .iter()
-            .find(|page| page.file_name == "core-string.html")
-            .unwrap()
-            .html;
-        assert!(string.contains("href=\"core-option.html#Option\""));
-        assert!(string.contains("href=\"core-code_point.html#module-overview\""));
-        assert!(string.contains("href=\"std-iter.html#Iterator\""));
-        assert!(string.contains("<h4>Contracts</h4>"));
-        assert!(string.contains("href=\"core-copy.html#Copy\""));
-        assert!(string.contains("href=\"std-collections.html#Collection\""));
-        let toml = site
-            .modules
-            .iter()
-            .find(|page| page.file_name == "std-toml.html")
+        for include_private in [false, true] {
+            let site = super::site_with_options(
+                &compilation,
+                super::GenerationOptions { include_private },
+            )
             .unwrap();
-        let signature = toml
-            .html
-            .split("<article id=\"TomlValue\">")
-            .nth(1)
-            .unwrap()
-            .split("</pre>")
-            .next()
-            .unwrap();
-        assert!(signature.contains("href=\"core-copy.html#Copy\""));
-        assert!(
-            string.contains("<li data-owner=\"String\" data-declaration><a href=\"#String.first\"")
-        );
-        assert!(string.contains("<li data-owner=\"GraphemeCursor\" data-declaration>"));
-        // Grouping must preserve one navigation destination per declaration.
-        for page in &site.modules {
-            let navigation = page.html.split("</nav>").next().unwrap();
-            let mut anchors = std::collections::BTreeSet::new();
-            for entry in navigation.split("data-declaration><a href=\"#").skip(1) {
-                let anchor = entry.split('"').next().unwrap();
-                assert!(anchors.insert(anchor), "duplicate navigation: {anchor}");
-                assert!(page.html.contains(&format!("<article id=\"{anchor}\"")));
+            let string = &site
+                .modules
+                .iter()
+                .find(|page| page.file_name == "core-string.html")
+                .unwrap()
+                .html;
+            assert!(string.contains("href=\"core-option.html#Option\""));
+            assert!(string.contains("href=\"core-code_point.html#module-overview\""));
+            assert!(string.contains("href=\"std-iter.html#Iterator\""));
+            assert!(string.contains("<h4>Contracts</h4>"));
+            assert!(string.contains("href=\"core-copy.html#Copy\""));
+            assert!(string.contains("href=\"std-collections.html#Collection\""));
+            let toml = site
+                .modules
+                .iter()
+                .find(|page| page.file_name == "std-toml.html")
+                .unwrap();
+            let signature = toml
+                .html
+                .split("<article id=\"TomlValue\">")
+                .nth(1)
+                .unwrap()
+                .split("</pre>")
+                .next()
+                .unwrap();
+            assert!(signature.contains("href=\"core-copy.html#Copy\""));
+            assert!(
+                string.contains(
+                    "<li data-owner=\"String\" data-declaration><a href=\"#String.first\""
+                )
+            );
+            assert!(string.contains("<li data-owner=\"GraphemeCursor\" data-declaration>"));
+            // Grouping must preserve one navigation destination per declaration.
+            for page in &site.modules {
+                if !include_private {
+                    assert!(
+                        !page.html.contains("class=\"badge visibility-private\""),
+                        "private member in {}",
+                        page.file_name
+                    );
+                }
+                let navigation = page.html.split("</nav>").next().unwrap();
+                let mut anchors = std::collections::BTreeSet::new();
+                for entry in navigation.split("data-declaration><a href=\"#").skip(1) {
+                    let anchor = entry.split('"').next().unwrap();
+                    assert!(anchors.insert(anchor), "duplicate navigation: {anchor}");
+                    assert!(page.html.contains(&format!("<article id=\"{anchor}\"")));
+                }
             }
-        }
-        for page in &site.modules {
-            for link in page.html.split("class=\"type-link\" href=\"").skip(1) {
-                let href = link.split('"').next().unwrap();
-                let (file, anchor) = href.split_once('#').unwrap();
-                let target = if file.is_empty() {
-                    page
-                } else {
-                    site.modules
-                        .iter()
-                        .find(|page| page.file_name == file)
-                        .expect("linked module must be generated")
-                };
-                assert!(
-                    target.html.contains(&format!("id=\"{anchor}\"")),
-                    "missing target: {href}"
-                );
+            for page in &site.modules {
+                for link in page.html.split("class=\"type-link\" href=\"").skip(1) {
+                    let href = link.split('"').next().unwrap();
+                    let (file, anchor) = href.split_once('#').unwrap();
+                    let target = if file.is_empty() {
+                        page
+                    } else {
+                        site.modules
+                            .iter()
+                            .find(|page| page.file_name == file)
+                            .expect("linked module must be generated")
+                    };
+                    assert!(
+                        target.html.contains(&format!("id=\"{anchor}\"")),
+                        "missing target: {href}"
+                    );
+                }
             }
         }
     }
@@ -858,13 +949,98 @@ func main() -> Int { 0 }
     }
 
     #[test]
+    fn public_reference_hides_private_members_overloads_and_owners() {
+        let compilation = crate::compile(
+            r#"
+pub const exposed = 42
+const secret = 7
+/// Internal implementation.
+type Internal = { value: Int }
+impl Internal { func inspect(self: Self) -> Int { self.value } }
+pub type Example = {
+    pub exposed: Int
+    hidden: Bool
+    pub func visible(self: Self) -> Int [read self]
+    func internal(self: Self) -> Int [read self]
+}
+impl Example {
+    pub func visible(self: Self) -> Int { self.exposed }
+    func internal(self: Self) -> Int { self.exposed }
+}
+/// Private overload.
+func convert(value: Int) -> Int { value }
+/// Public overload.
+pub func convert(value: Bool) -> Int { branch value { true -> 1 _ -> 0 } }
+pub func create() -> Int { 42 }
+func create_internal() -> Internal { Internal { value: 42 } }
+func main() {}
+"#,
+        )
+        .unwrap();
+        let public = site(&compilation).unwrap();
+        let html = &public.modules[0].html;
+        for hidden in [
+            "id=\"secret\"",
+            "id=\"Internal\"",
+            "id=\"Internal.inspect\"",
+            "id=\"Example.internal\"",
+            "hidden:",
+            "func internal",
+            "Private overload.",
+            "func convert(value: Int)",
+            "href=\"#Internal\"",
+        ] {
+            assert!(!html.contains(hidden), "private detail leaked: {hidden}");
+        }
+        for visible in [
+            "id=\"exposed\"",
+            "id=\"Example\"",
+            "id=\"Example.visible\"",
+            "pub exposed:",
+            "func visible",
+            "Public overload.",
+            "pub func convert(value: Bool)",
+            "pub func create()",
+        ] {
+            assert!(html.contains(visible), "missing public API: {visible}");
+        }
+        let internal = super::site_with_options(
+            &compilation,
+            super::GenerationOptions {
+                include_private: true,
+            },
+        )
+        .unwrap();
+        let html = &internal.modules[0].html;
+        for visible in [
+            "id=\"secret\"",
+            "id=\"Internal\"",
+            "id=\"Internal.inspect\"",
+            "id=\"Example.internal\"",
+            "hidden:",
+            "func internal",
+            "Private overload.",
+            "func convert(value: Int)",
+            "href=\"#Internal\"",
+        ] {
+            assert!(html.contains(visible), "missing internal detail: {visible}");
+        }
+    }
+
+    #[test]
     fn overloaded_functions_keep_every_signature_description_and_visibility() {
         let compilation = crate::compile(
             "/// Integer conversion.\nfunc convert(value: Int) -> Int { value }\n\
              /// Boolean conversion.\npub func convert(value: Bool) -> Int { branch value { true -> 1\n_ -> 0 } }\n\
              func main() {}",
         ).unwrap();
-        let site = site(&compilation).unwrap();
+        let site = super::site_with_options(
+            &compilation,
+            super::GenerationOptions {
+                include_private: true,
+            },
+        )
+        .unwrap();
         let html = &site.modules[0].html;
         assert!(html.contains("func convert(value: Int)"));
         assert!(html.contains("pub func convert(value: Bool)"));
@@ -885,7 +1061,13 @@ func main() -> Int { 0 }
              func main() {}",
         )
         .unwrap();
-        let site = site(&compilation).unwrap();
+        let site = super::site_with_options(
+            &compilation,
+            super::GenerationOptions {
+                include_private: true,
+            },
+        )
+        .unwrap();
         let html = &site.modules[0].html;
         let overview = html.split("<article id=\"Example\">").next().unwrap();
         assert!(overview.contains("Int<span class=\"badge visibility-public\">public</span>"));
@@ -912,7 +1094,7 @@ func main() -> Int { 0 }
     }
 
     #[test]
-    fn site_omits_undocumented_private_types() {
+    fn site_visibility_filters_private_types_and_counts() {
         let compilation = crate::compile(
             r#"
 type HiddenRecord = { value: Int }
@@ -938,23 +1120,21 @@ func main() -> Int { 0 }
         let site = site(&compilation).unwrap();
         let html = &site.modules[0].html;
 
-        for name in [
+        let private = [
             "HiddenRecord",
             "HiddenEnum",
             "HiddenAlias",
             "BlankRecord",
             "BlankEnum",
-        ] {
-            assert!(!html.contains(name), "unexpected private type: {name}");
-        }
-        for name in [
             "DocumentedRecord",
             "DocumentedEnum",
             "DocumentedAlias",
-            "PublicRecord",
-            "PublicEnum",
-            "PublicAlias",
-        ] {
+        ];
+        let public = ["PublicRecord", "PublicEnum", "PublicAlias"];
+        for name in private {
+            assert!(!html.contains(name), "unexpected private type: {name}");
+        }
+        for name in public {
             assert!(
                 html.contains(&format!("<article id=\"{name}\"")),
                 "missing type: {name}"
@@ -964,10 +1144,26 @@ func main() -> Int { 0 }
                 "missing navigation: {name}"
             );
         }
-        assert_eq!(site.declaration_count, 7);
-        assert!(site.index.contains("<span>7 declarations</span>"));
-        assert!(site.index.contains("<small>7 declarations</small>"));
-        assert!(html.contains("<p>7 declarations</p>"));
+        assert_eq!(site.declaration_count, 3);
+        assert!(site.index.contains("<span>3 declarations</span>"));
+        assert!(site.index.contains("<small>3 declarations</small>"));
+        assert!(html.contains("<p>3 declarations</p>"));
+        let internal = super::site_with_options(
+            &compilation,
+            super::GenerationOptions {
+                include_private: true,
+            },
+        )
+        .unwrap();
+        for name in private.into_iter().chain(public) {
+            assert!(
+                internal.modules[0]
+                    .html
+                    .contains(&format!("<article id=\"{name}\"")),
+                "missing internal type: {name}"
+            );
+        }
+        assert_eq!(internal.declaration_count, 12);
     }
 
     #[test]

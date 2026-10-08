@@ -126,17 +126,19 @@ suitable for CI. The current directory is used when no path is supplied.
 
 ## Generated documentation
 
-`foster docs [file-or-directory]` type-checks the package and generates a static API site in a
+`foster documentation [file-or-directory]` type-checks the package and generates a static API site in a
 `docs` directory within the selected package. The site is built from resolved HIR, so signatures include
-inferred types and effects. It includes public and private declarations, their visibility, and all
-attached Markdown documentation comments, but omits private types without nonempty documentation.
+inferred types and effects. It includes public declarations and members with their attached
+Markdown documentation comments.
+Use `--include-private` to also document private types, functions, constants, and members,
+including those without documentation comments. Compiler-generated helper functions remain hidden.
 The index lists modules alphabetically in collapsible namespace groups, with indentation for nested
 modules, namespace shortcuts, and search that reveals matching groups.
-Module pages summarize the public types they provide,
+Module pages summarize the types included in the selected visibility mode,
 including fields, enum cases, required methods, and linked functions or methods.
 Visibility uses green public and amber private pills for declarations and fields.
 Expand **How to read this reference** for calling conventions, ownership, and effects.
-Each function name has one navigation entry; all its overloads appear with their own
+Each function name has one navigation entry; its included overloads appear with their own
 signatures and descriptions. Declaration counts count an overload group once.
 Type references in signatures and fields link to their declarations in the generated site.
 Primitive types link to their library module; omitted types and modules remain plain text.
@@ -150,9 +152,10 @@ Use `--output <directory>` to choose another destination. Add `--serve` to start
 open the site in the system browser:
 
 ```powershell
-foster docs library --serve
-foster docs library --output build/api-docs
-foster serve-docs documentation
+foster documentation library --serve
+foster documentation library --output build/api-docs
+foster documentation library --output build/internal-docs --include-private
+foster serve-documentation documentation
 ```
 
 Both serving commands accept `--port <number>` and `--no-open`. The latter is useful on headless

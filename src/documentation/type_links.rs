@@ -1,4 +1,5 @@
 //! Type-only HTML rendering: resolve identities, never guess from declaration text.
+use super::GenerationOptions;
 use super::render::{effects, escape, module_file_name, visible_type};
 use crate::ast::{ParameterMode, TypeExpr};
 use crate::compiler::Compilation;
@@ -9,21 +10,28 @@ pub(super) struct TypeLinks<'a> {
     compilation: &'a Compilation,
     module: ModuleId,
     parameters: Vec<String>,
+    options: GenerationOptions,
 }
 
 impl<'a> TypeLinks<'a> {
-    pub fn new(compilation: &'a Compilation, module: ModuleId, parameters: &[String]) -> Self {
+    pub fn new(
+        compilation: &'a Compilation,
+        module: ModuleId,
+        parameters: &[String],
+        options: GenerationOptions,
+    ) -> Self {
         Self {
             compilation,
             module,
             parameters: parameters.to_vec(),
+            options,
         }
     }
 
     pub fn scoped(&self, parameters: &[String]) -> Self {
         let mut all = self.parameters.clone();
         all.extend_from_slice(parameters);
-        Self::new(self.compilation, self.module, &all)
+        Self::new(self.compilation, self.module, &all, self.options)
     }
 
     fn link(&self, module: ModuleId, anchor: &str, label: &str) -> String {
@@ -48,15 +56,15 @@ impl<'a> TypeLinks<'a> {
     fn declared(&self, module: ModuleId, name: &str, label: &str) -> Option<String> {
         let hir = &self.compilation.hir;
         let definitions = &hir.modules[module];
-        let (public, docs) = if let Some(id) = definitions.records.get(name) {
+        let public = if let Some(id) = definitions.records.get(name) {
             let record = &hir.records[*id];
-            (record.public, record.documentation.as_deref())
+            record.public
         } else {
             let id = definitions.variant_types.get(name)?;
             let variant = &hir.variant_types[*id];
-            (variant.public, variant.documentation.as_deref())
+            variant.public
         };
-        Some(if visible_type(public, docs) {
+        Some(if visible_type(public, self.options) {
             self.link(module, name, label)
         } else {
             escape(label)

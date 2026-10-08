@@ -82,6 +82,7 @@ fn help_describes_commands_and_important_options() {
     let docs = foster().args(["documentation", "--help"]).output().unwrap();
     assert!(docs.status.success());
     let docs = String::from_utf8(docs.stdout).unwrap();
+    assert!(docs.contains("--include-private"), "{docs}");
     assert!(
         docs.contains("Write generated documentation to this directory"),
         "{docs}"
@@ -1036,6 +1037,7 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     let output_directory = std::env::temp_dir().join(unique);
     let output = foster()
         .arg("documentation")
+        .arg("--include-private")
         .arg(benchmark_source())
         .arg("--output")
         .arg(&output_directory)
@@ -1062,6 +1064,49 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     assert!(!output_directory.join("modules/core.html").exists());
 
     fs::remove_dir_all(output_directory).unwrap();
+}
+
+#[test]
+fn docs_defaults_to_public_api_and_can_include_private_declarations() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-documentation-visibility-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("main.fos");
+    fs::write(
+        &source,
+        "pub func exposed() -> Int { 42 }\n/// Internal helper.\nfunc hidden() -> Int { 7 }\nfunc main() {}\n",
+    )
+    .unwrap();
+    let destination = directory.join("site");
+    for include_private in [false, true, false] {
+        let mut command = foster();
+        command
+            .arg("documentation")
+            .arg(&source)
+            .arg("--output")
+            .arg(&destination);
+        if include_private {
+            command.arg("--include-private");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let html = fs::read_to_string(destination.join("modules/main.html")).unwrap();
+        assert!(html.contains("id=\"exposed\""));
+        assert_eq!(html.contains("id=\"hidden\""), include_private);
+        assert_eq!(html.contains("Internal helper."), include_private);
+        assert_eq!(html.contains("id=\"main\""), include_private);
+    }
+    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
