@@ -1,0 +1,10 @@
+import item.Item as ImportedItem
+import item.Box
+import static item.Item.new as new_item
+
+func main() -> Int {
+    assert(ImportedItem.new().value == 42)
+    assert(new_item().value == 42)
+    assert(Box.new(42).value == 42)
+    42
+}

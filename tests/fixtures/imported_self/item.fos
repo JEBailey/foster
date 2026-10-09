@@ -1,0 +1,23 @@
+pub type Item = {
+    pub value: Int
+}
+
+impl Item {
+    pub func new() -> Self {
+        Item {
+            value: 42
+        }
+    }
+}
+
+pub type Box<T> = {
+    pub value: T
+}
+
+impl Box<T> {
+    pub func new(value: T) -> Self [consume value] {
+        Box {
+            value
+        }
+    }
+}

@@ -1,6 +1,14 @@
 use foster::vm::Value;
 
 #[test]
+fn imported_associated_functions_resolve_self_to_the_implementing_type() {
+    let source_root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/imported_self");
+    let compilation = foster::check_package(&source_root).unwrap();
+    assert_eq!(foster::vm::run(&compilation).unwrap(), Value::Integer(42));
+}
+
+#[test]
 fn self_types_preserve_generic_factories_owned_results_and_reference_groups() {
     let source = include_str!("fixtures/programs/self_type.fos");
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
