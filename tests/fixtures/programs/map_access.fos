@@ -19,7 +19,7 @@ type Payload = {
 impl Payload {
     func copy(self: Self) -> Self {
         Payload {
-            values: self.values.slice(0, self.values.length)
+            values: self.values.copy_slice(0, self.values.length)
         }
     }
 }

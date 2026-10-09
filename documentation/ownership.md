@@ -381,6 +381,24 @@ extension calls; it is not inferred from a method's spelling. A guarded return a
 its guard to both successors, while effects that occur only while evaluating its returned value do
 not leak onto the continuation path.
 
+## Borrowed list views
+
+`List.slice(start, end)` borrows the half-open range `[start, end)` in constant time.
+The result keeps the source loan alive: it cannot escape the source's lifetime, and
+reshaping the source while the view or its cursor remains usable is rejected.
+The view's `length` counts selected elements, and `borrow(index)` uses indexes
+relative to the view, returning `None` for an invalid index.
+
+Iterating a slice yields references to the stored elements and requires no `Copy`,
+including when the list itself is borrowed from a map. A loop over a computed
+slice keeps that view alive for the loop. Borrowing does not create an independent
+snapshot of the elements.
+
+Use `List.copy_slice(start, end)` for an independent owned list. This method is
+available only through `impl List<T & Copy>`; an element type without the structural
+`Copy` capability is rejected at compile time, even for an empty range. Both methods
+assert unless `0 <= start <= end <= length`.
+
 ## Borrowed closure escape
 
 A returned closure may own or copy its captures. A closure that borrows a local cannot outlive the

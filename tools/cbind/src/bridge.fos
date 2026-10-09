@@ -140,7 +140,7 @@ impl Contract {
     }
     pub func children(self: Self, parent: Int) -> List<Int> {
         return [] if parent < 0
-        self.links[parent].slice(0, self.links[parent].length)
+        self.links[parent].copy_slice(0, self.links[parent].length)
     }
     pub func array(self: Self, object: Int, key: String, required: Bool) -> List<Int> {
         let node = self.member(object, key)
@@ -344,7 +344,7 @@ impl Contract {
         branch {
             ty.starts_with?("[") -> {
                 assert(stack.length < 32, "excessively nested C array")
-                let nested = stack.slice(0, stack.length)
+                let nested = stack.copy_slice(0, stack.length)
                 nested.push(ty.copy())
                 let count = array_length(ty) * self.slots(array_element(ty), nested)
                 assert(count <= 8191, "C record exceeds 65528 wire bytes")
@@ -352,7 +352,7 @@ impl Contract {
             }
             ty.starts_with?("@") -> {
                 assert(stack.length < 32 && !stack.contains?(ty), "cyclic or excessively nested C record " + ty)
-                let nested = stack.slice(0, stack.length)
+                let nested = stack.copy_slice(0, stack.length)
                 nested.push(ty.copy())
                 let count = 0
                 for field in self.array(self.record(ty), "fields", true) {

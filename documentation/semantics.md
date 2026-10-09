@@ -178,7 +178,10 @@ The following are library contracts, not new syntax:
 - `values[index]` can designate a projected place, and `ref values[index]` borrows that place.
 - `String.bytes` produces byte data without consuming the string. An ordinary stored field named
   `bytes` does not acquire that behavior merely from its spelling.
-- `List.slice` and `Bytes.slice` check half-open bounds and return range copies, not zero-copy views.
+- `List.slice` checks half-open bounds and returns a borrowed view whose cursor yields references;
+  it does not require element copying. The view cannot outlive or survive reshaping its source.
+  `List.copy_slice` returns independent element copies and is available only when the element type
+  satisfies `Copy`. `Bytes.slice` checks half-open bounds and returns a range copy.
   `String.slice` uses clamped half-open grapheme-cluster bounds, as specified by its library implementation.
 - Builder mutation accumulates output; consuming finalization returns an owned result. Allocation
   reuse and capacity growth must not change the resulting values or invalidate fewer loans than

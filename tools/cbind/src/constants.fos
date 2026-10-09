@@ -151,8 +151,8 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
             names.length == 1 -> reports.push(names[0] + ": macro is not a supported C static constant expression\n")
             _ -> {
                 let middle = names.length / 2
-                probe(context, names.slice(0, middle), values, reports)
-                probe(context, names.slice(middle, names.length), values, reports)
+                probe(context, names.copy_slice(0, middle), values, reports)
+                probe(context, names.copy_slice(middle, names.length), values, reports)
             }
         }
         return ()
@@ -248,7 +248,7 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
         }
     }
     let context = Context {
-        shim: shim.copy(), output: output.copy(), compiler: compiler.copy(), includes: includes.slice(0, includes.length), rows: move types, records: move records, accepted: move accepted, documentation: move documentation
+        shim: shim.copy(), output: output.copy(), compiler: compiler.copy(), includes: includes.copy_slice(0, includes.length), rows: move types, records: move records, accepted: move accepted, documentation: move documentation
     }
     let args = arguments(context)
     for arg in ["-E", "-dD", shim.copy()] {

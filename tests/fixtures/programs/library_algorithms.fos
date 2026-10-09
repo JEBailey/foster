@@ -38,7 +38,7 @@ impl Box {
 impl Storage {
     func copy(self: Self) -> Self {
         Storage {
-            items: self.items.slice(0, self.items.length)
+            items: self.items.copy_slice(0, self.items.length)
         }
     }
 }
@@ -96,7 +96,7 @@ func algorithms() -> Result<Int, ListReadError> {
     assert((try values.reverse().at(0)) == 4095)
     assert((try values.map((value: Int) -> value + 1).at(4095)) == 4096)
     assert(values.filter((value: Int) -> value < 2) == [0, 1])
-    assert(values.slice(2048, 2050) == [2048, 2049])
+    assert(values.copy_slice(2048, 2050) == [2048, 2049])
     assert(values.length == 4096)
     assert([[1], [], [2, 3]].flatten() == [1, 2, 3])
 

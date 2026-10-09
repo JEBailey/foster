@@ -152,6 +152,15 @@ code points, grapheme clusters, bytes, case folding, and the purpose of the data
 | `Bytes.length`, `Bytes.slice` | Bytes | Slice bounds assert |
 | `List.length`, `List.slice` | Elements | Slice bounds assert |
 
+`List.slice` returns a borrowed range view without requiring element `Copy`.
+Iterate the view or call `borrow(index)` to access references into the source,
+including for non-Copy elements in a list borrowed from a map. View indexes start at zero.
+The view and its cursor cannot outlive or survive reshaping the source list.
+Use `List.copy_slice` for an independent list; this method is available only when
+the element type satisfies `Copy`, even when the selected range is empty. Both range
+methods assert unless `0 <= start <= end <= length`. A slice iteration yields references;
+`copy_slice` invokes the element's copying method to create independent owned elements.
+
 A scalar is not necessarily a displayed character: combining marks and emoji
 sequences can contain several scalars. String counting, slicing, iteration, head/rest,
 first/last, reversal, and splitting on an empty separator keep extended grapheme clusters

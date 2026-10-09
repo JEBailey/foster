@@ -159,8 +159,8 @@ strategies in the same build, not two historical releases; timings are machine-d
 
 Concrete list algorithms use indexed loops and one output list. `List.at` checks bounds and Copy
 capability, returning a `Result` containing an independent element copy or a typed read error.
-`List.slice` and `Bytes.slice` copy only their
-selected half-open ranges once; these APIs are value copies, not zero-copy slice views.
+`List.slice` creates a constant-time borrowed range view without copying elements.
+`List.copy_slice` and `Bytes.slice` copy their selected half-open ranges once.
 
 String algorithms scan one UTF-8 byte snapshot. Trimming and grapheme/scalar slicing select byte
 boundaries and copy the result once. `StringBuilder` encodes Unicode scalars and accumulates text

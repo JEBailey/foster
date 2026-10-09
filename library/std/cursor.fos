@@ -61,18 +61,20 @@ impl ListCursor<T> {
             values: move values, offset: 0
         }
     }
-    /// Reads the current element without advancing.
+    /// Copies the current element without advancing; returns None when exhausted.
+    /// Panics if the current element lacks Copy, preserving the source snapshot.
     pub func peek(self: Self) -> Option<T> {
         branch {
             self.offset >= self.values.length -> Option.None
             _ -> branch self.values.at(self.offset) {
                 Result.Ok(value) -> Option.Some(value) Result.Error(_) -> {
-                    panic("cursor elements must support Copy")
+                    panic("ListCursor.peek requires Copy to return an owned element while preserving the snapshot")
                 }
             }
         }
     }
-    /// Reads one element and advances, remaining exhausted at the end.
+    /// Copies one element and advances, remaining exhausted at the end.
+    /// Panics if the current element lacks Copy.
     pub func next(self: Self) -> Option<T> {
         let value = self.peek()
         if self.offset < self.values.length self.offset = self.offset + 1
@@ -89,10 +91,20 @@ impl ListCursor<T> {
         self.offset = position
         true
     }
-    /// Copies a valid element range.
+    /// Copies the half-open element range [start, end) into an independent list.
+    /// Returns None for invalid bounds; panics if a selected element lacks Copy.
     pub func span(self: Self, start: Int, end: Int) -> Option<List<T>> {
         return Option.None if start < 0 || end < start || end > self.values.length
-        Option.Some(self.values.slice(start, end))
+        let result = []
+        let index = start
+        while index < end {
+            branch self.values.at(index) {
+                Result.Ok(value) -> result.push(value)
+                Result.Error(_) -> panic("ListCursor.span requires Copy to return owned elements while preserving the snapshot")
+            }
+            index = index + 1
+        }
+        Option.Some(result)
     }
 }
 

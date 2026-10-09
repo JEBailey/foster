@@ -73,7 +73,31 @@ impl Parser {
                 },
             ],
         };
-        let mut scope = crate::block::Block::single(
+        // Keep computed iterable storage alive when its cursor borrows it.
+        // Places already have an owner; binding those would move the user's value.
+        fn is_place(expression: &Expr) -> bool {
+            match expression {
+                Expr::Spanned { expression, .. } => is_place(expression),
+                Expr::Name(_) => true,
+                Expr::Member { object, .. } | Expr::Index { object, .. } => is_place(object),
+                _ => false,
+            }
+        }
+        let mut scope = crate::block::Block::default();
+        let collection = if is_place(&collection) {
+            collection
+        } else {
+            let owner = format!("$for_source_{start}");
+            scope.push(
+                Stmt::Bind {
+                    name: owner.clone(),
+                    value: collection,
+                },
+                collection_span.clone(),
+            );
+            Expr::Name(owner)
+        };
+        scope.push(
             Stmt::Bind {
                 name: cursor,
                 value: call(collection, "iterator"),

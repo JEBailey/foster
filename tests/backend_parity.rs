@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn borrowed_list_slices_agree_in_both_backends() {
+    check(
+        "borrowed-list-slices",
+        include_str!("fixtures/programs/list_slices.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn lookup_and_membership_contracts_agree_in_both_backends() {
     check(
         "membership-contracts",

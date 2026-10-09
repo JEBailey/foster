@@ -24,7 +24,7 @@ type Mapping = {
 impl Mapping {
     func copy(self: Self) -> Self {
         Mapping {
-            point: self.point, targets: self.targets.slice(0, self.targets.length)
+            point: self.point, targets: self.targets.copy_slice(0, self.targets.length)
         }
     }
 }
@@ -184,8 +184,8 @@ func read_special(db: Database, text: String) -> Database [consume db, consume t
             }
             _ -> {
                 let point = number(row[0])
-                db.full_lower = put(db.full_lower.slice(0, db.full_lower.length), point, targets(row[1]))
-                db.full_upper = put(db.full_upper.slice(0, db.full_upper.length), point, targets(row[3]))
+                db.full_lower = put(db.full_lower.copy_slice(0, db.full_lower.length), point, targets(row[1]))
+                db.full_upper = put(db.full_upper.copy_slice(0, db.full_upper.length), point, targets(row[3]))
             }
         }
     }
@@ -199,7 +199,7 @@ func read_fold(db: Database, text: String) -> Database [consume db, consume text
         continue if row.empty?
         assert(row.length >= 3, "invalid CaseFolding record")
         if row[1] == "C" || row[1] == "F" {
-            db.fold = put(db.fold.slice(0, db.fold.length), number(row[0]), targets(row[2]))
+            db.fold = put(db.fold.copy_slice(0, db.fold.length), number(row[0]), targets(row[2]))
         }
     }
     db
@@ -315,7 +315,7 @@ func sort(table: List<Mapping>) -> List<Mapping> [consume table] {
 
 func append_map(output: StringBuilder, name: String, input: List<Mapping>, simple: Bool) -> () {
     output.append(table_documentation(name))
-    let table = sort(input.slice(0, input.length))
+    let table = sort(input.copy_slice(0, input.length))
     output.append(branch {
         simple -> "/// Returns " + name + " source(6), target(6) hex records.\n"
         _ -> "/// Returns full " + name + " source(6), length(1), three targets(18) hex records.\n"
@@ -430,7 +430,7 @@ func append_literal(output: StringBuilder, table: List<Mapping>, keys: Bool, sep
     while index != table.length {
         if separator && index > 0 output.append("|")
         let values = branch {
-            keys -> [table[index].point] _ -> table[index].targets.slice(0, table[index].targets.length)
+            keys -> [table[index].point] _ -> table[index].targets.copy_slice(0, table[index].targets.length)
         }
         let target_index = 0
         while target_index != values.length {

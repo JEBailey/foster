@@ -8,7 +8,9 @@
 //!
 //! Algorithms that return owned elements may copy them even though the receiver
 //! is borrowed. Their public comments state which elements must support Copy.
-//! Use borrow or remove when elements do not implement Copy.
+//! Use borrow or slice to access elements by reference without Copy, or remove to
+//! transfer ownership. slice returns a borrowed view; copy_slice returns an independent
+//! list and is available only when the element type satisfies Copy.
 //!
 //! ```foster
 //! import core.list.List
@@ -39,6 +41,7 @@ import std.collections.Collection
 import std.iter.Iterator
 
 import core.functions.Predicate
+import core.copy.Copy
 
 import core.option.Option
 
@@ -53,7 +56,7 @@ intrinsic type RawList<T>
 /// An ordered value collection backed by private copy-on-write contiguous storage.
 /// Construct with a list literal such as [1, 2, 3]. Indexes count elements from zero.
 /// Elements need not implement Copy: borrow returns a storage-bound mutable reference,
-/// and remove transfers an owned element. Operations returning independent elements
+/// slice returns a borrowed range, and remove transfers an owned element. Operations returning independent elements
 /// may require Copy; read the individual method's failure and consumption contract.
 pub type List<T> = & Sequence<T> & Collection<T> & {
     value: RawList<T>
@@ -105,9 +108,9 @@ pub type List<T> = & Sequence<T> & Collection<T> & {
     /// Removes and returns an owned element, preserving the list and remaining order.
     /// Invalid indexes return None without changing the list. Takes O(n) time.
     pub func remove(self: Self, index: Int) -> Option<T> [mut self, reshape self.items]
-    /// Copies elements in the half-open range `[start, end)`.
-    /// Asserts unless `0 <= start <= end <= length`; selected elements must support Copy.
-    pub func slice(self: Self, start: Int, end: Int) -> List<T> [read end, read self, read start]
+    /// Borrows a constant-time view of the half-open range `[start, end)` without copying elements.
+    /// Asserts unless `0 <= start <= end <= length`. The view cannot outlive or survive reshaping the source.
+    pub func slice(self: Self, start: Int, end: Int) -> Slice<ref[self] List<T>> [read end, read self, read start]
     /// Copies at most the first `count` elements; a nonpositive count returns an empty list.
     /// Asserts if a selected element lacks Copy; preserves the source.
     pub func take(self: Self, count: Int) -> List<T> [read count, read self]
@@ -131,6 +134,67 @@ pub type List<T> = & Sequence<T> & Collection<T> & {
 /// Why an independently owned element could not be obtained.
 pub enum ListReadError = OutOfBounds
     | NotCopyable
+
+/// A borrowed list range. Storage carries the source reference and its lifetime.
+/// Obtain with List.slice; elements are borrowed, never copied. Reshaping the source invalidates the view.
+/// length counts elements in the view; borrow indexes from zero relative to its start.
+/// Iteration yields references, including for non-Copy elements in map-stored lists.
+pub type Slice<Storage> = {
+    source: Storage
+    start: Int
+    pub length: Int
+}
+
+impl Slice<T> {
+    /// Borrows an element at a zero-based index within this view; invalid indexes return None.
+    /// The reference cannot outlive the view or survive reshaping its source.
+    pub func borrow(self: Slice<ref[self] List<T>>, index: Int) -> Option<ref[self] T> {
+        branch {
+            index < 0 || index >= self.length -> Option.None
+            _ -> self.source.borrow(self.start + index)
+        }
+    }
+
+    /// Creates an independent cursor yielding borrowed elements, without requiring Copy.
+    /// The cursor cannot outlive this view or survive reshaping its source.
+    pub func iterator(self: Slice<ref[self] List<T>>) -> SliceIterator<ref[self] Slice<ref[self] List<T>>> {
+        SliceIterator {
+            source: ref self, index: self.start, end: self.start + self.length
+        }
+    }
+}
+
+/// A cursor over a borrowed slice; its Storage parameter retains the view's lifetime.
+pub type SliceIterator<Storage> = {
+    source: Storage
+    index: Int
+    end: Int
+}
+
+impl SliceIterator<T> {
+    /// Advances the cursor and borrows the next element, or returns None after exhaustion.
+    pub func next(self: ref[self] SliceIterator<ref[self] Slice<ref[self] List<T>>>) -> Option<ref[self] T> {
+        return Option.None if self.index >= self.end
+        let index = self.index
+        self.index = self.index + 1
+        self.source.source.borrow(index)
+    }
+}
+
+impl List<T & Copy> {
+    /// Copies the half-open range [start, end) into an independent list, preserving the source.
+    /// Available only when T implements Copy. Asserts unless 0 <= start <= end <= length.
+    pub func copy_slice(self: Self, start: Int, end: Int) -> List<T> {
+        assert(start >= 0 && end >= start && end <= self.length, "List.copy_slice requires 0 <= start <= end <= length")
+        let result = []
+        let index = start
+        while index < end {
+            result.push(self.copy_at(index))
+            index = index + 1
+        }
+        result
+    }
+}
 
 impl List<T> {
     /// Appends `value` to this list in place.
@@ -158,7 +222,7 @@ impl List<T> {
     /// Collection algorithms that produce owned elements require Copy.
     func read_at(self: Self, index: Int) -> T [read self] {
         assert(index >= 0 && index < self.length, "list index is out of bounds")
-        assert(self.can_copy_at(index), "list element does not implement Copy")
+        assert(self.can_copy_at(index), "list operation requires Copy to return owned elements while preserving the source; use borrow or slice to access elements by reference")
         self.copy_at(index)
     }
 
@@ -321,10 +385,18 @@ impl List<T> {
         removed
     }
 
-    /// Copies elements in the half-open range `[start, end)`.
-    /// Asserts unless `0 <= start <= end <= length`; selected elements must support Copy.
-    pub func slice(self: Self, start: Int, end: Int) -> List<T> {
-        assert(start >= 0 && end >= start && end <= self.length, "list slice is out of bounds")
+    /// Borrows a constant-time view of the half-open range `[start, end)` without copying elements.
+    /// Asserts unless `0 <= start <= end <= length`. The view cannot outlive or survive reshaping the source.
+    pub func slice(self: Self, start: Int, end: Int) -> Slice<ref[self] List<T>> {
+        assert(start >= 0 && end >= start && end <= self.length, "List.slice requires 0 <= start <= end <= length")
+        Slice {
+            source: ref self, start, length: end - start
+        }
+    }
+
+    /// Copies a range for algorithms whose unconstrained element capability is checked at runtime.
+    func copy_range(self: Self, start: Int, end: Int) -> List<T> {
+        assert(start >= 0 && end >= start && end <= self.length, "list copy range requires 0 <= start <= end <= length")
         let result = []
         let index = start
         while index < end {
@@ -342,7 +414,7 @@ impl List<T> {
             count > self.length -> self.length
             _ -> count
         }
-        self.slice(0, end)
+        self.copy_range(0, end)
     }
 
     /// Consumes the list and returns the elements after the first `count` entries.
@@ -351,7 +423,7 @@ impl List<T> {
     pub func drop(self: Self, count: Int) -> List<T> [consume self] {
         return self if count <= 0
         return [] if count >= self.length
-        self.slice(count, self.length)
+        self.copy_range(count, self.length)
     }
 
     /// Maps elements left to right and copies each returned list's elements into one result list.
@@ -441,7 +513,7 @@ test "list algorithms transform and aggregate values" {
     assert(values == [2, 4, 6])
     assert(values.fold(0, (total: Int, value: Int) -> total + value) == 12)
     assert(values.reverse() == [6, 4, 2])
-    assert(values.slice(1, 3) == [4, 6])
+    assert(values.copy_slice(1, 3) == [4, 6])
     assert(values.take(-1) == [])
     assert(values.take(99) == values)
     assert(values.borrow(-1) == Option.None)

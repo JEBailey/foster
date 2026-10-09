@@ -90,7 +90,7 @@ impl Scanner {
         ()
     }
     func text(self: Self, start: Int) -> String {
-        String.from_code_points(self.chars.slice(start, self.index))
+        String.from_code_points(self.chars.copy_slice(start, self.index))
     }
     // Retain the raw interior: interpolation and escape decoding belong to the parser.
     func interpolated(self: Self, line: Int, column: Int) -> String {
@@ -221,7 +221,7 @@ impl Scanner {
             branch c {
                 '\\' -> {
                     if self.quoted_raw {
-                        let prefix = String.from_code_points(self.chars.slice(content_start, self.index - 1))
+                        let prefix = String.from_code_points(self.chars.copy_slice(content_start, self.index - 1))
                         value.append(prefix)
                         self.quoted_raw = false
                     }
