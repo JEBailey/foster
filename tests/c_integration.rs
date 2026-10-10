@@ -1,4 +1,6 @@
-use foster::foreign::{Manifest, runtime};
+#[cfg(all(windows, target_arch = "x86_64"))]
+use foster::foreign::Manifest;
+use foster::foreign::runtime;
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 #[test]

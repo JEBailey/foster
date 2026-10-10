@@ -34,7 +34,7 @@ impl Stdin {
     /// Reads at most `maximum` bytes, blocking until input, EOF, or an error.
     /// `maximum` must be in `1..1048576` inclusive; invalid requests return `IoError`.
     /// Empty bytes mean EOF. Bytes consumed before a subsequent error are not restored.
-    pub func read(self: Self, maximum: Int) -> Result<Bytes, IoError> [mut self] {
+    pub func read(self: Self, maximum: Int) -> Result<Bytes, IoError> {
         input_read(maximum)
     }
 
@@ -43,7 +43,7 @@ impl Stdin {
     /// A final unterminated line is returned, preserving a trailing CR. Invalid UTF-8
     /// returns `IoError` after consuming the line. Reads may block; memory grows with
     /// line length. An I/O error discards any partial line already consumed.
-    pub func read_line(self: Self) -> Result<Option<String>, IoError> [mut self] {
+    pub func read_line(self: Self) -> Result<Option<String>, IoError> {
         let buffer = ByteBuffer.empty()
         loop {
             let chunk = try self.read(1)
