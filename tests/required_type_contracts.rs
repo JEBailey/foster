@@ -185,6 +185,15 @@ func main() -> Int { inspect([42]) }
 }
 
 fn general_receiver(function: &foster::hir::Function, owner: &str, parameters: &[String]) -> bool {
+    // Constrained impl methods apply only to a subset of owner instantiations.
+    // They must not become unconditional requirements on the owner's contract.
+    if function
+        .constraints
+        .iter()
+        .any(|constraint| parameters.contains(&constraint.parameter))
+    {
+        return false;
+    }
     let Some(Some(foster::ast::TypeExpr::Named(name, arguments))) =
         function.parameters.first().map(|p| &p.ty)
     else {
@@ -195,4 +204,34 @@ fn general_receiver(function: &foster::hir::Function, owner: &str, parameters: &
         && arguments.iter().zip(parameters).all(|(argument, parameter)| {
             matches!(argument, foster::ast::TypeExpr::Named(name, nested) if name == parameter && nested.is_empty())
         })
+}
+
+#[test]
+fn contract_audit_distinguishes_constrained_impl_methods() {
+    let compilation = foster::compile(
+        r#"
+import core.copy.Copy
+pub type Box<T> = { pub value: T }
+impl Box<T> {
+    pub func ordinary(self: Self) -> Int { 42 }
+    pub func generic<U>(self: Self, value: U) -> U [consume value] { move value }
+}
+impl Box<T & Copy> {
+    pub func copied(self: Self) -> T { self.value.copy() }
+}
+func main() -> Int { Box { value: 42 }.copied() }
+"#,
+    )
+    .unwrap();
+    let mut checked = 0;
+    for (_, function) in compilation.hir.functions.iter() {
+        let expected = match function.name.as_str() {
+            "Box.ordinary" | "Box.generic" => true,
+            "Box.copied" => false,
+            _ => continue,
+        };
+        assert_eq!(general_receiver(function, "Box", &["T".into()]), expected);
+        checked += 1;
+    }
+    assert_eq!(checked, 3);
 }
