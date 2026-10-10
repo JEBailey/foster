@@ -81,13 +81,16 @@ fn while_uses_existing_loop_and_guard_nodes() {
     let Stmt::Loop { body } = &parsed.functions[0].body[0] else {
         panic!("while was not desugared")
     };
-    let Stmt::Break { guard: Some(guard) } = &body[0] else {
+    let Stmt::Break {
+        guard: Some(guard), ..
+    } = &body[0]
+    else {
         panic!("missing precondition")
     };
     assert!(
         matches!(guard.unspanned(), Expr::Unary { operator: UnaryOp::Not, operand } if matches!(operand.unspanned(), Expr::Bool(false)))
     );
-    assert!(matches!(body[1], Stmt::Break { guard: None }));
+    assert!(matches!(body[1], Stmt::Break { guard: None, .. }));
 }
 
 #[test]

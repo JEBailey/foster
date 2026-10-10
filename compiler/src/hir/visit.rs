@@ -43,7 +43,7 @@ pub fn walk_statement<V: Visitor + ?Sized>(visitor: &mut V, hir: &PackageHir, st
             }
         }
         Stmt::Loop { body } => visitor.visit_block(hir, body),
-        Stmt::Break { guard } | Stmt::Continue { guard } => {
+        Stmt::Break { guard, .. } | Stmt::Continue { guard } => {
             if let Some(guard) = guard {
                 visitor.visit_expression(hir, *guard);
             }
@@ -115,7 +115,7 @@ pub fn walk_expression<V: Visitor + ?Sized>(visitor: &mut V, hir: &PackageHir, e
                 visitor.visit_expression(hir, *value);
             }
         }
-        Expr::Branch { subject, arms } => {
+        Expr::Branch { subject, arms, .. } => {
             if let Some(subject) = subject {
                 visitor.visit_expression(hir, *subject);
             }

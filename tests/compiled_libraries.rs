@@ -422,6 +422,14 @@ impl Sized {
     pub func score(self: Self) -> Int {
         :calculation { adjustment(self.length()) }
     }
+    pub func checked_score(self: Self) -> Int {
+        let result = 0
+        :validation {
+            break validation if self.length() == 0
+            result = adjustment(self.length())
+        }
+        result
+    }
 }
 "#,
     );
@@ -433,7 +441,11 @@ import api.*
 import static api.*
 pub type Local = & Sized & { count: Int }
 impl Local { pub func length(self: Self) -> Int { self.count } }
-func main() -> Int { Local { count: 40 }.score() }
+func main() -> Int {
+    assert(Local { count: 0 }.checked_score() == 0)
+    assert(Local { count: 40 }.checked_score() == 42)
+    Local { count: 40 }.score()
+}
 "#,
         )
         .unwrap();

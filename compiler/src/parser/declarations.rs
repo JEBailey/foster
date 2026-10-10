@@ -1126,7 +1126,13 @@ impl Parser {
                 }),
                 span: span.clone(),
             };
-            let mut body = crate::block::Block::single(Stmt::Break { guard: Some(guard) }, span);
+            let mut body = crate::block::Block::single(
+                Stmt::Break {
+                    label: None,
+                    guard: Some(guard),
+                },
+                span,
+            );
             for (statement, span) in self.block()?.iter_spanned() {
                 body.push(statement.clone(), span.clone());
             }
@@ -1136,7 +1142,14 @@ impl Parser {
             return self.for_loop();
         }
         if self.take(&TokenKind::Break) {
+            let label = if let TokenKind::Ident(name) = self.peek().kind.clone() {
+                self.advance();
+                Some(name)
+            } else {
+                None
+            };
             return Ok(Stmt::Break {
+                label,
                 guard: self.control_guard()?,
             });
         }

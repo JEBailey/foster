@@ -96,7 +96,7 @@ fn block(body: &crate::block::Block<Stmt>, outer: &Items, marker: &str) -> Optio
                         .and_then(|value| expression(value, &scope, marker))
                 })
             }
-            Stmt::Break { guard } | Stmt::Continue { guard } => guard
+            Stmt::Break { guard, .. } | Stmt::Continue { guard } => guard
                 .as_ref()
                 .and_then(|value| expression(value, &scope, marker)),
         };

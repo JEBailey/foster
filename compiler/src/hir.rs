@@ -210,6 +210,8 @@ pub enum Stmt {
         body: crate::block::Block<Stmt>,
     },
     Break {
+        /// None exits the nearest loop; Some identifies a named scope.
+        target: Option<ExprId>,
         guard: Option<ExprId>,
     },
     Continue {
@@ -294,6 +296,8 @@ pub enum Expr {
         right: ExprId,
     },
     Branch {
+        /// Identity for a named scope containing labelled exits, which yield unit.
+        label: Option<ExprId>,
         subject: Option<ExprId>,
         arms: Vec<BranchArm>,
     },

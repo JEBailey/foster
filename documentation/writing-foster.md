@@ -290,8 +290,9 @@ func main() -> Int {
 
 Keep the label and opening brace on the same line. Parenthesize a named scope used
 in a `branch`, `while`, or `for` header. References and borrowed closures cannot be
-used after their originating scope-local owners are destroyed. `return`, `break`,
-and `continue` keep their ordinary function and loop targets.
+used after their originating scope-local owners are destroyed. `break name` exits
+the nearest matching named scope with `()`. `return`, bare `break`, and `continue`
+keep their ordinary function and loop targets.
 
 ## Optional results, errors, and generic functions
 
@@ -625,5 +626,24 @@ func main() -> Int {
         Result.Ok(value) -> value
         Result.Error(_) -> 0
     }
+}
+```
+
+## Leave a named scope early
+
+Use `break name` to skip the rest of `:name { ... }`, including from a nested loop.
+The nearest matching enclosing label wins. A labelled exit yields `()`; normal
+completion of that scope must also yield `()`. Bare `break` still exits a loop.
+
+```foster
+func main() -> Int {
+    let answer = 0
+    :search {
+        loop {
+            answer = 42
+            break search
+        }
+    }
+    answer
 }
 ```

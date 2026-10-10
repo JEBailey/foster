@@ -288,6 +288,7 @@ pub enum Stmt {
         body: crate::block::Block<Stmt>,
     },
     Break {
+        label: Option<String>,
         guard: Option<Expr>,
     },
     Continue {
@@ -325,7 +326,7 @@ pub enum Expr {
     CodePoint(String),
     Symbol(String),
     Name(String),
-    /// A named lexical scope, with the same result and cleanup rules as an arm block.
+    /// A named lexical scope and optional early-exit target.
     NamedScope {
         name: String,
         body: crate::block::Block<Stmt>,

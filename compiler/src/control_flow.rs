@@ -17,7 +17,7 @@ pub(crate) fn summarize_arm(body: &crate::block::Block<hir::Stmt>) -> ArmFlow {
         }
         let guarded = match statement {
             hir::Stmt::Return { guard, .. } => guard.is_some(),
-            hir::Stmt::Break { guard } => guard.is_some(),
+            hir::Stmt::Break { guard, .. } => guard.is_some(),
             hir::Stmt::Continue { guard } => guard.is_some(),
             hir::Stmt::Expr(_) if Some(index) == last => {
                 flow.yields_value = true;
@@ -178,7 +178,13 @@ mod tests {
     fn branch_cfg_omits_completion_edges_after_unconditional_transfers() {
         let arms = [hir::BranchArm {
             test: hir::BranchTest::Wildcard,
-            body: crate::block::Block::single(hir::Stmt::Break { guard: None }, 0..0),
+            body: crate::block::Block::single(
+                hir::Stmt::Break {
+                    target: None,
+                    guard: None,
+                },
+                0..0,
+            ),
         }];
         let cfg = BranchCfg::new(&arms, false);
         assert_eq!(

@@ -1,0 +1,20 @@
+// Leave both search loops once a match is found, then finish the function.
+func main() -> Int {
+    let answer = 0
+    :search {
+        let row = 0
+        while row < 10 {
+            let column = 0
+            while column < 10 {
+                let candidate = row * 10 + column
+                if candidate == 42 {
+                    answer = candidate
+                    break search
+                }
+                column = column + 1
+            }
+            row = row + 1
+        }
+    }
+    answer
+}

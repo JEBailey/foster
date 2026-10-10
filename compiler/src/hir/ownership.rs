@@ -335,7 +335,7 @@ fn statement_expressions(statement: &Stmt) -> Vec<ExprId> {
             message.iter().copied().chain([*condition]).collect()
         }
         Stmt::Loop { .. } => Vec::new(),
-        Stmt::Break { guard } | Stmt::Continue { guard } => guard.iter().copied().collect(),
+        Stmt::Break { guard, .. } | Stmt::Continue { guard } => guard.iter().copied().collect(),
         Stmt::Destructure { value, .. }
         | Stmt::Bind { value, .. }
         | Stmt::Assign { value, .. }

@@ -180,6 +180,7 @@ impl FunctionLowerer<'_> {
             captures: Vec::new(),
             self_name: named.then(|| source_name.to_owned()),
             loop_depth: 0,
+            named_scopes: Vec::new(),
         };
         lowerer.lower_function(&source)?;
         let mut captures = lowerer

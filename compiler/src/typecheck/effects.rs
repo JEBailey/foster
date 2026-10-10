@@ -201,7 +201,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 hir::Stmt::Loop { body, .. } => {
                     self.walk_statement_block(body, false);
                 }
-                hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
+                hir::Stmt::Break { guard, .. } | hir::Stmt::Continue { guard } => {
                     if let Some(guard) = guard {
                         self.walk_expr(*guard);
                     }
@@ -295,7 +295,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     .iter()
                     .for_each(|(_, value)| self.walk_consumed_expr(*value));
             }
-            hir::Expr::Branch { subject, arms } => {
+            hir::Expr::Branch { subject, arms, .. } => {
                 if let Some(subject) = subject {
                     self.walk_expr(*subject);
                 }
@@ -465,7 +465,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 self.walk_expr(*left);
                 self.walk_expr(*right);
             }
-            hir::Expr::Branch { subject, arms } => {
+            hir::Expr::Branch { subject, arms, .. } => {
                 if let Some(subject) = subject {
                     self.walk_expr(*subject);
                 }

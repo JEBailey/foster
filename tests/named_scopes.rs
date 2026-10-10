@@ -119,3 +119,132 @@ fn named_scopes_format_without_losing_labels() {
     );
     assert_eq!(foster::formatter::format(&formatted).unwrap(), formatted);
 }
+
+#[test]
+fn labelled_exits_resolve_the_nearest_scope_and_leave_nested_loops() {
+    let source = r#"
+func main() -> Int {
+    let result = 0
+    let unit = :outer {
+        :outer {
+            break outer if false
+            result = 1
+            break outer
+            result = 100
+        }
+        result = result + 1
+        loop {
+            :inner {
+                loop {
+                    break outer if result == 2
+                    break
+                }
+            }
+            result = 100
+            break
+        }
+        result = 100
+    }
+    assert(unit == ())
+    result + 40
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(42)
+        );
+    }
+    let formatted = foster::formatter::format(source).unwrap();
+    assert!(formatted.contains("break outer if result == 2"));
+    assert_eq!(foster::run(&formatted).unwrap(), Value::Integer(42));
+    assert_eq!(foster::formatter::format(&formatted).unwrap(), formatted);
+}
+
+#[test]
+fn labelled_exits_reject_unknown_labels_and_crossing_function_boundaries() {
+    for source in [
+        "func main() { break missing }",
+        "func main() { :work { break missing } }",
+        "func main() { :work {}\nbreak work }",
+        "func main() { :work { let callback = [] () -> { break work } } }",
+        "func main() { :work { func inner() { break work } } }",
+        "func main() { let result = :work { break work if true\n42 }\nresult }",
+    ] {
+        assert!(foster::compile(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn labelled_exit_destroys_borrow_origins_and_retains_outer_storage() {
+    let source = r#"
+type Box = { value: Int }
+func main() -> Int {
+    let outer = Box { value: 42 }
+    let borrower = [(ref outer)]
+    :work {
+        let inner = Box { value: 1 }
+        borrower = [(ref inner)]
+        break work
+    }
+    borrower[0].value
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"), "{error:?}");
+    assert_eq!(
+        foster::run(&source.replace(
+            "borrower = [(ref inner)]",
+            "assert(borrower[0].value == 42)"
+        ))
+        .unwrap(),
+        Value::Integer(42)
+    );
+}
+
+#[test]
+fn guarded_scope_exits_evaluate_once_and_bare_transfers_keep_their_loop() {
+    assert_eq!(
+        foster::run(
+            r#"
+func main() -> Int {
+    let count = 0
+    :work {
+        break work if (:condition { count = count + 1
+false })
+        let iteration = 0
+        loop {
+            iteration = iteration + 1
+            :inner {
+                continue if iteration == 1
+                break
+            }
+        }
+        assert(iteration == 2)
+        count = count + 41
+    }
+    count
+}
+"#
+        )
+        .unwrap(),
+        Value::Integer(42)
+    );
+}
+
+#[test]
+fn labelled_exit_preserves_temporaries_of_the_enclosing_expression() {
+    let source = r#"
+type Box = { value: Int }
+func observe(value: Box, marker: ()) -> Int { value.value }
+func main() -> Int {
+    observe(Box { value: 42 }, :work {
+        let inner = Box { value: 1 }
+        break work
+    })
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}

@@ -24,7 +24,9 @@ fn block(body: &Block<Stmt>) -> bool {
             expression(condition) || message.as_ref().is_some_and(expression)
         }
         Stmt::Loop { body } => block(body),
-        Stmt::Break { guard } | Stmt::Continue { guard } => guard.as_ref().is_some_and(expression),
+        Stmt::Break { guard, .. } | Stmt::Continue { guard } => {
+            guard.as_ref().is_some_and(expression)
+        }
         Stmt::Destructure { value, .. }
         | Stmt::Bind { value, .. }
         | Stmt::Assign { value, .. }

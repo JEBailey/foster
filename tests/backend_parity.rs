@@ -3351,3 +3351,60 @@ fn numeric_conversions_agree_in_both_backends() {
         Ok("42"),
     );
 }
+
+#[test]
+fn labelled_scope_exits_cleanup_nested_loops_on_both_backends() {
+    check_stdout(
+        "labelled-scope-exits",
+        r#"
+import core.drop
+import core.drop.Drop
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self: Self) -> () { println(self.id) } }
+func main() -> Int {
+    :request {
+        let first = Resource { id: 1 }
+        loop {
+            let second = Resource { id: 2 }
+            :child {
+                let third = Resource { id: 3 }
+                break request if false
+                loop { break request if true }
+            }
+            panic("unreachable loop tail")
+        }
+        panic("unreachable scope tail")
+    }
+    println(4)
+    42
+}
+"#,
+        "3\n2\n1\n4\n42",
+    );
+}
+
+#[test]
+fn labelled_scope_exits_preserve_enclosing_expression_temporaries() {
+    check_stdout(
+        "labelled-scope-temporaries",
+        r#"
+import core.drop
+import core.drop.Drop
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self: Self) -> () { println(self.id) } }
+func observe(value: Resource, marker: ()) -> Int {
+    println(value.id)
+    value.id + 41
+}
+func main() -> Int {
+    observe(Resource { id: 1 }, :work {
+        observe(Resource { id: 2 }, :child {
+            let inner = Resource { id: 3 }
+            observe(Resource { id: 4 }, :exit { break work })
+        })
+    })
+}
+"#,
+        "4\n3\n2\n1\n1\n42",
+    );
+}

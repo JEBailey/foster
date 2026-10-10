@@ -232,6 +232,7 @@ pub(super) fn materialize(
             captures: Vec::new(),
             self_name: None,
             loop_depth: 0,
+            named_scopes: Vec::new(),
         }
         .lower_function(&candidate.source)?;
         // Nested closures retain the donor's lexical scope and specialize owner parameters.

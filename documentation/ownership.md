@@ -542,7 +542,7 @@ program outside the implemented model. The current status is:
 | Rules | Status | Production requirement |
 | --- | --- | --- |
 | 1-4, 6-7, 9-10, 14, 16 | Enforced, with bounded comparison-based dynamic-index disjointness and conservative erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
-| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, checked arithmetic and bounds, `try`, loop transfer, `await`, and cancellation | Preserve failure-edge coverage as new fallible operations are introduced; runtime cleanup invokes deinit. |
+| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, checked arithmetic and bounds, `try`, loop and labelled-scope transfer, `await`, and cancellation | Preserve failure-edge coverage as new fallible operations are introduced; runtime cleanup invokes deinit. |
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
 

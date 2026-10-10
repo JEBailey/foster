@@ -306,9 +306,17 @@ struct FunctionCompiler<'a> {
     spans: Vec<std::ops::Range<usize>>,
     next_register: u16,
     loops: Vec<LoopContext>,
+    named_scopes: HashMap<ExprId, NamedScopeContext>,
     scopes: Vec<Vec<Slot>>,
     temporary_scopes: Vec<Vec<Slot>>,
+    temporary_scope_depths: Vec<usize>,
     observable_cleanup: bool,
+}
+
+struct NamedScopeContext {
+    scope_depth: usize,
+    temporary_depth: usize,
+    breaks: Vec<usize>,
 }
 
 struct LoopContext {
@@ -336,8 +344,10 @@ impl Compiler<'_> {
             spans: Vec::new(),
             next_register: 0,
             loops: Vec::new(),
+            named_scopes: HashMap::new(),
             scopes: vec![Vec::new()],
             temporary_scopes: Vec::new(),
+            temporary_scope_depths: Vec::new(),
             observable_cleanup: self
                 .types
                 .dispatch
@@ -612,6 +622,18 @@ impl FunctionCompiler<'_> {
         } else {
             self.temporary_scopes.len().saturating_sub(1)
         };
+        self.end_temporaries_from(depth, preserved, span);
+    }
+
+    fn end_temporaries_from(
+        &mut self,
+        depth: usize,
+        preserved: Option<Slot>,
+        span: std::ops::Range<usize>,
+    ) {
+        if !self.observable_cleanup {
+            return;
+        }
         let registers: Vec<_> = self.temporary_scopes[depth..]
             .iter()
             .flatten()
@@ -624,6 +646,34 @@ impl FunctionCompiler<'_> {
             }
         }
     }
+    // Inner statement temporaries precede their locals; enclosing expression
+    // temporaries follow those locals and survive when outside the target scope.
+    fn end_named_scope(
+        &mut self,
+        scope_depth: usize,
+        temporary_depth: usize,
+        span: std::ops::Range<usize>,
+    ) {
+        if !self.observable_cleanup {
+            return;
+        }
+        let mut registers = Vec::new();
+        for depth in (scope_depth..self.scopes.len()).rev() {
+            for index in (temporary_depth..self.temporary_scopes.len()).rev() {
+                if self.temporary_scope_depths[index] == depth + 1 {
+                    registers.extend(self.temporary_scopes[index].iter().rev().copied());
+                }
+            }
+            registers.extend(self.scopes[depth].iter().rev().copied());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for register in registers {
+            if seen.insert(register) {
+                self.emit(Instruction::Drop { register }, span.clone());
+            }
+        }
+    }
+
     fn end_scopes(&mut self, depth: usize, preserved: Option<Slot>, span: std::ops::Range<usize>) {
         if !self.observable_cleanup {
             return;
@@ -712,6 +762,7 @@ impl FunctionCompiler<'_> {
         self.scopes.push(Vec::new());
         for (statement, statement_span) in statements.iter_spanned() {
             self.temporary_scopes.push(Vec::new());
+            self.temporary_scope_depths.push(self.scopes.len());
             let span = if statement_span.is_empty() {
                 fallback_span.clone()
             } else {
@@ -821,8 +872,8 @@ impl FunctionCompiler<'_> {
                         self.patch_target(jump, offsets[cfg.exit.0])?;
                     }
                 }
-                hir::Stmt::Break { guard } => {
-                    self.compile_break(*guard, span)?;
+                hir::Stmt::Break { guard, target } => {
+                    self.compile_break(*guard, *target, span)?;
                 }
                 hir::Stmt::Continue { guard } => {
                     self.compile_continue(*guard, span)?;
@@ -879,6 +930,7 @@ impl FunctionCompiler<'_> {
             }
             self.end_temporaries(false, Some(*result), statement_span.clone());
             self.temporary_scopes.pop();
+            self.temporary_scope_depths.pop();
         }
         if self.observable_cleanup && self.scopes.last().unwrap().contains(result) {
             let destination = self.allocate();
@@ -900,6 +952,7 @@ impl FunctionCompiler<'_> {
     fn compile_break(
         &mut self,
         guard: Option<ExprId>,
+        target: Option<ExprId>,
         span: std::ops::Range<usize>,
     ) -> Result<(), FosterError> {
         let skip = if let Some(guard) = guard {
@@ -914,17 +967,34 @@ impl FunctionCompiler<'_> {
         } else {
             None
         };
-        self.loops
-            .last()
-            .ok_or_else(|| FosterError::runtime("loop transfer has no enclosing loop"))?;
-        self.end_temporaries(false, None, span.clone());
-        self.end_scopes(self.loops.last().unwrap().scope_depth, None, span.clone());
+        let depth = if let Some(target) = target {
+            self.named_scopes[&target].scope_depth
+        } else {
+            self.loops
+                .last()
+                .expect("HIR validates loop transfers")
+                .scope_depth
+        };
+        let temporary_depth = target.map_or_else(
+            || self.temporary_scopes.len().saturating_sub(1),
+            |target| self.named_scopes[&target].temporary_depth,
+        );
+        if target.is_some() {
+            self.end_named_scope(depth, temporary_depth, span.clone());
+        } else {
+            self.end_temporaries_from(temporary_depth, None, span.clone());
+            self.end_scopes(depth, None, span.clone());
+        }
         let jump = self.emit(Instruction::Jump { target: 0 }, span);
-        self.loops
-            .last_mut()
-            .expect("loop context exists")
-            .breaks
-            .push(jump);
+        if let Some(target) = target {
+            self.named_scopes
+                .get_mut(&target)
+                .unwrap()
+                .breaks
+                .push(jump);
+        } else {
+            self.loops.last_mut().unwrap().breaks.push(jump);
+        }
         if let Some(skip) = skip {
             self.patch_target(skip, self.instructions.len())?;
         }

@@ -1065,7 +1065,11 @@ impl FunctionCompiler<'_> {
                 );
                 Ok(destination)
             }
-            hir::Expr::Branch { subject, arms } => self.branch(*subject, arms, span),
+            hir::Expr::Branch {
+                subject,
+                arms,
+                label,
+            } => self.branch(*subject, arms, *label, span),
             _ => Err(self.unsupported("expression")),
         }
     }
@@ -1444,6 +1448,7 @@ impl FunctionCompiler<'_> {
         &mut self,
         subject: Option<ExprId>,
         arms: &[hir::BranchArm],
+        label: Option<ExprId>,
         span: std::ops::Range<usize>,
     ) -> Result<Slot, FosterError> {
         let subject_type = subject
@@ -1490,7 +1495,21 @@ impl FunctionCompiler<'_> {
                 }
             })
             .transpose()?;
-        let destination = self.allocate();
+        let destination = if label.is_some() {
+            self.load_constant(Constant::Unit, span.clone())?
+        } else {
+            self.allocate()
+        };
+        if let Some(label) = label {
+            self.named_scopes.insert(
+                label,
+                super::NamedScopeContext {
+                    scope_depth: self.scopes.len(),
+                    temporary_depth: self.temporary_scopes.len(),
+                    breaks: Vec::new(),
+                },
+            );
+        }
         let cfg = crate::control_flow::BranchCfg::new(arms, subject.is_some());
         let mut labels = vec![None; cfg.node_count()];
         let mut pending = vec![Vec::new(); cfg.node_count()];
@@ -1616,6 +1635,12 @@ impl FunctionCompiler<'_> {
             }
         }
         self.finish_branch_cfg(&pending)?;
+        if let Some(label) = label {
+            let context = self.named_scopes.remove(&label).unwrap();
+            for jump in context.breaks {
+                self.patch_target(jump, self.instructions.len())?;
+            }
+        }
         Ok(destination)
     }
 

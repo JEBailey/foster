@@ -294,8 +294,13 @@ A named scope `:name { ... }` executes its block once and has the same result ru
 as a branch-arm block. Its local declarations do not escape. Remaining owned locals
 are cleaned up at scope exit, invalidating loans into their storage. Owned results
 may transfer out; borrowers remain subject to S-13. The label names the lexical storage group, binds no
-runtime value, and introduces no control-transfer target. Nested scopes and repeated
-labels are permitted.
+runtime value, and is a control-transfer target for `break name`. The nearest
+matching enclosing scope is selected; function and closure boundaries stop label
+resolution. The transfer produces `()` and destroys intermediate scopes, including
+nested loop scopes, in reverse binding order. A scope containing such a transfer
+must have a unit result on normal completion. Postfix guards evaluate once and
+transfer only when true. Bare `break` and `continue` still select the nearest loop.
+Nested scopes and repeated labels are permitted.
 
 `is Type` checks type conformance, including accessible structural fields,
 method signatures, receiver results, and effects. The matching arm retains the
@@ -307,7 +312,7 @@ and do not grant additional mutation permissions. See the
 [type-pattern rules](language-design.md#type-patterns) for supported
 targets and scope limits.
 
-`loop` repeats its body. `break` exits the nearest enclosing loop and `continue` begins that loop's
+`loop` repeats its body. Bare `break` exits the nearest enclosing loop and `continue` begins that loop's
 next iteration. Neither targets a branch. Both are invalid outside loops. `return` leaves the
 enclosing function; otherwise its final result expression determines its result. Initialization,
 move, and loan obligations apply to every reachable successor, including back-edges and early exits.

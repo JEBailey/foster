@@ -266,9 +266,27 @@ are cleaned up in reverse binding order when it exits, including control transfe
 and ordinary language failures. Moving a value out transfers its cleanup obligation;
 references and captured borrows must not outlive their origins.
 
-The label documents the lifetime boundary. It does not declare a variable, a runtime
-owner. It names a lexical storage group, and labels may repeat or nest. `return` still exits the
-function; `break` and `continue` still target the nearest loop. A bare `:name` remains
+The label names a lexical storage group and an early-exit target. `break name` exits
+the nearest enclosing scope with that label, including from nested loops or branches.
+It may use a postfix guard: `break name if condition`. An exit produces `()`; a scope
+containing a labelled exit must also produce `()` on normal completion. For example,
+validation can skip the remaining work without returning from the function:
+
+```foster
+func process(valid: Bool) -> Int {
+    let result = 0
+    :request {
+        break request if !valid
+        result = 42
+    }
+    result
+}
+```
+
+Labels may repeat or nest; the nearest matching label wins. They do not declare
+variables or runtime owners. Labels cannot be targeted from another function or
+closure, or after their scope has ended. `return` still exits the function; bare
+`break` and `continue` still target the nearest loop. A bare `:name` remains
 a symbol value. In a `branch`, `while`, or `for` header, parenthesize a named scope
 expression to distinguish its braces from the construct's body.
 

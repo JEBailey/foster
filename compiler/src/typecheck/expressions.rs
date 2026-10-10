@@ -171,7 +171,7 @@ impl Checker<'_> {
                     Ty::Never
                 }))
             }
-            hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
+            hir::Stmt::Break { guard, .. } | hir::Stmt::Continue { guard } => {
                 if let Some(guard) = guard {
                     self.check_expression(function, *guard, Ty::Bool)
                         .map_err(|error| {
@@ -313,7 +313,7 @@ impl Checker<'_> {
                     self.expression_can_break(*value)
                         || guard.is_some_and(|id| self.expression_can_break(id))
                 }
-                hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
+                hir::Stmt::Break { guard, .. } | hir::Stmt::Continue { guard } => {
                     guard.is_some_and(|id| self.expression_can_break(id))
                 }
                 hir::Stmt::Assert { condition, message } => {
@@ -326,7 +326,10 @@ impl Checker<'_> {
                 return true;
             }
             match statement {
-                hir::Stmt::Break { guard } => {
+                hir::Stmt::Break {
+                    guard,
+                    target: None,
+                } => {
                     if !guard.is_some_and(|id| {
                         matches!(self.hir.expressions[id], hir::Expr::Bool(false))
                     }) {
@@ -334,7 +337,13 @@ impl Checker<'_> {
                     }
                 }
                 hir::Stmt::Loop { body } if !self.loop_can_break(body) => break,
-                hir::Stmt::Return { guard: None, .. } | hir::Stmt::Continue { guard: None } => {
+                hir::Stmt::Return { guard: None, .. }
+                | hir::Stmt::Continue { guard: None }
+                | hir::Stmt::Break {
+                    guard: None,
+                    target: Some(_),
+                    ..
+                } => {
                     break;
                 }
                 hir::Stmt::Assert { condition, .. }
@@ -366,7 +375,7 @@ impl Checker<'_> {
 
     fn expression_can_break(&self, id: ExprId) -> bool {
         match &self.hir.expressions[id] {
-            hir::Expr::Branch { subject, arms } => {
+            hir::Expr::Branch { subject, arms, .. } => {
                 if subject.is_some_and(|id| self.expression_can_break(id)) {
                     return true;
                 }
@@ -437,7 +446,12 @@ impl Checker<'_> {
             return Ok(expected);
         }
 
-        if let hir::Expr::Branch { subject, arms } = expression {
+        if let hir::Expr::Branch {
+            subject,
+            arms,
+            label,
+        } = expression
+        {
             if arms.is_empty() {
                 return Err(self.error(function, "branch expression has no arms"));
             }
@@ -451,7 +465,10 @@ impl Checker<'_> {
             let subject_ty = subject
                 .map(|subject| self.infer_expression(function, subject))
                 .transpose()?;
-            let mut yields = false;
+            let mut yields = label.is_some();
+            if label.is_some() {
+                self.unify(expected.clone(), Ty::Unit, function)?;
+            }
             for arm in &arms {
                 if let hir::BranchTest::Condition(condition) = arm.test {
                     let condition = self.infer_expression(function, condition)?;
@@ -900,7 +917,11 @@ impl Checker<'_> {
                 operator,
                 right,
             } => self.infer_binary(function, left, operator, right)?,
-            hir::Expr::Branch { subject, arms } => {
+            hir::Expr::Branch {
+                subject,
+                arms,
+                label,
+            } => {
                 let result = self.fresh();
                 if arms.is_empty() {
                     return Err(self.error(function, "branch expression has no arms"));
@@ -915,7 +936,10 @@ impl Checker<'_> {
                 let subject_ty = subject
                     .map(|s| self.infer_expression(function, s))
                     .transpose()?;
-                let mut yields = false;
+                let mut yields = label.is_some();
+                if label.is_some() {
+                    self.unify(result.clone(), Ty::Unit, function)?;
+                }
                 for arm in &arms {
                     if let hir::BranchTest::Condition(condition) = arm.test {
                         let condition = self.infer_expression(function, condition)?;

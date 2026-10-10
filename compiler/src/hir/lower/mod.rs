@@ -369,6 +369,7 @@ impl PackageHir {
                     captures: Vec::new(),
                     self_name: None,
                     loop_depth: 0,
+                    named_scopes: Vec::new(),
                 };
                 lowerer.lower_function(source_function)?;
             }
@@ -403,6 +404,7 @@ impl PackageHir {
                     captures: Vec::new(),
                     self_name: None,
                     loop_depth: 0,
+                    named_scopes: Vec::new(),
                 };
                 lowerer.lower_function(&source)?;
             }
@@ -616,6 +618,7 @@ struct FunctionLowerer<'a> {
     captures: Vec<LocalId>,
     self_name: Option<String>,
     loop_depth: usize,
+    named_scopes: Vec<(String, ExprId, bool)>,
 }
 
 struct ClosureSource<'a> {

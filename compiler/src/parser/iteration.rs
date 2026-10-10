@@ -69,7 +69,13 @@ impl Parser {
                 },
                 BranchArm {
                     test: case("None", vec![]),
-                    body: crate::block::Block::single(Stmt::Break { guard: None }, span.clone()),
+                    body: crate::block::Block::single(
+                        Stmt::Break {
+                            label: None,
+                            guard: None,
+                        },
+                        span.clone(),
+                    ),
                 },
             ],
         };

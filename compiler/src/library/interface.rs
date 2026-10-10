@@ -634,7 +634,7 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
                     }
                 }
                 ast::Stmt::Loop { body } => block(body, names),
-                ast::Stmt::Break { guard } | ast::Stmt::Continue { guard } => {
+                ast::Stmt::Break { guard, .. } | ast::Stmt::Continue { guard } => {
                     if let Some(guard) = guard {
                         expression(guard, names);
                     }

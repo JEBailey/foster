@@ -172,11 +172,23 @@ impl FunctionLowerer<'_> {
                 self.locals = locals;
                 Ok(Stmt::Loop { body: lowered })
             }
-            ast::Stmt::Break { guard } => {
-                if self.loop_depth == 0 {
+            ast::Stmt::Break { label, guard } => {
+                let target = if let Some(name) = label {
+                    let index = self
+                        .named_scopes
+                        .iter()
+                        .rposition(|scope| scope.0 == *name)
+                        .ok_or_else(|| self.error(format!("no enclosing named scope `{name}`")))?;
+                    self.named_scopes[index].2 = true;
+                    Some(self.named_scopes[index].1)
+                } else {
+                    None
+                };
+                if target.is_none() && self.loop_depth == 0 {
                     return Err(self.error("`break` may only appear inside `loop`"));
                 }
                 Ok(Stmt::Break {
+                    target,
                     guard: guard
                         .as_ref()
                         .map(|guard| self.lower_expression(guard))
@@ -497,16 +509,21 @@ impl FunctionLowerer<'_> {
                 operator,
                 right,
             } => self.lower_logical(left, *operator, right)?,
-            ast::Expr::NamedScope { body, .. } => {
-                // An unconditional arm already supplies lexical name isolation, result
-                // provenance, and cleanup on normal and abrupt exits on both backends.
-                return self.lower_expression(&ast::Expr::Branch {
+            ast::Expr::NamedScope { name, body } => {
+                let scope = self.alloc_expression(Expr::Unit);
+                self.named_scopes.push((name.clone(), scope, false));
+                let branch = self.lower_expression(&ast::Expr::Branch {
                     subject: None,
                     arms: vec![ast::BranchArm {
                         test: ast::BranchTest::Wildcard,
                         body: body.clone(),
                     }],
-                });
+                })?;
+                let (_, _, used) = self.named_scopes.pop().unwrap();
+                if used && let Expr::Branch { label, .. } = &mut self.hir.expressions[branch] {
+                    *label = Some(scope);
+                }
+                return Ok(branch);
             }
             ast::Expr::Branch { subject, arms } => {
                 let subject = subject
@@ -580,6 +597,7 @@ impl FunctionLowerer<'_> {
                     });
                 }
                 Expr::Branch {
+                    label: None,
                     subject,
                     arms: lowered,
                 }
@@ -648,6 +666,7 @@ impl FunctionLowerer<'_> {
         };
 
         Ok(Expr::Branch {
+            label: None,
             subject: None,
             arms: vec![
                 BranchArm {

@@ -64,9 +64,11 @@ struct Builder<'a> {
     result_provenance: &'a std::collections::HashMap<FunctionId, super::ResultProvenance>,
     loans: Vec<LoanDefinition>,
     loops: Vec<LoopTargets>,
+    named_scopes: std::collections::HashMap<ExprId, (usize, usize, BlockId)>,
     lexical_scopes: Vec<Vec<hir::LocalId>>,
     next_temporary: usize,
     temporary_scopes: Vec<Vec<(ExprId, Place)>>,
+    temporary_scope_depths: Vec<usize>,
     active_temporaries: std::collections::HashMap<ExprId, Place>,
     remote_temporaries: std::collections::HashSet<ExprId>,
 }
@@ -96,9 +98,11 @@ impl<'a> Builder<'a> {
             result_provenance,
             loans: Vec::new(),
             loops: Vec::new(),
+            named_scopes: std::collections::HashMap::new(),
             lexical_scopes: Vec::new(),
             next_temporary: 0,
             temporary_scopes: Vec::new(),
+            temporary_scope_depths: Vec::new(),
             active_temporaries: std::collections::HashMap::new(),
             remote_temporaries: std::collections::HashSet::new(),
         }
@@ -277,13 +281,15 @@ impl<'a> Builder<'a> {
                 self.loops.pop();
                 self.current = blocks[cfg.exit.0];
             }
-            hir::Stmt::Break { guard } => {
-                let target = self
-                    .loops
-                    .last()
-                    .expect("HIR validates loop transfers")
-                    .break_to;
-                self.loop_transfer(*guard, target);
+            hir::Stmt::Break { guard, target } => {
+                let (depth, temporary_depth, exit) = if let Some(target) = target {
+                    let (depth, temporary_depth, exit) = self.named_scopes[target];
+                    (depth, Some(temporary_depth), exit)
+                } else {
+                    let target = self.loops.last().expect("HIR validates loop transfers");
+                    (target.scope_depth, None, target.break_to)
+                };
+                self.loop_transfer(*guard, exit, depth, temporary_depth);
             }
             hir::Stmt::Continue { guard } => {
                 let target = self
@@ -291,7 +297,7 @@ impl<'a> Builder<'a> {
                     .last()
                     .expect("HIR validates loop transfers")
                     .continue_to;
-                self.loop_transfer(*guard, target);
+                self.loop_transfer(*guard, target, self.loops.last().unwrap().scope_depth, None);
             }
             hir::Stmt::Bind { local, value } => {
                 self.begin_full_expression();
@@ -357,22 +363,65 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn loop_transfer(&mut self, guard: Option<ExprId>, target: BlockId) {
+    fn loop_transfer(
+        &mut self,
+        guard: Option<ExprId>,
+        target: BlockId,
+        depth: usize,
+        temporary_depth: Option<usize>,
+    ) {
         if let Some(guard) = guard {
             let transferred = self.block();
             let continued = self.block();
             self.full_expression_condition(guard, [transferred, continued]);
             self.current = transferred;
-            self.end_lexical_scopes(self.loops.last().unwrap().scope_depth, self.span(guard));
-            self.emit_active_temporary_destruction(self.span(guard));
+            self.transfer_cleanup(depth, temporary_depth, self.span(guard));
             self.terminate(Terminator::Goto(target));
             self.current = continued;
         } else {
             let span = self.hir.functions[self.function].span.clone();
-            self.end_lexical_scopes(self.loops.last().unwrap().scope_depth, span.clone());
-            self.emit_active_temporary_destruction(span);
+            self.transfer_cleanup(depth, temporary_depth, span);
             self.terminate(Terminator::Goto(target));
             self.current = self.block();
+        }
+    }
+
+    fn transfer_cleanup(
+        &mut self,
+        scope_depth: usize,
+        temporary_depth: Option<usize>,
+        span: std::ops::Range<usize>,
+    ) {
+        let Some(temporary_depth) = temporary_depth else {
+            self.end_lexical_scopes(scope_depth, span.clone());
+            self.emit_active_temporary_destruction(span);
+            return;
+        };
+        let mut places = Vec::new();
+        for depth in (scope_depth..self.lexical_scopes.len()).rev() {
+            for index in (temporary_depth..self.temporary_scopes.len()).rev() {
+                if self.temporary_scope_depths[index] == depth + 1 {
+                    places.extend(
+                        self.temporary_scopes[index]
+                            .iter()
+                            .rev()
+                            .map(|(_, place)| place.clone()),
+                    );
+                }
+            }
+            places.extend(
+                self.lexical_scopes[depth]
+                    .iter()
+                    .rev()
+                    .copied()
+                    .map(Self::local_place),
+            );
+        }
+        for place in places {
+            self.emit(Operation::Destroy {
+                place,
+                span: span.clone(),
+            });
         }
     }
 
@@ -382,12 +431,17 @@ impl<'a> Builder<'a> {
         context: Context,
         destination: Option<Place>,
     ) {
-        if let hir::Expr::Branch { subject, arms } = &self.hir.expressions[expression]
+        if let hir::Expr::Branch {
+            subject,
+            arms,
+            label,
+        } = &self.hir.expressions[expression]
             && let Some(destination) = destination
         {
+            let label = *label;
             let subject = *subject;
             let arms = arms.clone();
-            self.lower_branch_expression(subject, &arms, context, Some(destination));
+            self.lower_branch_expression(subject, &arms, context, Some(destination), label);
             return;
         }
 
@@ -746,12 +800,17 @@ impl<'a> Builder<'a> {
                     self.failure_edge(FailureOperation::Arithmetic { expression }, expression);
                 }
             }
-            hir::Expr::Branch { subject, arms } => {
+            hir::Expr::Branch {
+                subject,
+                arms,
+                label,
+            } => {
+                let label = *label;
                 let subject = *subject;
                 let arms = arms.clone();
                 let destination =
                     (!self.copy_expression(expression)).then(|| self.reserve_temporary(expression));
-                self.lower_branch_expression(subject, &arms, context, destination);
+                self.lower_branch_expression(subject, &arms, context, destination, label);
             }
             hir::Expr::Closure { captures, .. } => {
                 // A reference capture exposes storage to later calls through the
@@ -810,6 +869,12 @@ impl<'a> Builder<'a> {
         };
         self.lexical_scopes
             .push(arm.body.iter().flat_map(Self::statement_locals).collect());
+        // A labelled exit must also destroy temporaries from the final expression
+        // of each intermediate arm, without touching its enclosing expression.
+        let scoped_temporaries = !self.named_scopes.is_empty();
+        if scoped_temporaries {
+            self.begin_full_expression();
+        }
         for statement in arm.body.iter().take(arm.body.len() - 1) {
             self.statement(statement, false);
         }
@@ -821,6 +886,9 @@ impl<'a> Builder<'a> {
             }
         } else {
             self.statement(last, false);
+        }
+        if scoped_temporaries {
+            self.end_full_expression(self.branch_arm_span(arm));
         }
         self.end_lexical_scopes(
             self.lexical_scopes.len() - 1,
@@ -859,6 +927,7 @@ impl<'a> Builder<'a> {
         arms: &[hir::BranchArm],
         context: Context,
         destination: Option<Place>,
+        label: Option<ExprId>,
     ) {
         let boolean_subject = subject.filter(|subject| {
             self.types
@@ -890,6 +959,16 @@ impl<'a> Builder<'a> {
 
         let cfg = crate::control_flow::BranchCfg::new(arms, subject.is_some());
         let blocks = cfg.nodes().map(|_| self.block()).collect::<Vec<_>>();
+        if let Some(label) = label {
+            self.named_scopes.insert(
+                label,
+                (
+                    self.lexical_scopes.len(),
+                    self.temporary_scopes.len(),
+                    blocks[cfg.exit().0],
+                ),
+            );
+        }
         if let Some(subject) = boolean_subject {
             let target = |value| {
                 let matched = arms.iter().position(|arm| match &arm.test {
@@ -1017,6 +1096,9 @@ impl<'a> Builder<'a> {
             }
         }
         self.current = blocks[cfg.exit().0];
+        if let Some(label) = label {
+            self.named_scopes.remove(&label);
+        }
     }
 
     fn branch_arm_span(&self, arm: &hir::BranchArm) -> std::ops::Range<usize> {
@@ -1597,6 +1679,7 @@ impl<'a> Builder<'a> {
             hir::Expr::Branch {
                 subject: None,
                 arms,
+                ..
             } if arms.len() == 2 && arms[0].body.len() == 1 && arms[1].body.len() == 1 => {
                 match (
                     &arms[0].test,
@@ -1640,6 +1723,7 @@ impl<'a> Builder<'a> {
             hir::Expr::Branch {
                 subject: None,
                 arms,
+                ..
             } if arms.len() == 2 && arms[0].body.len() == 1 && arms[1].body.len() == 1 => {
                 if let (
                     BranchTest::Condition(test),
@@ -1805,6 +1889,7 @@ impl<'a> Builder<'a> {
     /// evaluating one complete source expression.
     fn begin_full_expression(&mut self) {
         self.temporary_scopes.push(Vec::new());
+        self.temporary_scope_depths.push(self.lexical_scopes.len());
     }
 
     /// Destroys full-expression temporaries in reverse creation order.
@@ -1813,6 +1898,7 @@ impl<'a> Builder<'a> {
             .temporary_scopes
             .pop()
             .expect("temporary scopes are balanced");
+        self.temporary_scope_depths.pop();
         for (expression, place) in temporaries.into_iter().rev() {
             self.emit(Operation::Destroy {
                 place,
