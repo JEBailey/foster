@@ -1,0 +1,50 @@
+import core.bytes
+import core.option.Option
+import core.result.Result
+import std.io
+import std.io.Stdin
+
+func main() -> Int {
+    let input = Stdin.new()
+    branch input.read(0) {
+        Result.Error(error) -> {
+            assert(error.operation == "stdin_read")
+        }
+        Result.Ok(_) -> panic("invalid maximum succeeded")
+    }
+    branch input.read_line() {
+        Result.Ok(Option.Some(line)) -> {
+            assert(line == "héllo")
+        }
+        _ -> panic("missing first line")
+    }
+    branch input.read_line() {
+        Result.Ok(Option.Some(line)) -> {
+            assert(line == "")
+        }
+        _ -> panic("missing blank line")
+    }
+    branch input.read_line() {
+        Result.Error(error) -> {
+            assert(error.operation == "stdin_read_line")
+        }
+        _ -> panic("invalid UTF-8 succeeded")
+    }
+    branch input.read_line() {
+        Result.Ok(Option.Some(line)) -> {
+            assert(line == "last\r")
+        }
+        _ -> panic("missing unterminated line")
+    }
+    branch input.read_line() {
+        Result.Ok(Option.None) -> ()
+        _ -> panic("expected EOF")
+    }
+    branch io::read_all(input) {
+        Result.Ok(contents) -> {
+            assert(contents.empty?)
+        }
+        _ -> panic("EOF binary read failed")
+    }
+    0
+}

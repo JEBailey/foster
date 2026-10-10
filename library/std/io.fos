@@ -7,6 +7,8 @@
 //! Use Reader or Writer when only one direction is needed and Duplex for both.
 //! Resource replacement belongs to std.resource.Writable rather than stream Writer.
 //! Flushing makes output visible to the destination; it does not promise durable storage.
+//! Use `Stdin.new()` for blocking command-line input, including redirected files and pipes.
+//! Adapters share the invocation's input stream; reads advance it and never close it.
 
 import core.bytes.buffer.ByteBuffer
 
@@ -15,6 +17,68 @@ import core.bytes.Bytes
 import core.bytes.HexError
 
 import core.result.Result
+import core.option.Option
+import core.string.String
+
+/// Blocking standard input implementing the binary `Reader<IoError>` contract.
+/// Construction performs no I/O. All instances share the host input cursor; avoid
+/// concurrent reads when line boundaries matter. Dropping an instance does not close stdin.
+pub type Stdin = & Reader<IoError> & {}
+
+impl Stdin {
+    /// Creates an adapter for the installed host provider's standard input.
+    pub func new() -> Self {
+        Stdin {}
+    }
+
+    /// Reads at most `maximum` bytes, blocking until input, EOF, or an error.
+    /// `maximum` must be in `1..1048576` inclusive; invalid requests return `IoError`.
+    /// Empty bytes mean EOF. Bytes consumed before a subsequent error are not restored.
+    pub func read(self: Self, maximum: Int) -> Result<Bytes, IoError> [mut self] {
+        input_read(maximum)
+    }
+
+    /// Reads one UTF-8 line, removing LF and an immediately preceding CR.
+    /// Returns `Some("")` for an empty line and `None` only at EOF before any bytes.
+    /// A final unterminated line is returned, preserving a trailing CR. Invalid UTF-8
+    /// returns `IoError` after consuming the line. Reads may block; memory grows with
+    /// line length. An I/O error discards any partial line already consumed.
+    pub func read_line(self: Self) -> Result<Option<String>, IoError> [mut self] {
+        let buffer = ByteBuffer.empty()
+        loop {
+            let chunk = try self.read(1)
+            if chunk.empty? {
+                return Result.Ok(Option.None) if buffer.empty?()
+                return input_line((move buffer).freeze())
+            }
+            if chunk[0].int == 10 {
+                let contents = (move buffer).freeze()
+                if contents.length > 0 {
+                    if contents[contents.length - 1].int == 13 {
+                        return input_line(contents.slice(0, contents.length - 1))
+                    }
+                }
+                return input_line(move contents)
+            }
+            buffer.extend(chunk)
+        }
+    }
+}
+
+/// Requests a bounded read from the invocation's shared standard input provider.
+func input_read(maximum: Int) -> Result<Bytes, IoError> = intrinsic("io.stdin_read")
+
+/// Decodes a consumed line without converting decoding failures into EOF.
+func input_line(contents: Bytes) -> Result<Option<String>, IoError> [consume contents] {
+    branch String.from_utf8(move contents) {
+        Result.Ok(text) -> Result.Ok(Option.Some(move text))
+        Result.Error(error) -> Result.Error(IoError {
+            operation: "stdin_read_line"
+            path: ""
+            message: error.message
+        })
+    }
+}
 
 /// Timed readiness for reading or accepting. Zero polls without waiting; negative timeouts fail.
 /// True includes EOF and pending I/O errors. Readiness is advisory when consumers race.

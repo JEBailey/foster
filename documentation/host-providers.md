@@ -9,9 +9,13 @@ independent: an in-memory network provider may return its own stream and listene
 `Reader`, `Writer`, `Accepting`, or readiness contracts. `RuntimeHost.new()` supplies the standard
 `File`, `Connection`, and `Listener` adapters. Constructing a file resource does not perform I/O.
 
-At the embedding boundary, `foster_host::HostProvider` supplies filesystem, TCP, wall-clock, and
+At the embedding boundary, `foster_host::HostProvider` supplies standard input, filesystem, TCP, wall-clock, and
 monotonic-clock operations. Every existing filesystem and TCP intrinsic in both execution modes
 uses this boundary, including metadata, directory mutations, canonicalization, readiness, and close.
+`stdin_read(maximum)` supplies bytes for `std.io.Stdin` in both execution modes. Empty bytes
+mean EOF; reads may block and must not exceed the requested maximum. The context validates
+requests in `1..1048576` inclusive before calling the provider. Unimplemented standard input
+returns an `IoError` rather than reading from the operating system.
 `SystemHost` implements the default operating-system services. Unimplemented provider methods return
 errors instead of falling back to the OS. Existing path predicates still return false on host errors;
 fallible file operations retain `IoError`. The existing infallible wall-clock and monotonic

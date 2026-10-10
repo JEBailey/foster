@@ -150,7 +150,7 @@ func main() -> Int { 0 }
         "missing documentation: {}",
         undocumented.join(", ")
     );
-    assert_eq!(checked, 1145);
+    assert_eq!(checked, 1155);
 
     let mut modules = 0;
     let mut types = 0;

@@ -355,6 +355,11 @@ extern "C" fn foster_rt_v5_host_call_string_ints(
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v5_host_call_int(operation: i64, value: i64) -> usize {
     let response = foster_host_blocking(move || match operation {
+        92 => foster_host_io(
+            "stdin_read",
+            "",
+            foster_host().stdin_read(value).map(FosterHostValue::Bytes),
+        ),
         48 => foster_host_network(
             "accept",
             foster_network_accept(value).map(FosterHostValue::Integer),

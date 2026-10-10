@@ -514,6 +514,12 @@ impl HostServices for super::host::HostContext {
                     string_record,
                 ))
             }
+            (Builtin::IoStdinRead, [Value::Integer(maximum)]) => Ok(io_result(
+                "stdin_read",
+                "",
+                self.stdin_read(*maximum).map(Value::bytes),
+                string_record,
+            )),
             (Builtin::IoWriteBytes, [path, bytes])
                 if path.string_bytes().is_some() && bytes.bytes_value().is_some() =>
             {

@@ -88,7 +88,7 @@ share a navigation entry but retain separate signatures and descriptions.
 | Scalar helpers | [core.int](core/int.fos), [core.float](core/float.fos), [core.bool](core/bool.fos), [core.symbol](core/symbol.fos) |
 | Common contracts | [core.copy](core/copy.fos), [core.drop](core/drop.fos), [core.ordering](core/ordering.fos), [core.functions](core/functions.fos) |
 | Files and resource locations | [std.fs](std/fs.fos), [std.path](std/path.fos), [std.uri](std/uri.fos), [std.resource](std/resource.fos) |
-| Streams and TCP | [std.io](std/io.fos), [std.net.tcp](std/net/tcp.fos) |
+| Streams, standard input, and TCP | [std.io](std/io.fos), [std.net.tcp](std/net/tcp.fos) |
 | Application-supplied file and network providers | [std.host](std/host.fos), [provider guide](../documentation/host-providers.md) |
 | Futures, subprocesses, and process inputs | [core.future](core/future.fos), [std.process](std/process.fos), [std.env](std/env.fos) |
 | Time and calendars | [std.time](std/time.fos), [civil](std/time/civil.fos), [zone](std/time/zone.fos), [format](std/time/format.fos) |
@@ -96,6 +96,11 @@ share a navigation entry but retain separate signatures and descriptions.
 | Configuration | [std.toml](std/toml.fos) |
 | JSON trees, parsing, and serialization | [std.json](std/json.fos), [usage guide](../documentation/json.md) |
 | SHA-256 digests | [std.crypto.sha256](std/crypto/sha256.fos) |
+
+For terminal input or redirected pipes, use `std.io.Stdin.new()`. Its `read_line()`
+returns `Result<Option<String>, IoError>`: an empty line is `Some("")`, while EOF is
+`None`. `read(maximum)` reads raw bytes and works with `std.io.read_all`.
+See [the standard input example](../examples/standard_input.fos) for a line echo command.
 
 [core.unicode](core/unicode.fos) and its generated tables support the public text
 APIs. Applications generally use `String` and `CodePoint` methods instead.

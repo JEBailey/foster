@@ -1,0 +1,17 @@
+import core.option.Option
+import core.result.Result
+import std.io.Stdin
+
+// Reads UTF-8 lines from the terminal, a pipe, or a redirected file.
+func main() -> () {
+    let input = Stdin.new()
+    loop {
+        branch input.read_line() {
+            Result.Ok(Option.Some(line)) -> println(line)
+            Result.Ok(Option.None) -> {
+                return ()
+            }
+            Result.Error(error) -> panic(error.message)
+        }
+    }
+}

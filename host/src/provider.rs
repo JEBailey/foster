@@ -76,6 +76,13 @@ pub enum NetworkResponse {
 /// Shared provider boundary for VM machines and native programs. Unimplemented
 /// capabilities fail closed; implementations may delegate selectively to SystemHost.
 pub trait HostProvider: Send + Sync {
+    /// Reads up to `maximum` stdin bytes; empty means EOF. Calls may block.
+    fn stdin_read(&self, _maximum: usize) -> io::Result<Vec<u8>> {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "standard input capability is unavailable",
+        ))
+    }
     fn filesystem(&self, _request: FileRequest<'_>) -> io::Result<FileResponse> {
         Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -100,6 +107,25 @@ pub struct HostContext {
     provider: Arc<dyn HostProvider>,
 }
 impl HostContext {
+    pub fn stdin_read(&self, maximum: i64) -> io::Result<Vec<u8>> {
+        let maximum = usize::try_from(maximum)
+            .ok()
+            .filter(|value| (1..=1024 * 1024).contains(value))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "read maximum must be between 1 and 1048576",
+                )
+            })?;
+        let bytes = self.provider.stdin_read(maximum)?;
+        if bytes.len() > maximum {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "provider exceeded standard input read maximum",
+            ));
+        }
+        Ok(bytes)
+    }
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         let host = SystemHost::new(directory);
         Self {
@@ -326,6 +352,19 @@ impl FileHost<'_> {
 }
 
 impl HostProvider for SystemHost {
+    fn stdin_read(&self, maximum: usize) -> io::Result<Vec<u8>> {
+        use std::io::Read;
+        let mut bytes = vec![0; maximum];
+        let mut input = std::io::stdin().lock();
+        let count = loop {
+            match input.read(&mut bytes) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                result => break result?,
+            }
+        };
+        bytes.truncate(count);
+        Ok(bytes)
+    }
     fn filesystem(&self, request: FileRequest<'_>) -> io::Result<FileResponse> {
         use std::io::{Seek, SeekFrom};
         match request {

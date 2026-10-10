@@ -574,6 +574,7 @@ impl Checker<'_> {
             }
             Builtin::IoWriteText => (vec![string.clone(), string.clone()], io_result(Ty::Unit)?),
             Builtin::IoReadBytes => (vec![string.clone()], io_result(bytes.clone())?),
+            Builtin::IoStdinRead => (vec![Ty::Int], io_result(bytes.clone())?),
             Builtin::IoWriteBytes => (vec![string.clone(), bytes.clone()], io_result(Ty::Unit)?),
             Builtin::IoReadRange => (
                 vec![string.clone(), Ty::Int, Ty::Int],

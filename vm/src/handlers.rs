@@ -110,6 +110,7 @@ pub(crate) fn handler(builtin: crate::intrinsics::Builtin) -> Option<BuiltinHand
         crate::intrinsics::Builtin::IoReadText => builtin_handler!(Host, IoReadText),
         crate::intrinsics::Builtin::IoWriteText => builtin_handler!(Host, IoWriteText),
         crate::intrinsics::Builtin::IoReadBytes => builtin_handler!(Host, IoReadBytes),
+        crate::intrinsics::Builtin::IoStdinRead => builtin_handler!(Host, IoStdinRead),
         crate::intrinsics::Builtin::IoWriteBytes => builtin_handler!(Host, IoWriteBytes),
         crate::intrinsics::Builtin::IoListDirectory => builtin_handler!(Host, IoListDirectory),
         crate::intrinsics::Builtin::IoExists => builtin_handler!(Host, IoExists),

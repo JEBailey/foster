@@ -174,6 +174,7 @@ fn call_native_host(
             )
         }
         Builtin::RandomBytes
+        | Builtin::IoStdinRead
         | Builtin::TcpAccept
         | Builtin::TcpCloseListener
         | Builtin::TcpCloseConnection => call(
@@ -407,6 +408,7 @@ fn lower_native_host_success(
             native_host_string(builder, module, response, abi::host_string::VALUE, 0)
         }
         Builtin::IoReadBytes
+        | Builtin::IoStdinRead
         | Builtin::IoReadRange
         | Builtin::TcpReadBytes
         | Builtin::RandomBytes => {

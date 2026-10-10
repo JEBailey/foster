@@ -276,6 +276,12 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
             &["path"],
             "Reads raw bytes through the host filesystem boundary.",
         ),
+        Builtin::IoStdinRead => builtin(
+            "input_read",
+            "input_read(maximum: Int) -> Result<Bytes, IoError>",
+            &["maximum"],
+            "Reads standard input bytes through the host provider. Maximum must be between 1 and 1048576; empty bytes mean EOF.",
+        ),
         Builtin::IoWriteBytes => builtin(
             "IoHost.write_bytes",
             "IoHost.write_bytes(path: String, contents: Bytes) -> Result<(), IoError>",

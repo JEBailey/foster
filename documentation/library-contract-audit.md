@@ -46,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **159 public type declarations**.
+The library exposes **160 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -113,6 +113,7 @@ The library exposes **159 public type declarations**.
 | [std.ffi.CResource](../library/std/ffi.fos) | None; private `deinit` performs owned cleanup |
 | [std.fs.File](../library/std/fs.fos) | `Resource<paths::Path>`, `ReadWrite<IoError>`, `TextWriter<IoError>`, `PositionedReadable<IoError>`, `Appendable<IoError>`, `Sized<IoError>` |
 | [std.io.IoError](../library/std/io.fos) | None |
+| [std.io.Stdin](../library/std/io.fos) | `Reader<IoError>` |
 | [std.host.FileProvider](../library/std/host.fos) | None |
 | [std.host.Connector](../library/std/host.fos) | None |
 | [std.host.ListenerProvider](../library/std/host.fos) | None |
