@@ -11,13 +11,30 @@ use crate::intrinsics::Intrinsic;
 
 mod string_accessors;
 
-// Watcher URIs use ordinary paths while resolved artifacts can have Windows'
-// verbatim prefix. Normalize lexically so deletion events work without stat'ing
-// a file that no longer exists, and dependency paths containing `..` still match.
+// Watcher URIs can use Windows junctions or short names while resolved artifacts use
+// canonical paths. Resolve the nearest existing ancestor so deleted inputs still match,
+// then normalize verbatim prefixes, case, and lexical dependency components.
 pub fn watch_path(path: &Path) -> std::path::PathBuf {
     #[cfg(windows)]
     let normalized = {
-        let text = path.to_string_lossy().replace('/', "\\");
+        let mut ancestor = path.to_owned();
+        let mut missing = Vec::new();
+        let resolved = loop {
+            if let Ok(mut canonical) = fs::canonicalize(&ancestor) {
+                for component in missing.iter().rev() {
+                    canonical.push(component);
+                }
+                break canonical;
+            }
+            let Some(name) = ancestor.file_name() else {
+                break path.to_owned();
+            };
+            missing.push(name.to_owned());
+            if !ancestor.pop() {
+                break path.to_owned();
+            }
+        };
+        let text = resolved.to_string_lossy().replace('/', "\\");
         let text = if let Some(unc) = text.strip_prefix("\\\\?\\UNC\\") {
             format!("\\\\{unc}")
         } else {
@@ -1654,6 +1671,39 @@ fn is_ignored_directory(entry: &DirEntry) -> bool {
 #[cfg(test)]
 mod cache_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn watched_junction_paths_match_existing_and_deleted_inputs() {
+        let root = directory("junction");
+        let physical = root.join("physical");
+        let alias = root.join("alias");
+        fs::create_dir(&physical).unwrap();
+        // Fixed relative arguments avoid passing user-controlled paths through cmd parsing.
+        let created = std::process::Command::new("cmd.exe")
+            .args(["/c", "mklink", "/J", "alias", "physical"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(
+            created.status.success(),
+            "{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
+        let nested = physical.join("nested");
+        fs::create_dir(&nested).unwrap();
+        let input = nested.join("sample.flib");
+        fs::write(&input, b"input").unwrap();
+        let watched = alias.join("nested/sample.flib");
+        let resolved = fs::canonicalize(&input).unwrap();
+        assert_eq!(watch_path(&watched), watch_path(&resolved));
+        fs::remove_file(&input).unwrap();
+        fs::remove_dir(&nested).unwrap();
+        assert_eq!(watch_path(&watched), watch_path(&resolved));
+        fs::remove_dir(&alias).unwrap();
+        fs::remove_dir(&physical).unwrap();
+        fs::remove_dir(&root).unwrap();
+    }
 
     fn directory(label: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(

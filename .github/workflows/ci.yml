@@ -37,6 +37,9 @@ jobs:
       FOSTER_NATIVE_CACHE_DIR: ${{ github.workspace }}/target/native-runtime-cache
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
       - uses: dtolnay/rust-toolchain@stable
         id: toolchain
       - uses: Swatinem/rust-cache@v2
@@ -47,8 +50,14 @@ jobs:
           path: target/native-runtime-cache
           key: native-runtime-${{ runner.os }}-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('runtime/**', 'host/src/**', 'compiler/src/native/abi.rs', 'compiler/src/native/runtime*.rs') }}
           restore-keys: native-runtime-${{ runner.os }}-${{ steps.toolchain.outputs.cachekey }}-
-      - run: cargo test
-      - run: cargo test --release --test backend_parity
+      - name: Unit tests and examples
+        run: cargo test --lib --bins --examples
+      - name: Integration tests (two targets in parallel)
+        run: python tools/integration_tests.py --jobs 2
+      - name: Documentation tests
+        run: cargo test --doc
+      - name: Release backend parity
+        run: cargo test --release --test backend_parity
 
   ownership-gates:
     runs-on: ubuntu-latest

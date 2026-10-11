@@ -32,6 +32,10 @@ another build directory, and `--threads N` to set threads within each binary.
 By default, each binary receives CPU count divided by jobs (at least one).
 Start with two jobs and reduce threads if native builds exhaust memory.
 
+CI uses this runner with two concurrent integration targets on Linux and Windows.
+Unit tests, binary/example tests, documentation tests, and release backend parity
+run in separate steps, preserving the coverage of the complete Cargo test suite.
+
 Checked compilations retain baseline and optimized shared SSA separately. VM and
 native lowering reuse that verified boundary without repeating sealing or shared
 optimization. Backend-specific lowering and both optimization modes still run.
