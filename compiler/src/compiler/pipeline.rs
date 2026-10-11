@@ -20,7 +20,11 @@ pub(super) fn check(package: Package) -> Result<Compilation, CompileError> {
         }
     }
     check_impl(package, false, None)
-        .map(|data| Compilation { data })
+        .map(|data| Compilation {
+            data,
+            shared: Default::default(),
+            optimized_shared: Default::default(),
+        })
         .map_err(|errors| errors.into_iter().next().unwrap())
 }
 

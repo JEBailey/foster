@@ -22,3 +22,24 @@ The Windows C header integration test also reuses its native `cbind` executable 
 `target/cbind-test-cache`. Its key includes the compiler executable and the tool's
 Foster sources and manifest. Every header import, generated binding, and runtime
 check still runs. Delete that cache directory to force a fresh native tool build.
+
+For bounded concurrency across integration targets, run
+`python tools/integration_tests.py --jobs 2`. The runner builds all integration
+targets once, runs every target even if another fails, and returns a failing exit
+code if any target fails. Logs are saved under `target/integration-logs`.
+Use repeated `--test NAME` options to select targets, `--target-dir PATH` to reuse
+another build directory, and `--threads N` to set threads within each binary.
+By default, each binary receives CPU count divided by jobs (at least one).
+Start with two jobs and reduce threads if native builds exhaust memory.
+
+Checked compilations retain baseline and optimized shared SSA separately. VM and
+native lowering reuse that verified boundary without repeating sealing or shared
+optimization. Backend-specific lowering and both optimization modes still run.
+Native builds also identify each Rust compiler once per process. CI caches Cargo
+build artifacts and the native runtime; runtime cache identities still validate
+the toolchain, source, dependencies, and optimization mode before reuse.
+
+To inspect the remaining costs, set `FOSTER_COMPILER_PROFILE=1` and run a selected
+test with `--nocapture`. JSON timing reports on stderr distinguish shared IR,
+VM lowering, native emission, and linking. Timing reports include nested phases;
+do not add inclusive timings together.

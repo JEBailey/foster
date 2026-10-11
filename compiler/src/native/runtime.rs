@@ -183,7 +183,9 @@ pub(super) fn link_executable(
             artifact.releases_result,
         );
     let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let library = runtime_cache::library(&rustc, &runtime_source(), options)?;
+    let library = crate::compiler::profile::measure("native.runtime_cache", || {
+        runtime_cache::library(&rustc, &runtime_source(), options)
+    })?;
     link_source(artifact, output, options, &source, Some(&library))
 }
 
@@ -230,7 +232,7 @@ fn link_source(
             .arg("--extern")
             .arg(format!("foster_native_runtime={}", library.display()));
     }
-    let result = command
+    command
         .arg("--edition=2024")
         .arg(&shim)
         .arg("-C")
@@ -242,14 +244,15 @@ fn link_source(
         .arg("-C")
         .arg(format!("link-arg={}", object.display()))
         .arg("-o")
-        .arg(&output)
-        .output()
-        .map_err(|error| {
+        .arg(&output);
+    let result = crate::compiler::profile::measure("native.linker", || command.output()).map_err(
+        |error| {
             native_error(format!(
                 "cannot run `{}` to link the executable: {error}",
                 Path::new(&rustc).display()
             ))
-        })?;
+        },
+    )?;
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(native_error(format!(

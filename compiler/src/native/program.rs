@@ -86,7 +86,7 @@ pub fn prepare_with_options(
     options: CompileOptions,
 ) -> Result<NativeProgram<'_>, FosterError> {
     crate::compiler::profile::compilation("native.prepare", || {
-        let shared = std::sync::Arc::new(crate::codegen::compile(compilation)?);
+        let shared = compilation.shared_program(false)?;
         crate::compiler::profile::measure("native.prepare", || {
             prepare_shared(compilation, shared, options.optimize)
         })
@@ -101,9 +101,9 @@ fn prepare_shared(
     // Baseline preparation borrows the verified boundary. Optimized preparation
     // copies the mutable graph on write and shares unchanged analysis evidence.
     let optimized_shared = optimized
-        .then(|| canonical.as_ref().clone().optimized())
+        .then(|| compilation.shared_program(true))
         .transpose()?;
-    let shared = optimized_shared.as_ref().unwrap_or(canonical.as_ref());
+    let shared = optimized_shared.as_deref().unwrap_or(canonical.as_ref());
     let program = shared.program.clone();
     let facts = &shared.facts;
     let mut layouts =

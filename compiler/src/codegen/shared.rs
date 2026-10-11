@@ -93,6 +93,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn checked_compilation_reuses_each_verified_optimization_mode() {
+        let compilation = crate::compile("func main() -> Int { 20 + 22 }").unwrap();
+        let baseline = compilation.shared_program(false).unwrap();
+        let optimized = compilation.shared_program(true).unwrap();
+        assert!(Arc::ptr_eq(
+            &baseline,
+            &compilation.shared_program(false).unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            &optimized,
+            &compilation.shared_program(true).unwrap()
+        ));
+        assert!(!Arc::ptr_eq(&baseline, &optimized));
+        let before = format!("{:?}", baseline.functions());
+        for optimize in [true, false, true] {
+            crate::vm::compile_with_options(&compilation, crate::vm::CompileOptions { optimize })
+                .unwrap();
+            crate::native::prepare_with_options(
+                &compilation,
+                crate::native::CompileOptions { optimize },
+            )
+            .unwrap();
+        }
+        assert_eq!(before, format!("{:?}", baseline.functions()));
+    }
+
+    #[test]
     fn scalar_folding_preserves_nan_and_signed_zero_semantics() {
         for (expression, expected) in [
             ("(0.0 / 0.0) == (0.0 / 0.0)", false),

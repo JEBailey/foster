@@ -22,6 +22,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy
       - run: cargo clippy --all-targets -- -D warnings
 
   test:
@@ -30,9 +33,20 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      FOSTER_NATIVE_CACHE_DIR: ${{ github.workspace }}/target/native-runtime-cache
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        id: toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: tests
+      - uses: actions/cache@v4
+        with:
+          path: target/native-runtime-cache
+          key: native-runtime-${{ runner.os }}-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('runtime/**', 'host/src/**', 'compiler/src/native/abi.rs', 'compiler/src/native/runtime*.rs') }}
+          restore-keys: native-runtime-${{ runner.os }}-${{ steps.toolchain.outputs.cachekey }}-
       - run: cargo test
       - run: cargo test --release --test backend_parity
 
@@ -41,5 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ownership
       - run: cargo test --test ownership_soundness
       - run: cargo test --release --test ownership_soundness

@@ -45,14 +45,9 @@ fn compile_backend(
     options: CompileOptions,
 ) -> Result<Program, FosterError> {
     use crate::compiler::profile::measure;
-    let shared = crate::codegen::compile(compilation)?;
-    let shared = if options.optimize {
-        shared.optimized()?
-    } else {
-        shared
-    };
+    let shared = compilation.shared_program(options.optimize)?;
     let mut program = measure("vm.lower", || {
-        crate::codegen::vm::lower_shared_program(shared)
+        crate::codegen::vm::lower_shared_program(shared.as_ref().clone())
     })
     .map_err(|error| FosterError::runtime(format!("shared VM lowering failed: {error}")))?;
     if options.optimize {

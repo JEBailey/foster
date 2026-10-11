@@ -21,6 +21,12 @@ use crate::package::Package;
 #[derive(Debug)]
 pub struct Compilation {
     data: CompilationData,
+    shared: std::sync::OnceLock<
+        Result<std::sync::Arc<crate::codegen::shared::SharedProgram>, FosterError>,
+    >,
+    optimized_shared: std::sync::OnceLock<
+        Result<std::sync::Arc<crate::codegen::shared::SharedProgram>, FosterError>,
+    >,
 }
 
 /// Read-only analysis shared by strict compilation and editor recovery.
@@ -33,6 +39,30 @@ pub struct CompilationData {
     pub ownership: crate::ownership::Program,
 }
 impl Compilation {
+    /// Reuse verified, immutable SSA across backends and optimization modes.
+    pub(crate) fn shared_program(
+        &self,
+        optimize: bool,
+    ) -> Result<std::sync::Arc<crate::codegen::shared::SharedProgram>, FosterError> {
+        if optimize {
+            self.optimized_shared
+                .get_or_init(|| {
+                    self.shared_program(false)?
+                        .as_ref()
+                        .clone()
+                        .optimized()
+                        .map(std::sync::Arc::new)
+                })
+                .clone()
+        } else {
+            self.shared
+                .get_or_init(|| {
+                    crate::codegen::program::compile_with_locals(self, None)
+                        .map(std::sync::Arc::new)
+                })
+                .clone()
+        }
+    }
     /// Consume the checked guarantee to obtain independently editable analysis.
     pub fn into_analysis(self) -> CompilationData {
         self.data

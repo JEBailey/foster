@@ -2,6 +2,27 @@
 use super::*;
 use std::ffi::OsStr;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Mutex, OnceLock};
+
+fn toolchain_version(rustc: &OsStr) -> Result<Vec<u8>, FosterError> {
+    static VERSIONS: OnceLock<Mutex<HashMap<std::ffi::OsString, Vec<u8>>>> = OnceLock::new();
+    let mut versions = VERSIONS.get_or_init(Default::default).lock().unwrap();
+    if let Some(version) = versions.get(rustc) {
+        return Ok(version.clone());
+    }
+    let version = Command::new(rustc)
+        .arg("-vV")
+        .output()
+        .map_err(|error| native_error(format!("cannot identify native Rust toolchain: {error}")))?;
+    if !version.status.success() {
+        return Err(native_error(format!(
+            "cannot identify native Rust toolchain: {}",
+            String::from_utf8_lossy(&version.stderr).trim()
+        )));
+    }
+    versions.insert(rustc.to_owned(), version.stdout.clone());
+    Ok(version.stdout)
+}
 
 const LIBRARY: &str = "libfoster_native_runtime.rlib";
 // Keep runtime exports in the object pulled in by initialization. The Foster object is passed as
@@ -37,22 +58,13 @@ pub(super) fn library(
     source: &str,
     options: CompileOptions,
 ) -> Result<PathBuf, FosterError> {
-    let version = Command::new(rustc)
-        .arg("-vV")
-        .output()
-        .map_err(|error| native_error(format!("cannot identify native Rust toolchain: {error}")))?;
-    if !version.status.success() {
-        return Err(native_error(format!(
-            "cannot identify native Rust toolchain: {}",
-            String::from_utf8_lossy(&version.stderr).trim()
-        )));
-    }
-    let version_text = String::from_utf8_lossy(&version.stdout);
+    let version = toolchain_version(rustc)?;
+    let version_text = String::from_utf8_lossy(&version);
     let host = version_text
         .lines()
         .find_map(|line| line.strip_prefix("host: "))
         .ok_or_else(|| native_error("native Rust toolchain did not report a host target"))?;
-    let identity = identity(rustc, &version.stdout, source, options);
+    let identity = identity(rustc, &version, source, options);
     cached_library(
         &cache_directory()?,
         &identity,

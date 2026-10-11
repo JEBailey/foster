@@ -74,7 +74,9 @@ impl Program {
 pub fn compile(
     compilation: &crate::compiler::Compilation,
 ) -> Result<super::shared::SharedProgram, crate::error::FosterError> {
-    compile_with_locals(compilation, None)
+    compilation
+        .shared_program(false)
+        .map(|shared| shared.as_ref().clone())
 }
 
 pub(crate) fn compile_with_locals(
