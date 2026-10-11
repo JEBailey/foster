@@ -1,18 +1,63 @@
 //! End-to-end coverage of Clang discovery, Foster mapping, and generated bindings.
 #[cfg(all(windows, target_arch = "x86_64"))]
-#[test]
-fn foster_header_tool_builds_scalars_and_reports_unsupported_declarations() {
-    use std::{fs, process::Command};
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let directory = std::env::temp_dir().join(format!("foster header tool {}", std::process::id()));
+fn cached_cbind(root: &std::path::Path) -> std::path::PathBuf {
+    use std::{
+        fs,
+        hash::{DefaultHasher, Hash, Hasher},
+        io::Read,
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    // Cache only the tool build; every invocation and generated binding remains under test.
+    // Hash the compiler itself to invalidate embedded library and backend changes as well.
+    let mut identity = DefaultHasher::new();
+    "cbind-integration-cache-v1".hash(&mut identity);
+    let mut compiler = fs::File::open(env!("CARGO_BIN_EXE_foster")).unwrap();
+    let mut buffer = [0; 65536];
+    loop {
+        let count = compiler.read(&mut buffer).unwrap();
+        if count == 0 {
+            break;
+        }
+        identity.write(&buffer[..count]);
+    }
+    let sources = root.join("tools/cbind");
+    let mut inputs = walkdir::WalkDir::new(&sources)
+        .into_iter()
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| {
+            matches!(
+                path.extension().and_then(|value| value.to_str()),
+                Some("fos" | "toml")
+            )
+        })
+        .collect::<Vec<_>>();
+    inputs.sort();
+    for input in inputs {
+        input.strip_prefix(&sources).unwrap().hash(&mut identity);
+        fs::read(input).unwrap().hash(&mut identity);
+    }
+    let directory = root.join("target/cbind-test-cache");
     fs::create_dir_all(&directory).unwrap();
-    let tool = directory.join("cbind.exe");
+    let executable = directory.join(format!("{:016x}.exe", identity.finish()));
+    if executable.is_file() {
+        eprintln!("using cached native cbind tool");
+        return executable;
+    }
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let temporary = directory.join(format!("building-{}-{nonce}.exe", std::process::id()));
     let compiled = Command::new(env!("CARGO_BIN_EXE_foster"))
         .arg("build")
-        .arg(root.join("tools/cbind"))
+        .arg(&sources)
         .arg("--native")
         .arg("--output")
-        .arg(&tool)
+        .arg(&temporary)
         .output()
         .unwrap();
     assert!(
@@ -21,6 +66,25 @@ fn foster_header_tool_builds_scalars_and_reports_unsupported_declarations() {
         String::from_utf8_lossy(&compiled.stdout),
         String::from_utf8_lossy(&compiled.stderr)
     );
+    // Publish completed builds only. Another test process may have won the same cache key.
+    if let Err(error) = fs::rename(&temporary, &executable) {
+        assert!(
+            executable.is_file(),
+            "cannot publish native cbind tool: {error}"
+        );
+        fs::remove_file(temporary).unwrap();
+    }
+    executable
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+#[test]
+fn foster_header_tool_builds_scalars_and_reports_unsupported_declarations() {
+    use std::{fs, process::Command};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let directory = std::env::temp_dir().join(format!("foster header tool {}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let tool = cached_cbind(root);
     let header = directory.join("sample header.h");
     let source = directory.join("sample source.c");
     let output = directory.join("sample.dll");

@@ -14,8 +14,19 @@ fn main() {
 fn compile_tools() {
     println!("cargo:rustc-check-cfg=cfg(foster_native_formatter)");
     println!("cargo:rerun-if-changed=tools/driver");
+    println!("cargo:rerun-if-changed=tools/cbind");
     println!("cargo:rerun-if-changed=library");
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo supplies OUT_DIR"));
+    let bridge = fs::read_to_string("tools/cbind/src/bridge.fos")
+        .expect("embedded C bridge source must exist");
+    let bridge = format!(
+        "{bridge}\nfunc main(args: Arguments) -> List<String> {{\nbranch args.values[0] {{\n\"build\" -> [build(args.values[1], args.values[2], args.values[3], args.values[4])]\n_ -> generate_bridge(args.values[1], args.values[2])\n}}\n}}\n"
+    );
+    let compilation = foster_compiler::compile(&bridge).expect("embedded C bridge check");
+    let program =
+        foster_compiler::vm::compile(&compilation).expect("embedded C bridge compilation");
+    let bytes = foster_compiler::vm::encode_program(&program).expect("embedded C bridge encoding");
+    fs::write(output.join("c_bridge.fbc"), bytes).expect("embedded C bridge must be writable");
     for name in ["init", "project", "format", "documentation"] {
         let path = format!("tools/driver/{name}.fos");
         let source = fs::read_to_string(&path).expect("embedded tool source must exist");

@@ -54,3 +54,10 @@ harness = false
 members = ["runtime", "host", "bytecode", "vm", "compiler", "compiler/bootstrap"]
 default-members = [".", "runtime", "host", "bytecode", "vm", "compiler"]
 resolver = "3"
+
+# Integration tests execute the compiler and VM extensively, including native code generation.
+[profile.test]
+opt-level = 2
+
+[profile.test.build-override]
+opt-level = 2

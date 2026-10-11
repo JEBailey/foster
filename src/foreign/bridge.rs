@@ -10,14 +10,16 @@ pub struct Manifest {
 }
 fn generator() -> Result<&'static crate::vm::VerifiedProgram, String> {
     static PROGRAM: OnceLock<Result<crate::vm::VerifiedProgram, String>> = OnceLock::new();
-    PROGRAM.get_or_init(|| {
-        let source = concat!(
-            include_str!("../../tools/cbind/src/bridge.fos"),
-            "\nfunc main(args: Arguments) -> List<String> {\nbranch args.values[0] {\n\"build\" -> [build(args.values[1], args.values[2], args.values[3], args.values[4])]\n_ -> generate_bridge(args.values[1], args.values[2])\n}\n}\n"
-        );
-        let compilation = crate::compile(source).map_err(|e| e.to_string())?;
-        crate::vm::compile(&compilation).and_then(|program| program.into_verified()).map_err(|e| e.to_string())
-    }).as_ref().map_err(Clone::clone)
+    PROGRAM
+        .get_or_init(|| {
+            crate::vm::VerifiedProgram::decode(include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/c_bridge.fbc"
+            )))
+            .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 fn invoke(arguments: Vec<String>) -> Result<Vec<String>, String> {
     let args = crate::entry::CommandArguments::new("foster bridge", arguments);
