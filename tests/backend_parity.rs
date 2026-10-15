@@ -2,6 +2,90 @@
 use foster::{native, vm};
 
 #[test]
+fn typed_buffers_agree_in_both_backends() {
+    check(
+        "typed-buffers",
+        include_str!("fixtures/programs/typed_buffers.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn typed_buffer_access_preserves_live_aliases() {
+    check(
+        "typed-buffer-aliases",
+        include_str!("fixtures/programs/typed_buffer_aliases.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn typed_buffer_static_calls_reuse_projected_references() {
+    check(
+        "typed-buffer-static-access",
+        include_str!("fixtures/programs/typed_buffer_static_access.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn typed_buffer_bounds_fail_in_both_backends() {
+    for (name, body, message) in [
+        (
+            "negative-size",
+            "buffer::integers(-1, 0)\n0",
+            "Buffer length cannot be negative",
+        ),
+        ("read-upper", "buffer::integers(2, 0).read(2)", "index"),
+        ("read-negative", "buffer::integers(2, 0).read(-1)", "index"),
+        (
+            "write-empty",
+            "let b = buffer::integers(0, 0)\nb.write(0, 42)\n0",
+            "index",
+        ),
+        (
+            "write-upper",
+            "let b = buffer::integers(2, 0)\nb.write(2, 42)\n0",
+            "index",
+        ),
+        (
+            "write-negative-byte",
+            "let b = buffer::bytes(2, Byte.unchecked(0))\nb.write(-1, Byte.unchecked(255))\n0",
+            "index",
+        ),
+        (
+            "read-empty-float",
+            "buffer::floats(0, 0.0).read(0)\n0",
+            "index",
+        ),
+        (
+            "view-range",
+            "buffer::integers(2, 0).view(1, 3)\n0",
+            "Buffer view out of bounds",
+        ),
+        (
+            "view-write",
+            "let b = buffer::integers(4, 0)\nlet v = b.view(1, 2)\nv.write(1, 42)\n0",
+            "Buffer view index out of bounds",
+        ),
+    ] {
+        let source =
+            format!("import core.buffer\nimport core.byte\nfunc main() -> Int {{\n{body}\n}}");
+        check_process_output(&format!("typed-buffer-{name}"), &source, "", Some(message));
+    }
+}
+
+#[test]
+fn typed_buffer_read_failure_cleans_the_owner_once() {
+    check_process_output(
+        "typed-buffer-read-cleanup",
+        include_str!("fixtures/programs/typed_buffer_read_cleanup.fos"),
+        "owner dropped",
+        Some("index"),
+    );
+}
+
+#[test]
 fn list_clear_preserves_reuse_and_runs_element_cleanup() {
     check_stdout(
         "list-clear",

@@ -689,15 +689,38 @@ impl Machine {
                     destination,
                     record,
                     fields,
-                    ..
+                    type_arguments,
                 } => {
+                    let metadata = &self.program.metadata.records[record];
                     let values = fields
                         .iter()
                         .map(|(name, register)| {
-                            read(frame, *register).map(|value| (name.clone(), value))
+                            // Reference fields retain their storage identity, as enum payloads do.
+                            // Reading through the handle here would silently store a snapshot.
+                            let field = &metadata.fields()[metadata
+                                .layout()
+                                .index(name)
+                                .expect("verified record field")];
+                            let field_type = match &field.ty {
+                                crate::codegen::types::ExecutableType::Generic(name) => metadata
+                                    .parameters
+                                    .iter()
+                                    .position(|parameter| parameter == name)
+                                    .and_then(|index| type_arguments.get(index))
+                                    .unwrap_or(&field.ty),
+                                ty => ty,
+                            };
+                            let value = if matches!(
+                                field_type,
+                                crate::codegen::types::ExecutableType::Reference(_)
+                            ) {
+                                bind(frame, *register)
+                            } else {
+                                read(frame, *register)?
+                            };
+                            Ok((name.clone(), value))
                         })
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
-                    let metadata = &self.program.metadata.records[record];
                     let fields = RecordFields::partial(metadata.layout().clone(), values)?;
                     if let Some(function) = self
                         .program

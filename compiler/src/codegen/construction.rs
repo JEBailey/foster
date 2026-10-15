@@ -53,7 +53,9 @@ fn opcode_intrinsic_instruction(
             object: receiver,
             value,
         },
-        OpcodeIntrinsic::ListClear
+        OpcodeIntrinsic::BufferRead
+        | OpcodeIntrinsic::BufferWrite
+        | OpcodeIntrinsic::ListClear
         | OpcodeIntrinsic::ListCanCopyAt
         | OpcodeIntrinsic::ListCopyAt => {
             unreachable!("copy dispatch uses two instructions")
@@ -412,6 +414,22 @@ impl Compiler<'_> {
                 );
                 destination
             }
+            Some(opcode @ (OpcodeIntrinsic::BufferRead | OpcodeIntrinsic::BufferWrite)) => {
+                let destination = lower.allocate();
+                let parameters = function
+                    .parameters
+                    .iter()
+                    .map(|parameter| lower.locals[&parameter.local])
+                    .collect::<Vec<_>>();
+                lower.emit_buffer_intrinsic(
+                    opcode,
+                    destination,
+                    parameters[0],
+                    &parameters[1..],
+                    function.span.clone(),
+                )?;
+                destination
+            }
             Some(OpcodeIntrinsic::ListClear) => {
                 let destination = lower.allocate();
                 let receiver = lower.locals[&function.parameters[0].local];
@@ -719,6 +737,66 @@ impl FunctionCompiler<'_> {
             self.expression(expression)
         }
     }
+    // Buffer construction only admits scalar elements. Index already supplies the
+    // checked scalar load; storing through the field's place preserves aliases.
+    fn emit_buffer_intrinsic(
+        &mut self,
+        intrinsic: OpcodeIntrinsic,
+        destination: Slot,
+        receiver: Slot,
+        arguments: &[Slot],
+        span: std::ops::Range<usize>,
+    ) -> Result<(), FosterError> {
+        let writing = intrinsic == OpcodeIntrinsic::BufferWrite;
+        if arguments.len() != if writing { 2 } else { 1 } {
+            return Err(self.unsupported("buffer intrinsic arity"));
+        }
+        let storage = self.allocate();
+        self.emit(
+            Instruction::LoadField {
+                destination: storage,
+                object: receiver,
+                field: "storage".into(),
+                by_reference: writing,
+            },
+            span.clone(),
+        );
+        if writing {
+            self.emit(
+                Instruction::StoreIndex {
+                    object: storage,
+                    index: arguments[0],
+                    source: arguments[1],
+                },
+                span.clone(),
+            );
+            let unit = self.load_constant(Constant::Unit, span.clone())?;
+            self.emit(
+                Instruction::Move {
+                    destination,
+                    source: unit,
+                },
+                span.clone(),
+            );
+        } else {
+            self.emit(
+                Instruction::Index {
+                    destination,
+                    object: storage,
+                    index: arguments[0],
+                },
+                span.clone(),
+            );
+        }
+        // These are instruction-local projections. Release their bindings before
+        // the same VM registers are reused on the next loop iteration.
+        self.emit(Instruction::Drop { register: storage }, span.clone());
+        if !self.locals.values().any(|local| *local == receiver) {
+            self.emit(Instruction::Drop { register: receiver }, span);
+        }
+        Ok(())
+    }
+
     fn emit_list_intrinsic(
         &mut self,
         intrinsic: OpcodeIntrinsic,

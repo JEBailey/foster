@@ -1,0 +1,62 @@
+import core.buffer
+import core.buffer.Buffer
+import core.byte
+import core.option.Option
+
+type Frame = {
+    pixels: Buffer<Int>
+}
+
+func update(values: ref[values] Buffer<Int>, index: Int, value: Int) -> () {
+    values.write(index, value)
+}
+
+func read_reference(values: ref[values] Buffer<Int>, index: Int) -> Int {
+    values.read(index)
+}
+
+func main() -> Int {
+    let ints = buffer::integers(8, -7)
+    let floats = buffer::floats(4, 1.25)
+    let bytes = buffer::bytes(3, Byte.unchecked(255))
+    assert(ints.length() == 8 && ints.read(7) == -7, "buffer check 1")
+    assert(floats.read(3) == 1.25 && bytes.read(2).int == 255, "buffer check 2")
+    let view = ints.view(2, 5)
+    view.write(1, 42)
+    assert(view.length() == 3 && view.read(1) == 42, "buffer check 3")
+    assert(ints.read(3) == 42 && ints.read(0) == -7, "buffer check 4")
+    branch view.borrow(1) {
+        Option.Some(element) -> {
+            element = 43
+        }
+        Option.None -> panic("missing buffer element")
+    }
+    assert(ints.read(3) == 43, "buffer check 5")
+    floats.write(0, -2.5)
+    bytes.write(1, Byte.unchecked(128))
+    assert(floats.read(0) == -2.5 && bytes.read(1).int == 128, "buffer check 6")
+    assert(buffer::integers(0, 0).length() == 0, "buffer check 7")
+    assert(buffer::floats(0, 0.0).length() == 0, "buffer check 8")
+    assert(buffer::bytes(0, Byte.unchecked(0)).length() == 0, "buffer check 9")
+    assert(ints.view(8, 8).length() == 0, "buffer check 10")
+    assert(view.borrow(-1) == Option.None, "buffer check 11")
+    assert(view.borrow(3) == Option.None, "buffer check 12")
+    for index in 0.range(8) {
+        ints.write(index, index * 2)
+    }
+    assert(ints.read(7) == 14, "buffer check 13")
+    update(ref ints, 7, 99)
+    assert(view.read(0) == 4 && ints.read(7) == 99, "buffer check 14")
+    let frame = Frame {
+        pixels: buffer::integers(4, 0)
+    }
+    for index in 0.range(4) {
+        frame.pixels.write(index, index + 39)
+    }
+    assert(frame.pixels.read(3) == 42, "buffer check 15")
+    assert(read_reference(ref frame.pixels, 3) == 42, "read through a projected reference")
+    assert(buffer::integers(2, 42).read(1) == 42, "temporary integer owner")
+    assert(buffer::floats(2, 1.25).read(1) == 1.25, "temporary float owner")
+    assert(buffer::bytes(2, Byte.unchecked(255)).read(1).int == 255, "temporary byte owner")
+    42
+}

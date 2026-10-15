@@ -39,6 +39,9 @@ macro_rules! builtin_handler {
 
 pub(crate) fn handler(builtin: crate::intrinsics::Builtin) -> Option<BuiltinHandler> {
     match builtin {
+        crate::intrinsics::Builtin::BufferIntegers => builtin_handler!(Direct, BufferIntegers),
+        crate::intrinsics::Builtin::BufferFloats => builtin_handler!(Direct, BufferFloats),
+        crate::intrinsics::Builtin::BufferBytes => builtin_handler!(Direct, BufferBytes),
         crate::intrinsics::Builtin::ListClear => builtin_handler!(Direct, ListClear),
         crate::intrinsics::Builtin::CCallbackNew => builtin_handler!(ConsumeFirst, CCallbackNew),
         crate::intrinsics::Builtin::CCallbackRelease => builtin_handler!(Direct, CCallbackRelease),
@@ -49,6 +52,7 @@ pub(crate) fn handler(builtin: crate::intrinsics::Builtin) -> Option<BuiltinHand
         crate::intrinsics::Builtin::ProcessRelease => builtin_handler!(Direct, ProcessRelease),
         crate::intrinsics::Builtin::ProcessWait => builtin_handler!(Direct, ProcessWait),
         crate::intrinsics::Builtin::CExchange => builtin_handler!(Direct, CExchange),
+        crate::intrinsics::Builtin::CExchangeBuffer => builtin_handler!(Direct, CExchangeBuffer),
         crate::intrinsics::Builtin::CClose => builtin_handler!(Direct, CClose),
         crate::intrinsics::Builtin::CRelease => builtin_handler!(Direct, CRelease),
         crate::intrinsics::Builtin::CEncodeInt => builtin_handler!(Direct, CEncodeInt),

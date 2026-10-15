@@ -305,6 +305,8 @@ pub(super) fn intrinsic_verification_type(program: &Program, ty: IntrinsicType) 
             .string_record
             .map(nominal_record)
             .unwrap_or(ExecutableType::Unknown),
+        IntrinsicType::ListInteger => ExecutableType::List(Box::new(ExecutableType::Integer)),
+        IntrinsicType::ListFloat => ExecutableType::List(Box::new(ExecutableType::Float)),
         IntrinsicType::ListByte => ExecutableType::List(Box::new(ExecutableType::Byte)),
     }
 }

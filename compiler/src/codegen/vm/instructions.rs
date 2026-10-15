@@ -90,6 +90,7 @@ pub(super) fn lower_instruction(
         | ir::Instruction::StringToBytes { .. }
         | ir::Instruction::BoxValue { .. }
         | ir::Instruction::UnboxValue { .. }
+        | ir::Instruction::BorrowedFieldIndex { .. }
         | ir::Instruction::ConvertResultError { .. } => {
             return Err(LowerError(
                 "native representation conversion has no portable VM opcode".into(),

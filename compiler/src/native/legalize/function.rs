@@ -93,6 +93,32 @@ pub(in crate::native) fn lower_shared_to_native_ir(
     let mut blocks = Vec::with_capacity(shared.blocks.len());
     let mut cleanup_edges = Vec::new();
     let mut failure_cleanup = FailureCleanup::default();
+    let mut uses = HashMap::<ir::Value, usize>::new();
+    for block in &shared.blocks {
+        let mut operands = block
+            .instructions
+            .iter()
+            .flat_map(|entry| entry.instruction.operands())
+            .collect::<Vec<_>>();
+        match &block.terminator {
+            ir::Terminator::Return(value) => operands.push(*value),
+            ir::Terminator::Jump { arguments, .. } => operands.extend(arguments),
+            ir::Terminator::Branch {
+                condition,
+                then_arguments,
+                else_arguments,
+                ..
+            } => {
+                operands.push(*condition);
+                operands.extend(then_arguments);
+                operands.extend(else_arguments);
+            }
+            ir::Terminator::Unreachable => {}
+        }
+        for value in operands {
+            *uses.entry(value).or_default() += 1;
+        }
+    }
 
     for (block_index, block) in shared.blocks.iter().enumerate() {
         let mut state = HashMap::<u16, ir::Value>::new();
@@ -119,8 +145,17 @@ pub(in crate::native) fn lower_shared_to_native_ir(
             arguments: vec![],
         });
         spans.push(block.terminator_span.clone());
-        for (instruction, span) in block
-            .instructions
+        // Fuse before recording failure cleanup: the backing allocation is
+        // borrowed by the operation and must never enter the owned temporaries.
+        let borrowed_reads = borrow_scalar_field_reads(
+            &block.instructions,
+            &mut values,
+            &uses,
+            &mut entry_seeds,
+            &reference_homes,
+            environment,
+        );
+        for (instruction, span) in borrowed_reads
             .iter()
             .map(|entry| (&entry.instruction, &entry.span))
         {
@@ -736,4 +771,89 @@ fn remove_shared_home(
     } else {
         false
     }
+}
+
+fn borrow_scalar_field_reads(
+    instructions: &[ir::SpannedInstruction],
+    values: &mut ir::ValueBuilder,
+    uses: &HashMap<ir::Value, usize>,
+    entry_seeds: &mut Vec<ir::Value>,
+    reference_homes: &HashMap<u16, ir::Value>,
+    environment: NativeIrEnvironment<'_>,
+) -> Vec<ir::SpannedInstruction> {
+    let mut result = Vec::with_capacity(instructions.len());
+    let mut cursor = 0;
+    while cursor < instructions.len() {
+        if let [load, remaining @ ..] = &instructions[cursor..]
+            && let ir::Instruction::Portable(ir::PortableInstruction::LoadField {
+                destination: storage,
+                object,
+                field,
+                by_reference: false,
+            }) = &load.instruction
+            // Lifetime lowering may end a borrowed receiver immediately after
+            // the field projection. Such a marker owns nothing. Never cross an
+            // owned receiver's release or any other observable instruction.
+            && let Some(read_position) = remaining.iter().position(|entry| !matches!(
+                &entry.instruction,
+                ir::Instruction::Portable(ir::PortableInstruction::Drop { value })
+                    if values.hint(value.index()).is_some_and(|home| reference_homes.contains_key(&home))
+            ))
+            && let read = &remaining[read_position]
+            && let ir::Instruction::Portable(ir::PortableInstruction::Index {
+                destination,
+                object: indexed,
+                index,
+            }) = &read.instruction
+            && let tail = &remaining[read_position + 1..]
+            // Literal indices may have scalar lifetime markers before the
+            // backing storage is dropped. Preserve those markers after the read.
+            && let Some(drop_position) = tail.iter().position(|entry| !matches!(
+                &entry.instruction,
+                ir::Instruction::Portable(ir::PortableInstruction::Drop { value })
+                    if matches!(values[value.index()], NativeType::Unit | NativeType::Bool
+                        | NativeType::Int | NativeType::Float | NativeType::Byte | NativeType::CodePoint)
+            ))
+            && let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
+                &tail[drop_position].instruction
+            && storage == indexed
+            && storage == value
+            && uses.get(storage) == Some(&2)
+            && matches!(
+                values[destination.index()],
+                NativeType::Int | NativeType::Float | NativeType::Byte
+            )
+            && let NativeType::Object(layout) = values[storage.index()]
+            && matches!(environment.physical_layouts.get(layout).kind,
+                crate::native::PhysicalKind::Buffer { element, .. } if element.pointee.is_none())
+            && let Ok(NativeType::Object(owner)) =
+                crate::native::dereference_native_type(values[object.index()], environment)
+            && matches!(
+                environment.layouts.get(owner).kind,
+                crate::native::LayoutKind::Record { .. }
+            )
+        {
+            // Preserve stable SSA IDs and their unique definitions without
+            // leaving an owned value or a storage home for the removed load.
+            values[storage.index()] = NativeType::Unit;
+            values.set_storage_hint(*storage, None);
+            entry_seeds.push(*storage);
+            result.extend_from_slice(&remaining[..read_position]);
+            result.push(
+                ir::Instruction::BorrowedFieldIndex {
+                    destination: *destination,
+                    object: *object,
+                    field: field.clone(),
+                    index: *index,
+                }
+                .with_span(read.span.clone()),
+            );
+            result.extend_from_slice(&tail[..drop_position]);
+            cursor += 3 + read_position + drop_position;
+            continue;
+        }
+        result.push(instructions[cursor].clone());
+        cursor += 1;
+    }
+    result
 }

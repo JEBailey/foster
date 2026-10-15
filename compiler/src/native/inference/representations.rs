@@ -251,6 +251,14 @@ fn native_intrinsic_type(
             .builtin(&ExecutableType::ByteBuffer)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("ByteBuffer intrinsic type has no native layout")),
+        IntrinsicType::ListInteger => layouts
+            .builtin(&ExecutableType::List(Box::new(ExecutableType::Integer)))
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("Int buffer has no native layout")),
+        IntrinsicType::ListFloat => layouts
+            .builtin(&ExecutableType::List(Box::new(ExecutableType::Float)))
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("Float buffer has no native layout")),
         IntrinsicType::ListByte => layouts
             .builtin(&ExecutableType::List(Box::new(ExecutableType::Byte)))
             .map(NativeType::Object)

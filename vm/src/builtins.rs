@@ -57,6 +57,9 @@ macro_rules! direct_builtin_handlers {
 }
 
 direct_builtin_handlers!(
+    BufferIntegers,
+    BufferFloats,
+    BufferBytes,
     CCallbackRelease,
     CCallbackPoll,
     CCallbackError,
@@ -65,6 +68,7 @@ direct_builtin_handlers!(
     ProcessWait,
     ProcessReserve,
     CExchange,
+    CExchangeBuffer,
     CClose,
     CRelease,
     CEncodeInt,
@@ -298,6 +302,92 @@ fn dispatch_core(
                     .ok_or_else(|| RuntimeError::runtime("C payload requires Bytes"))?,
             )))
         }
+        (
+            Builtin::CExchangeBuffer,
+            [
+                path,
+                schema,
+                Value::Integer(operation),
+                payload,
+                Value::Record { fields, .. },
+                Value::Integer(kind),
+            ],
+        ) => {
+            if may::coroutine::is_coroutine() {
+                return Ok(Value::bytes(crate::foreign::runtime::remote_error()));
+            }
+            let values = fields
+                .get("storage")
+                .and_then(Value::list_value)
+                .ok_or_else(|| {
+                    RuntimeError::runtime("C buffer requires initialized scalar storage")
+                })?;
+            let width = if *kind == 3 { 1 } else { 8 };
+            if values.len() > crate::foreign::runtime::LIMIT / width {
+                return Ok(Value::bytes(crate::foreign::runtime::response(Err(
+                    "borrowed C buffer exceeds the byte limit".into(),
+                ))));
+            }
+            let payload = payload
+                .bytes_value()
+                .ok_or_else(|| RuntimeError::runtime("C payload requires Bytes"))?;
+            let path = path.string_text()?;
+            let schema = schema.string_text()?;
+            use crate::foreign::runtime::BorrowedBuffer;
+            let invalid = || RuntimeError::runtime("C buffer element type mismatch");
+            let response = match kind {
+                1 => {
+                    let data = values
+                        .iter()
+                        .map(|value| match value {
+                            Value::Integer(value) => Ok(*value),
+                            _ => Err(invalid()),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    crate::foreign::runtime::exchange_buffer(
+                        path,
+                        schema,
+                        *operation,
+                        payload,
+                        BorrowedBuffer::Integers(&data),
+                    )
+                }
+                2 => {
+                    let data = values
+                        .iter()
+                        .map(|value| match value {
+                            Value::Float(value) => Ok(*value),
+                            _ => Err(invalid()),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    crate::foreign::runtime::exchange_buffer(
+                        path,
+                        schema,
+                        *operation,
+                        payload,
+                        BorrowedBuffer::Floats(&data),
+                    )
+                }
+                3 => {
+                    let data = values
+                        .iter()
+                        .map(|value| match value {
+                            Value::Byte(value) => Ok(*value),
+                            _ => Err(invalid()),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    crate::foreign::runtime::exchange_buffer(
+                        path,
+                        schema,
+                        *operation,
+                        payload,
+                        BorrowedBuffer::Bytes(&data),
+                    )
+                }
+                _ => return Err(invalid()),
+            };
+            Ok(Value::bytes(response))
+        }
         (Builtin::CClose, [Value::Integer(token)]) => {
             Ok(Value::bytes(crate::foreign::runtime::close(*token)))
         }
@@ -406,6 +496,18 @@ fn dispatch_core(
                 .get(start..end)
                 .ok_or_else(|| RuntimeError::runtime("byte slice is out of bounds"))?;
             Ok(Value::bytes(slice.to_vec()))
+        }
+        (Builtin::BufferIntegers, [Value::Integer(length), initial @ Value::Integer(_)])
+        | (Builtin::BufferFloats, [Value::Integer(length), initial @ Value::Float(_)])
+        | (Builtin::BufferBytes, [Value::Integer(length), initial @ Value::Byte(_)]) => {
+            let length = usize::try_from(*length)
+                .map_err(|_| RuntimeError::runtime("buffer length cannot be negative"))?;
+            let mut values = Vec::new();
+            values
+                .try_reserve_exact(length)
+                .map_err(|_| RuntimeError::runtime("buffer allocation is too large"))?;
+            values.resize(length, initial.clone());
+            Ok(Value::list(values))
         }
         (Builtin::BytesToList, [values]) if values.bytes_value().is_some() => Ok(Value::list(
             values

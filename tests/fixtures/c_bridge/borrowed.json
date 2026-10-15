@@ -1,0 +1,15 @@
+{
+  "abi": 1,
+  "headers": ["borrowed.h"],
+  "sources": ["borrowed.c"],
+  "operations": [
+    {"name":"copied_i64","symbol":"sum_i64","parameters":[{"buffer":"i64","length":"size"}],"result":"i64"},
+    {"name":"borrowed_i64","symbol":"sum_i64","parameters":[{"buffer":"i64","length":"size","borrowed":true}],"result":"i64"},
+    {"name":"borrowed_u64","symbol":"first_u64","parameters":[{"buffer":"u64","length":"i32","borrowed":true}],"result":"u64"},
+    {"name":"borrowed_f64","symbol":"sum_f64","parameters":[{"buffer":"f64","length":"u32","borrowed":true}],"result":"f64"},
+    {"name":"copied_u8","symbol":"sum_u8","parameters":[{"buffer":"u8","length":"size"}],"result":"i64"},
+    {"name":"borrowed_u8","symbol":"sum_u8","parameters":[{"buffer":"u8","length":"size","borrowed":true}],"result":"i64"},
+    {"name":"address_i64","symbol":"address_i64","parameters":[{"buffer":"i64","length":"size","borrowed":true}],"result":"u64"},
+    {"name":"mixed_u8","symbol":"mixed_u8","parameters":["i64",{"buffer":"u8","length":"size","borrowed":true},"i64"],"result":"i64"}
+  ]
+}

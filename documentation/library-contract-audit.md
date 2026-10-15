@@ -46,11 +46,13 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **160 public type declarations**.
+The library exposes **162 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
 | [core.byte.ByteError](../library/core/byte.fos) | None |
+| [core.buffer.Buffer](../library/core/buffer.fos) | None; uniquely owned fixed-length scalar storage |
+| [core.buffer.BufferView](../library/core/buffer.fos) | None; borrowed bounded view |
 | [core.bytes.buffer.ByteBuffer](../library/core/bytes/buffer.fos) | None |
 | [core.bytes.Bytes](../library/core/bytes.fos) | `Copy`, `Sequence<Byte>`, `Collection<Byte>`, `Equality<Bytes>`, `Hashing` |
 | [core.bytes.Utf8Error](../library/core/bytes.fos) | None |

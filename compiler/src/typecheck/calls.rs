@@ -492,6 +492,9 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
+            Builtin::BufferIntegers => (vec![Ty::Int, Ty::Int], self.list_type(Ty::Int)),
+            Builtin::BufferFloats => (vec![Ty::Int, Ty::Float], self.list_type(Ty::Float)),
+            Builtin::BufferBytes => (vec![Ty::Int, Ty::Byte], self.list_type(Ty::Byte)),
             Builtin::ListClear => (vec![Ty::Generic("ListStorage".into())], Ty::Unit),
             Builtin::CCallbackNew => (
                 vec![Ty::Generic("F".into()), string.clone(), Ty::Int],
@@ -525,6 +528,17 @@ impl Checker<'_> {
                 string.clone(),
             ),
             Builtin::CClose | Builtin::CEncodeInt => (vec![Ty::Int], string.clone()),
+            Builtin::CExchangeBuffer => (
+                vec![
+                    string.clone(),
+                    string.clone(),
+                    Ty::Int,
+                    string.clone(),
+                    Ty::Generic("BufferStorage".into()),
+                    Ty::Int,
+                ],
+                string.clone(),
+            ),
             Builtin::CRelease => (vec![Ty::Int], Ty::Unit),
             Builtin::CEncodeFloat => (vec![Ty::Float], string.clone()),
             Builtin::CDecodeInt => (vec![string.clone()], Ty::Int),

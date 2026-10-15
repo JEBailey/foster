@@ -1,0 +1,18 @@
+import core.buffer
+import core.option.Option
+
+func main() -> Int {
+    let values = buffer::integers(2, 7)
+    let view = values.view(0, 2)
+    branch values.borrow(0) {
+        Option.Some(element) -> {
+            values.write(0, 42)
+            assert(element == 42)
+            assert(view.read(0) == 42)
+            element = 43
+            assert(values.read(0) == 43)
+        }
+        Option.None -> panic("missing buffer element")
+    }
+    42
+}

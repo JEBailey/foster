@@ -20,6 +20,59 @@ extern "C" fn foster_rt_v5_c_exchange(
     ))
 }
 
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v5_c_exchange_buffer(
+    path: usize,
+    schema: usize,
+    operation: i64,
+    payload: usize,
+    data: usize,
+    length: i64,
+    kind: i64,
+) -> usize {
+    if may::coroutine::is_coroutine() {
+        return owned_bytes(&c_bridge::remote_error());
+    }
+    let width = if kind == 3 { 1 } else { 8 };
+    if !(1..=3).contains(&kind)
+        || length < 0
+        || length as u64 > (c_bridge::LIMIT / width) as u64
+        || (length != 0 && (data == 0 || !data.is_multiple_of(width)))
+    {
+        return owned_bytes(&c_bridge::response(Err(
+            "invalid borrowed C buffer layout or length".into(),
+        )));
+    }
+    // Native lowering borrows initialized contiguous scalar storage. It keeps
+    // the Buffer owner live across this synchronous call; C cannot retain it.
+    let buffer = unsafe {
+        match kind {
+            1 => c_bridge::BorrowedBuffer::Integers(if length == 0 {
+                &[]
+            } else {
+                std::slice::from_raw_parts(data as *const i64, length as usize)
+            }),
+            2 => c_bridge::BorrowedBuffer::Floats(if length == 0 {
+                &[]
+            } else {
+                std::slice::from_raw_parts(data as *const f64, length as usize)
+            }),
+            _ => c_bridge::BorrowedBuffer::Bytes(if length == 0 {
+                &[]
+            } else {
+                std::slice::from_raw_parts(data as *const u8, length as usize)
+            }),
+        }
+    };
+    owned_bytes(&c_bridge::exchange_buffer(
+        unsafe { string_value(path) },
+        unsafe { string_value(schema) },
+        operation,
+        unsafe { bytes_value(payload) },
+        buffer,
+    ))
+}
+
 struct NativeCallback {
     code: unsafe extern "C" fn(usize, usize) -> usize,
     environment: usize,
@@ -71,7 +124,9 @@ extern "C" fn foster_rt_v5_c_callback_new(
         },
         environment,
         owner,
-        release: unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(usize) -> u8>(release) },
+        release: unsafe {
+            std::mem::transmute::<usize, unsafe extern "C" fn(usize) -> u8>(release)
+        },
         release_packet: unsafe {
             std::mem::transmute::<usize, unsafe extern "C" fn(usize) -> u8>(release_packet)
         },

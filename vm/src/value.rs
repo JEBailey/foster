@@ -703,10 +703,11 @@ impl PlaceHandle {
         let Value::Record { fields, .. } = value else {
             return Err(RuntimeError::runtime("field projection requires a record"));
         };
-        if !fields.contains_key(&name) {
-            return Err(RuntimeError::runtime(format!(
-                "record has no field `{name}`"
-            )));
+        let field = fields
+            .get(&name)
+            .ok_or_else(|| RuntimeError::runtime(format!("record has no field `{name}`")))?;
+        if let Value::Reference(reference) = field {
+            return Ok(reference.clone());
         }
         place.projections.push(PlaceProjection::Field { name });
         Ok(place)

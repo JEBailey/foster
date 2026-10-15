@@ -121,6 +121,15 @@ impl FunctionCompiler<'_> {
         argument: ExprId,
         span: std::ops::Range<usize>,
     ) -> Result<Slot, FosterError> {
+        if index == 0
+            && self.intrinsic(function).and_then(Intrinsic::opcode)
+                == Some(OpcodeIntrinsic::BufferWrite)
+            && self.types.expression_type(argument).is_some_and(|ty| {
+                matches!(self.types.types[ty], crate::types::Type::Reference { .. })
+            })
+        {
+            return self.expression(argument);
+        }
         if self.types.function_type(function).is_some_and(|signature| {
             matches!(
                 self.types.types[signature.parameters[index].ty],
@@ -465,6 +474,18 @@ impl FunctionCompiler<'_> {
                         let receiver_mode =
                             self.intrinsic(function).and_then(Intrinsic::receiver_mode);
                         let receiver = if self.intrinsic(function).and_then(Intrinsic::opcode)
+                            == Some(OpcodeIntrinsic::BufferWrite)
+                        {
+                            // An existing reference already identifies the buffer's place.
+                            // Reborrowing its field would produce ref<ref<Buffer<T>>>.
+                            if self.types.expression_type(*object).is_some_and(|ty| {
+                                matches!(self.types.types[ty], crate::types::Type::Reference { .. })
+                            }) {
+                                self.expression(*object)?
+                            } else {
+                                self.method_receiver(*object)?
+                            }
+                        } else if self.intrinsic(function).and_then(Intrinsic::opcode)
                             == Some(OpcodeIntrinsic::ListClear)
                             || (!remote
                                 && (crate::hir::queries::type_exposes_group(
@@ -476,7 +497,8 @@ impl FunctionCompiler<'_> {
                                         .first()
                                         .and_then(|parameter| parameter.ty.as_ref()),
                                     Some(crate::ast::TypeExpr::Reference { .. })
-                                ))) {
+                                )))
+                        {
                             self.reference_expression(*object, span.clone())?
                         } else if remote
                             || matches!(
@@ -1180,6 +1202,12 @@ impl FunctionCompiler<'_> {
         destination: Slot,
         span: std::ops::Range<usize>,
     ) -> Result<bool, FosterError> {
+        if let Some(opcode @ (OpcodeIntrinsic::BufferRead | OpcodeIntrinsic::BufferWrite)) =
+            self.intrinsic(function).and_then(Intrinsic::opcode)
+        {
+            self.emit_buffer_intrinsic(opcode, destination, receiver, arguments, span)?;
+            return Ok(true);
+        }
         if self.intrinsic(function).and_then(Intrinsic::opcode) == Some(OpcodeIntrinsic::ListClear)
         {
             if !arguments.is_empty() {

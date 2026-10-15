@@ -240,6 +240,23 @@ oversized, or unrepresentable inputs fail before calling C. All temporary native
 allocations are freed on success and failure. Mutating a copy leaves the caller's
 original Foster value unchanged. Array elements must be wrapped in a value record.
 
+An input buffer may specify `"borrowed":true`, for example
+`{"buffer":"f64","length":"size","borrowed":true}`. The generated function
+takes `Buffer<Float>`; `i64` and `u64` take `Buffer<Int>`, and `u8` takes
+`Buffer<Byte>`. Native calls borrow the initialized backing allocation without
+serializing or copying its elements. VM calls stage a temporary C array. Both
+keep the owner usable after return and reject mismatched element layouts.
+
+Borrowed inputs are immutable and call-scoped: C must not write, free, or retain
+the pointer. Only one borrowed input is supported per operation. Borrowed calls
+cannot register callbacks, create resources, or have a resource receiver.
+Other scalar arguments and results still use the ordinary wire packet. Narrow
+integers, binary32 floats, records, mutable/output buffers, and retained buffers
+require the existing copied contracts. The 16 MiB buffer limit also applies to
+borrowed storage, including validation before C is invoked. Empty buffers are valid.
+The adapter resolves storage from the active bridge call. Borrowed argument
+packets contain no raw addresses, and Buffer has no public pointer accessor.
+
 One output is returned directly. Multiple outputs produce `Result_<name>` with
 `result` for a non-void C return and `outN` for each output parameter, where N is
 its zero-based logical manifest parameter index. Components are copied and framed

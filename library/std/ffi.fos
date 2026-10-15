@@ -2,11 +2,13 @@
 //!
 //! Binding manifests and native libraries are trusted code. Build them with
 //! `foster bridge`; loading never compiles sources. Arguments and results are
-//! copied. C cannot retain input pointers. Reviewed callback/context pairs
+//! copied unless a reviewed input-buffer contract borrows exact scalar storage.
+//! C cannot retain input pointers. Reviewed callback/context pairs
 //! invoke handlers on their owning thread or queue copied notifications. Resources
 //! have one owner, close on scope exit, and cannot cross a remote boundary.
 
 import core.byte
+import core.buffer.Buffer
 
 import core.bytes.Bytes
 
@@ -33,6 +35,8 @@ impl CHost {
     func callback_error(token: Int) -> Bytes = intrinsic("c.callback_error")
     /// Executes a validated operation; resource construction is a separate mode.
     func exchange(path: String, schema: String, operation: Int, token: Int, create: Bool, payload: Bytes) -> Bytes = intrinsic("c.exchange")
+    /// Borrows one exact-layout scalar buffer for a synchronous input-only call.
+    func exchange_buffer<T>(path: String, schema: String, operation: Int, payload: Bytes, values: Buffer<T>, kind: Int) -> Bytes = intrinsic("c.exchange_buffer")
     /// Returns the consumed flag and native close status.
     func close(token: Int) -> Bytes = intrinsic("c.close")
     /// Performs unconditional cleanup of a still-owned resource.
@@ -248,6 +252,14 @@ pub type CBridge = {
     pub func subscribe<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload.value, read after.payload.value, read signature, consume callback]
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self: Self, operation: Int, arguments: CArguments) -> Result<CValue, CError> [read self, read arguments]
+    /// Borrows initialized scalar storage until C returns. C must not write or
+    /// retain it. Native calls avoid copying elements; VM calls stage a C array.
+    /// Only reviewed input-buffer operations with matching element layouts apply.
+    pub func call_integers(self: Self, operation: Int, arguments: CArguments, values: Buffer<Int>) -> Result<CValue, CError> [read self, read arguments, read values]
+    /// Borrows binary64 storage for an input-only C call; C cannot write or retain it.
+    pub func call_floats(self: Self, operation: Int, arguments: CArguments, values: Buffer<Float>) -> Result<CValue, CError> [read self, read arguments, read values]
+    /// Borrows byte storage for an input-only C call; C cannot write or retain it.
+    pub func call_bytes(self: Self, operation: Int, arguments: CArguments, values: Buffer<Byte>) -> Result<CValue, CError> [read self, read arguments, read values]
     /// Adopts exactly one non-null C allocation, or returns an error without
     /// leaking a partial result. Only constructor operations are accepted.
     pub func create(self: Self, operation: Int, arguments: CArguments) -> Result<CResource, CError> [read self, read arguments]
@@ -305,6 +317,20 @@ impl CBridge {
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self: Self, operation: Int, arguments: CArguments) -> Result<CValue, CError> {
         decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, arguments.payload.snapshot()))
+    }
+    /// Borrows initialized scalar storage until C returns. C must not write or
+    /// retain it. Native calls avoid copying elements; VM calls stage a C array.
+    /// Only reviewed input-buffer operations with matching element layouts apply.
+    pub func call_integers(self: Self, operation: Int, arguments: CArguments, values: Buffer<Int>) -> Result<CValue, CError> {
+        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, arguments.payload.snapshot(), values, 1))
+    }
+    /// Borrows binary64 storage for an input-only C call; C cannot write or retain it.
+    pub func call_floats(self: Self, operation: Int, arguments: CArguments, values: Buffer<Float>) -> Result<CValue, CError> {
+        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, arguments.payload.snapshot(), values, 2))
+    }
+    /// Borrows byte storage for an input-only C call; C cannot write or retain it.
+    pub func call_bytes(self: Self, operation: Int, arguments: CArguments, values: Buffer<Byte>) -> Result<CValue, CError> {
+        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, arguments.payload.snapshot(), values, 3))
     }
     /// Adopts exactly one non-null C allocation, or returns an error without
     /// leaking a partial result. Only constructor operations are accepted.

@@ -42,6 +42,7 @@ pub const FLOAT_COS: &str = "foster_rt_v5_float_cos";
 pub const FLOAT_ATAN2: &str = "foster_rt_v5_float_atan2";
 pub const FLOAT32_BITS: &str = "foster_rt_v5_float32_bits";
 pub const C_EXCHANGE: &str = "foster_rt_v5_c_exchange";
+pub const C_EXCHANGE_BUFFER: &str = "foster_rt_v5_c_exchange_buffer";
 pub const C_CALLBACK_NEW: &str = "foster_rt_v5_c_callback_new";
 pub const C_CALLBACK_RELEASE: &str = "foster_rt_v5_c_callback_release";
 pub const C_CALLBACK_POLL: &str = "foster_rt_v5_c_callback_poll";
@@ -247,6 +248,7 @@ runtime_functions! {
     FLOAT_ATAN2: (F64 Value, F64 Value) -> F64 Scalar;
     FLOAT32_BITS: (F64 Value) -> I64 Scalar;
     C_EXCHANGE: (Pointer Borrowed, Pointer Borrowed, I64 Value, I64 Value, U8 Value, Pointer Borrowed) -> Pointer Owned;
+    C_EXCHANGE_BUFFER: (Pointer Borrowed, Pointer Borrowed, I64 Value, Pointer Borrowed, Pointer Borrowed, I64 Value, I64 Value) -> Pointer Owned;
     C_CALLBACK_NEW: (Pointer Borrowed, Pointer Borrowed, Pointer Consumed, Pointer Borrowed, Pointer Borrowed, Pointer Borrowed, I64 Value, U8 Value) -> Pointer Owned;
     C_CALLBACK_RELEASE: (I64 Value) -> U8 Scalar;
     C_CALLBACK_POLL: (I64 Value) -> Pointer Owned;

@@ -17,6 +17,22 @@ type Destroy = unsafe extern "C" fn(u32, *mut u8);
 type Close = unsafe extern "C" fn(u32, *mut u8, *mut u8) -> i64;
 type Forget = unsafe extern "C" fn(u32, *mut u8);
 
+/// Immutable scalar storage borrowed only until the synchronous bridge call returns.
+pub enum BorrowedBuffer<'a> {
+    Integers(&'a [i64]),
+    Floats(&'a [f64]),
+    Bytes(&'a [u8]),
+}
+impl BorrowedBuffer<'_> {
+    fn parts(&self) -> (*const u8, u64, u32) {
+        match self {
+            Self::Integers(values) => (values.as_ptr().cast(), values.len() as u64, 1),
+            Self::Floats(values) => (values.as_ptr().cast(), values.len() as u64, 2),
+            Self::Bytes(values) => (values.as_ptr(), values.len() as u64, 3),
+        }
+    }
+}
+
 struct Library {
     _module: Module,
     schema: String,
@@ -25,6 +41,7 @@ struct Library {
     destroy: Destroy,
     close: Close,
     forget: Option<Forget>,
+    buffers: bool,
 }
 struct Resource {
     library: Rc<Library>,
@@ -61,6 +78,7 @@ struct ResourceFrame {
     leases: Vec<ResourceLease>,
     parents: HashMap<i64, Rc<RefCell<Resource>>>,
     transfers: HashSet<i64>,
+    buffer: Option<(*const u8, u64, u32)>,
 }
 thread_local! {
     static RESOURCE_FRAMES: RefCell<Vec<ResourceFrame>> = const { RefCell::new(Vec::new()) };
@@ -72,6 +90,7 @@ impl ResourceFrameGuard {
         library: Rc<Library>,
         token: i64,
         resource: Option<Rc<RefCell<Resource>>>,
+        buffer: Option<&BorrowedBuffer<'_>>,
     ) -> Result<Self, String> {
         let mut frame = ResourceFrame {
             library,
@@ -79,6 +98,7 @@ impl ResourceFrameGuard {
             leases: Vec::new(),
             parents: HashMap::new(),
             transfers: HashSet::new(),
+            buffer: buffer.map(BorrowedBuffer::parts),
         };
         if let Some(resource) = resource {
             let lease = ResourceLease::acquire(resource)?;
@@ -103,6 +123,33 @@ impl ResourceFrameGuard {
                 .collect()
         })
     }
+}
+
+unsafe extern "C" fn resolve_buffer(
+    schema: u64,
+    kind: u32,
+    output: *mut *const u8,
+    length: *mut u64,
+) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        if output.is_null() || length.is_null() {
+            return Err(());
+        }
+        RESOURCE_FRAMES.with(|frames| {
+            let frames = frames.try_borrow().map_err(|_| ())?;
+            let frame = frames.last().ok_or(())?;
+            let (pointer, count, actual_kind) = frame.buffer.ok_or(())?;
+            if actual_kind != kind || format!("{schema:016x}") != frame.library.schema {
+                return Err(());
+            }
+            unsafe {
+                *output = pointer;
+                *length = count;
+            }
+            Ok(())
+        })
+    });
+    if matches!(result, Ok(Ok(()))) { 0 } else { 1 }
 }
 impl Drop for ResourceFrameGuard {
     fn drop(&mut self) {
@@ -271,6 +318,33 @@ pub fn exchange(
     create: bool,
     payload: &[u8],
 ) -> Vec<u8> {
+    exchange_inner(path, schema, operation, token, create, payload, None)
+}
+
+pub fn exchange_buffer(
+    path: &str,
+    schema: &str,
+    operation: i64,
+    payload: &[u8],
+    buffer: BorrowedBuffer<'_>,
+) -> Vec<u8> {
+    let (_, count, kind) = buffer.parts();
+    let width = if kind == 3 { 1 } else { 8 };
+    if count > (LIMIT / width) as u64 {
+        return response(Err("borrowed C buffer exceeds the byte limit".into()));
+    }
+    exchange_inner(path, schema, operation, 0, false, payload, Some(buffer))
+}
+
+fn exchange_inner(
+    path: &str,
+    schema: &str,
+    operation: i64,
+    token: i64,
+    create: bool,
+    payload: &[u8],
+    buffer: Option<BorrowedBuffer<'_>>,
+) -> Vec<u8> {
     response((|| {
         if payload.len() > LIMIT {
             return Err("invalid C wire payload length".into());
@@ -307,7 +381,8 @@ pub fn exchange(
         })?;
         // Keep every native argument leased across callbacks without holding the
         // registry or a RefCell borrow across C. Nested calls get their own frame.
-        let resource_frame = ResourceFrameGuard::new(library.clone(), token, resource.clone())?;
+        let resource_frame =
+            ResourceFrameGuard::new(library.clone(), token, resource.clone(), buffer.as_ref())?;
         if token == 0 && schema != library.schema {
             return Err(
                 "C bridge binding schema mismatch; rebuild the bindings and program together"
@@ -315,6 +390,9 @@ pub fn exchange(
             );
         }
         let metadata = unsafe { (library.describe)(operation) };
+        if (metadata & 512 != 0) != buffer.is_some() || (buffer.is_some() && !library.buffers) {
+            return Err("C operation requires a matching borrowed buffer call".into());
+        }
         let mode = metadata as u32 & 255;
         let kind = (metadata >> 32) as u32;
         if (mode == 2) != create {
@@ -527,6 +605,17 @@ impl Library {
             if version() != ABI {
                 return Err("C bridge ABI version mismatch".into());
             }
+            let buffers = if let Ok(initialize) = module.symbol(b"foster_c_buffers_init\0") {
+                type Resolve = unsafe extern "C" fn(u64, u32, *mut *const u8, *mut u64) -> i32;
+                let initialize: unsafe extern "C" fn(u64, Resolve) -> i32 =
+                    std::mem::transmute(initialize);
+                if initialize(1, resolve_buffer) != 0 {
+                    return Err("C borrowed buffer ABI mismatch".into());
+                }
+                true
+            } else {
+                false
+            };
             if let Ok(initialize) = module.symbol(b"foster_c_callbacks_init\0") {
                 type Invoke =
                     unsafe extern "C" fn(i64, u64, *const u8, u64, *mut u8, u64, *mut u64) -> i32;
@@ -547,6 +636,7 @@ impl Library {
             let schema: unsafe extern "C" fn() -> u64 =
                 std::mem::transmute(module.symbol(b"foster_c_schema\0")?);
             Ok(Self {
+                buffers,
                 schema: format!("{:016x}", schema()),
                 describe: std::mem::transmute::<*mut std::ffi::c_void, Describe>(
                     module.symbol(b"foster_c_describe\0")?,

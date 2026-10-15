@@ -1,0 +1,29 @@
+import core.buffer
+import core.byte
+
+func main() -> Result<Int, CError> {
+    let values = buffer::integers(4, 7)
+    assert((try borrowed_i64(values)) == 28)
+    values.write(1, -7)
+    assert((try borrowed_i64(values)) == 14)
+    assert(values.read(1) == -7)
+    assert((try borrowed_i64(buffer::integers(0, 0))) == 0)
+    assert((try borrowed_i64(buffer::integers(2, 21))) == 42)
+    assert((try borrowed_u64(buffer::integers(1, -1))) == -1)
+    assert((try borrowed_f64(buffer::floats(3, 1.25))) == 3.75)
+    assert((try borrowed_f64(buffer::floats(0, 0.0))) == 0.0)
+    assert((try borrowed_u8(buffer::bytes(3, Byte.unchecked(255)))) == 765)
+    assert((try borrowed_u8(buffer::bytes(0, Byte.unchecked(0)))) == 0)
+    assert((try mixed_u8(2, buffer::bytes(2, Byte.unchecked(7)), 3)) == 2143)
+    branch bridge().call_bytes(1, CArguments.empty(), buffer::bytes(8, Byte.unchecked(0))) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("wrong buffer element layout accepted")
+    }
+    branch bridge().call(1, CArguments.empty()) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("missing borrowed buffer accepted")
+    }
+    branch bridge().call_integers(0, CArguments.empty(), values) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("buffer attached to copied operation")
+    }
+    assert((try borrowed_i64(values)) == 14)
+    Result.Ok(42)
+}

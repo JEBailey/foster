@@ -335,6 +335,14 @@ pub enum Instruction {
         destination: Value,
         source: Value,
     },
+    /// Checks and copies a scalar from a record's buffer field without owning
+    /// the backing allocation. The record remains live throughout this operation.
+    BorrowedFieldIndex {
+        destination: Value,
+        object: Value,
+        field: String,
+        index: Value,
+    },
     /// Rebuilds the `Error` alternative when `try` changes a `Result` success type.
     ConvertResultError {
         destination: Value,
@@ -674,6 +682,7 @@ impl Instruction {
             | Self::StringToBytes { destination, .. }
             | Self::BoxValue { destination, .. }
             | Self::UnboxValue { destination, .. }
+            | Self::BorrowedFieldIndex { destination, .. }
             | Self::ConvertResultError { destination, .. } => vec![*destination],
             Self::Assert { .. } => Vec::new(),
             Self::Portable(instruction) => instruction.destinations(),
@@ -701,6 +710,7 @@ impl Instruction {
                 source: operand, ..
             } => vec![*operand],
             Self::Binary { left, right, .. } => vec![*left, *right],
+            Self::BorrowedFieldIndex { object, index, .. } => vec![*object, *index],
             Self::Call { arguments, .. } | Self::RuntimeCall { arguments, .. } => arguments.clone(),
             Self::Assert { condition, message } => {
                 let mut operands = vec![*condition];
@@ -1155,6 +1165,25 @@ impl<'a> Verifier<'a> {
                 }
                 Ok(())
             }
+            Instruction::BorrowedFieldIndex {
+                destination,
+                object,
+                index,
+                ..
+            } => {
+                self.require_type(*index, Type::Int, "borrowed field index")?;
+                if !matches!(self.value_type(*object)?, Type::Object(_))
+                    || !matches!(
+                        self.value_type(*destination)?,
+                        Type::Int | Type::Float | Type::Byte
+                    )
+                {
+                    return Err(VerifyError::new(
+                        "borrowed field indexing requires an object and a scalar result",
+                    ));
+                }
+                Ok(())
+            }
             Instruction::ConvertResultError {
                 destination,
                 source,
@@ -1383,6 +1412,18 @@ fn display_instruction(
         }
         Instruction::BoxValue { source, .. } => write!(formatter, "box v{}", source.0),
         Instruction::UnboxValue { source, .. } => write!(formatter, "unbox v{}", source.0),
+        Instruction::BorrowedFieldIndex {
+            object,
+            field,
+            index,
+            ..
+        } => {
+            write!(
+                formatter,
+                "borrowed_field_index v{}.{field}[v{}]",
+                object.0, index.0
+            )
+        }
         Instruction::ConvertResultError { source, .. } => {
             write!(formatter, "convert_result_error v{}", source.0)
         }

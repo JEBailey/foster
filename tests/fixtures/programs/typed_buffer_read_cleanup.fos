@@ -1,0 +1,23 @@
+import core.buffer
+import core.buffer.Buffer
+import core.drop.Drop
+
+type Owner = & Drop & {
+    values: Buffer<Int>
+}
+impl Owner {
+    func deinit(self: Self) -> () {
+        println("owner dropped")
+    }
+}
+
+func read_buffer(values: ref[values] Buffer<Int>) -> Int {
+    values.read(2)
+}
+
+func main() -> Int {
+    let owner = Owner {
+        values: buffer::integers(2, 42)
+    }
+    read_buffer(ref owner.values)
+}

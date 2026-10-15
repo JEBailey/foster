@@ -578,3 +578,54 @@ pub(super) fn clone_native_buffer_retaining_capacity(
     copy_native_buffer_elements(builder, module, source, target, layout, true, objects)?;
     Ok(target)
 }
+
+/// Allocate complete initialized scalar backing storage without growth or element boxing.
+pub(super) fn filled_native_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    layout: LayoutId,
+    length: ClifValue,
+    initial: ClifValue,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (data_offset, _, _, element) = native_buffer_layout(layout, objects)?;
+    if element.pointee.is_some() {
+        return Err(native_error("typed buffer elements must be scalars"));
+    }
+    let maximum = isize::MAX as i64 / i64::from(element.size);
+    let invalid = builder
+        .ins()
+        .icmp_imm_s(IntCC::UnsignedGreaterThan, length, maximum);
+    let limit = builder.ins().iconst(types::I64, maximum);
+    fail_if(
+        builder,
+        module,
+        invalid,
+        abi::failure::INTEGER_OVERFLOW,
+        length,
+        limit,
+    )?;
+    let object = allocate_native_buffer_dynamic(builder, module, layout, length, objects)?;
+    let word = module.target_config().pointer_type();
+    let data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, data_offset as i32);
+    let header = builder.create_block();
+    let body = builder.create_block();
+    let done = builder.create_block();
+    builder.append_block_param(header, word);
+    let zero = builder.ins().iconst(word, 0);
+    builder.ins().jump(header, &[zero.into()]);
+    builder.switch_to_block(header);
+    let index = builder.block_params(header)[0];
+    let more = builder.ins().icmp(IntCC::UnsignedLessThan, index, length);
+    builder.ins().brif(more, body, &[], done, &[]);
+    builder.switch_to_block(body);
+    let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+    let address = builder.ins().iadd(data, offset);
+    store_physical_value(builder, address, 0, initial);
+    let next = builder.ins().iadd_imm_s(index, 1);
+    builder.ins().jump(header, &[next.into()]);
+    builder.switch_to_block(done);
+    Ok(object)
+}

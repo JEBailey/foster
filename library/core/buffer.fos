@@ -1,0 +1,131 @@
+//! Fixed-length typed scalar storage and borrowed, zero-copy subviews.
+//!
+//! Native Int and Float elements occupy eight bytes; Byte elements occupy one.
+//! Construction allocates the complete contiguous backing storage and initializes
+//! every element. Reads and writes check bounds. Buffers have one owner and no
+//! Copy method; views borrow that owner and cannot outlive it. Storage never grows.
+//! Scalar reads and writes lower to checked indexing in both executable backends.
+//! These are Foster scalar layouts, not arbitrary C record or pointer layouts.
+
+import core.byte
+import core.list.List
+import core.option.Option
+
+/// Private compiler-backed allocation of initialized contiguous scalar storage.
+type BufferHost = {}
+impl BufferHost {
+    /// Allocates initialized signed 64-bit elements.
+    func integers(length: Int, initial: Int) -> List<Int> = intrinsic("buffer.integers")
+    /// Allocates initialized IEEE binary64 elements.
+    func floats(length: Int, initial: Float) -> List<Float> = intrinsic("buffer.floats")
+    /// Allocates initialized unsigned byte elements.
+    func bytes(length: Int, initial: Byte) -> List<Byte> = intrinsic("buffer.bytes")
+}
+
+/// A uniquely owned, fixed-length typed allocation.
+/// Construct with integers, floats, or bytes. Scope exit releases storage.
+/// Borrowed elements and views retain the owner's lifetime; no raw address escapes.
+pub type Buffer<T> = {
+    storage: List<T>
+}
+
+impl Buffer<T> {
+    /// Returns the number of initialized elements.
+    pub func length(self: Self) -> Int {
+        self.storage.length
+    }
+
+    /// Copies the scalar at index. Fails unless 0 <= index < length().
+    /// Lowers directly to checked indexing without generic Copy dispatch.
+    pub func read(self: Self, index: Int) -> T [read self] = intrinsic("buffer.read")
+
+    /// Replaces the element at index without allocating or changing length.
+    /// Fails unless 0 <= index < length(). Preserves live element and view aliases.
+    pub func write(self: ref[self] Self, index: Int, value: T) -> () [mut self] = intrinsic("buffer.write")
+
+    /// Borrows one initialized element; invalid indexes return None.
+    pub func borrow(self: ref[self] Self, index: Int) -> Option<ref[self] T> {
+        self.storage.borrow(index)
+    }
+
+    /// Borrows the half-open range [start, end), without copying its elements.
+    /// Asserts unless 0 <= start <= end <= length().
+    pub func view(self: ref[self] Self, start: Int, end: Int) -> BufferView<ref[self] Buffer<T>> {
+        assert(start >= 0 && end >= start && end <= self.storage.length, "Buffer view out of bounds")
+        BufferView {
+            source: ref self, start, count: end - start
+        }
+    }
+}
+
+/// A bounded, zero-copy view whose Storage reference retains the buffer lifetime.
+/// Indexes are relative to the view. Writes update the owner in place.
+pub type BufferView<Storage> = {
+    source: Storage
+    start: Int
+    count: Int
+}
+
+impl BufferView<T> {
+    /// Returns the number of elements visible through this view.
+    pub func length(self: BufferView<ref[self] Buffer<T>>) -> Int {
+        self.count
+    }
+
+    /// Copies one element. Asserts unless 0 <= index < length().
+    pub func read(self: BufferView<ref[self] Buffer<T>>, index: Int) -> T {
+        assert(index >= 0 && index < self.count, "Buffer view index out of bounds")
+        self.source.read(self.start + index)
+    }
+
+    /// Replaces one element in the owner without resizing its allocation.
+    /// Asserts unless 0 <= index < length().
+    pub func write(self: BufferView<ref[self] Buffer<T>>, index: Int, value: T) -> () {
+        assert(index >= 0 && index < self.count, "Buffer view index out of bounds")
+        self.source.write(self.start + index, move value)
+    }
+
+    /// Borrows an element relative to the view; invalid indexes return None.
+    pub func borrow(self: BufferView<ref[self] Buffer<T>>, index: Int) -> Option<ref[self] T> {
+        branch {
+            index < 0 || index >= self.count -> Option.None
+            _ -> self.source.borrow(self.start + index)
+        }
+    }
+}
+
+/// Allocates length initialized signed 64-bit elements. Asserts for negative lengths.
+pub func integers(length: Int, initial: Int) -> Buffer<Int> {
+    assert(length >= 0, "Buffer length cannot be negative")
+    Buffer {
+        storage: BufferHost.integers(length, initial)
+    }
+}
+
+/// Allocates length initialized binary64 elements. Asserts for negative lengths.
+pub func floats(length: Int, initial: Float) -> Buffer<Float> {
+    assert(length >= 0, "Buffer length cannot be negative")
+    Buffer {
+        storage: BufferHost.floats(length, initial)
+    }
+}
+
+/// Allocates length initialized unsigned bytes. Asserts for negative lengths.
+pub func bytes(length: Int, initial: Byte) -> Buffer<Byte> {
+    assert(length >= 0, "Buffer length cannot be negative")
+    Buffer {
+        storage: BufferHost.bytes(length, initial)
+    }
+}
+
+test "typed buffers retain writes through bounded views" {
+    let values = integers(4, 7)
+    assert(values.length() == 4 && values.read(3) == 7)
+    let middle = values.view(1, 3)
+    middle.write(0, 42)
+    assert(middle.length() == 2 && middle.read(0) == 42)
+    assert(values.read(1) == 42 && values.read(0) == 7)
+    assert(middle.borrow(2) == Option.None)
+    let empty = floats(0, 1.5)
+    assert(empty.length() == 0)
+}

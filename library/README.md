@@ -252,3 +252,29 @@ Portable tests live beside their implementations. Rust integration tests cover
 host resources and check that every library function has documentation. Comment
 coverage alone does not establish correctness: compile and run examples and
 review their claims against implementations and boundary tests.
+
+
+## Fixed-length typed buffers
+
+Use `core.buffer` for initialized scalar storage whose allocation stays fixed.
+`integers`, `floats`, and `bytes` construct owned buffers of `Int`, `Float`, and
+`Byte`. Native storage is contiguous, with eight-byte Int/Float elements and
+one-byte Byte elements. A view borrows its owner and writes through to it.
+
+```foster
+import core.buffer
+
+func main() -> Int {
+    let samples = buffer::floats(4, 0.0)
+    let channel = samples.view(1, 3)
+    channel.write(0, 0.5)
+    assert(samples.read(1) == 0.5)
+    let pixels = buffer::integers(2, 0)
+    pixels.write(1, 42)
+    pixels.read(1)
+}
+```
+
+Indexes and view ranges are checked. Buffers do not grow, expose addresses, or
+implement Copy; scope exit releases their storage. The current C bridge continues
+to use copied wire arguments; buffer views do not yet bypass that bridge.

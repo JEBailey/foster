@@ -862,6 +862,58 @@ fn lower_native_instruction(
         ir::Instruction::IntegerExtend { operand, .. } => {
             builder.ins().uextend(types::I64, get(operand))
         }
+        ir::Instruction::BorrowedFieldIndex {
+            object,
+            field,
+            index,
+            ..
+        } => {
+            let (receiver, receiver_type) = super::native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            let NativeType::Object(layout) = receiver_type else {
+                return Err(native_error("borrowed field indexing requires a record"));
+            };
+            let PhysicalKind::Record { fields, .. } =
+                &backend.objects.layouts.physical.get(layout).kind
+            else {
+                return Err(native_error("borrowed field indexing requires a record"));
+            };
+            let slot = fields
+                .iter()
+                .find(|slot| slot.name == *field)
+                .ok_or_else(|| native_error("borrowed buffer field is missing"))?;
+            let buffer_layout = slot
+                .value
+                .pointee
+                .ok_or_else(|| native_error("borrowed field is not a buffer"))?;
+            // No allocation, mutation, or callback can intervene between this
+            // projection and the scalar load. The record owns the backing List.
+            let storage = load_physical_value(builder, module, receiver, slot.offset, slot.value);
+            let (address, element) = super::native_buffer_element_address(
+                builder,
+                module,
+                storage,
+                get(index),
+                buffer_layout,
+                backend.objects,
+            )?;
+            if element.pointee.is_some() {
+                return Err(native_error(
+                    "borrowed field indexing requires scalar elements",
+                ));
+            }
+            builder.ins().load(
+                super::physical_cranelift_type(element.kind, module.target_config().pointer_type()),
+                MemFlagsData::trusted(),
+                address,
+                0,
+            )
+        }
         ir::Instruction::Binary {
             operator,
             left,

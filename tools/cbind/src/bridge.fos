@@ -202,13 +202,17 @@ impl Contract {
                     }
                 }
                 if self.member(node, "buffer") >= 0 {
-                    self.fields(node, "buffer length mutable output")
+                    self.fields(node, "buffer length mutable output borrowed")
                     let element = self.ty(self.member(node, "buffer"))
                     assert(!element.starts_with?("["), "buffer elements must be scalars or value records")
                     if !["u8", "char", "void"].contains?(element) self.slots(element, [])
                     assert(["i32", "u32", "size"].contains?(self.string(node, "length", true)), "buffer length must be i32, u32, or size")
                     self.boolean(node, "mutable")
                     assert(!self.boolean(node, "output") || !self.boolean(node, "mutable"), "choose mutable input or output-only buffer")
+                    if self.boolean(node, "borrowed") {
+                        assert(["i64", "u64", "f64", "u8"].contains?(element), "borrowed buffers require i64, u64, f64, or u8")
+                        assert(!self.boolean(node, "mutable") && !self.boolean(node, "output"), "borrowed buffers are input-only")
+                    }
                     return "~" + node.as_string()
                 }
                 if self.member(node, "array") >= 0 {
@@ -316,6 +320,17 @@ impl Contract {
     func raw_buffer(self: Self, node: Int) -> Bool {
         ["u8", "char", "void"].contains?(self.ty(self.member(node, "buffer")))
     }
+    func borrowed_input(self: Self, node: Int) -> Int {
+        for parameter in self.array(node, "parameters", false) {
+            return parameter if self.ty(parameter).starts_with?("~") && self.boolean(parameter, "borrowed")
+        }
+        -1
+    }
+    func buffer_kind(self: Self, parameter: Int) -> Int {
+        branch self.ty(self.member(parameter, "buffer")) {
+            "f64" -> 2 "u8" -> 3 _ -> 1
+        }
+    }
     func value_type(self: Self, ty: String) -> String {
         return "List<" + foster_type(self.ty(self.member(decimal(ty.slice(1, ty.length)), "buffer"))) + ">" if ty.starts_with?("~")
         foster_type(ty)
@@ -421,7 +436,7 @@ impl Contract {
             let name = self.string(node, "name", true)
             check_name(name, names)
             names.push(name.copy())
-            assert(!["Int", "Float", "Bool", "String", "Bytes", "List", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"].contains?(name), "C enum conflicts with std.ffi")
+            assert(!["Int", "Float", "Bool", "Byte", "String", "Bytes", "List", "Buffer", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"].contains?(name), "C enum conflicts with std.ffi")
             let c_name = self.string(node, "c_type", true)
             let bare = c_name.strip_prefix("enum ")
             assert(identifier(bare), "invalid C enum type")
@@ -438,7 +453,7 @@ impl Contract {
             let name = self.string(node, "name", true)
             check_name(name, names)
             names.push(name.copy())
-            assert(!["Int", "Float", "Bool", "String", "Bytes", "List", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"].contains?(name), "C record conflicts with std.ffi")
+            assert(!["Int", "Float", "Bool", "Byte", "String", "Bytes", "List", "Buffer", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"].contains?(name), "C record conflicts with std.ffi")
             let c_name = self.string(node, "c_type", true)
             let bare = c_name.strip_prefix("struct ")
             assert(identifier(bare), "invalid C record type")
@@ -565,6 +580,14 @@ impl Contract {
                 }
             }
             assert(callback_count <= 1, "one callback/context pair is supported per operation")
+            if self.borrowed_input(node) >= 0 {
+                let count = 0
+                for parameter in self.array(node, "parameters", false) {
+                    if self.ty(parameter).starts_with?("~") && self.boolean(parameter, "borrowed") count = count + 1
+                }
+                assert(count == 1, "one borrowed buffer is supported per operation")
+                assert(callback_count == 0 && self.string(node, "receiver", false).empty? && self.string(node, "creates", false).empty?, "borrowed buffer calls cannot create resources, use receivers, or register callbacks")
+            }
             branch {
                 result_type.starts_with?("@") -> {
                     self.slots(result_type, [])
@@ -928,6 +951,17 @@ impl Contract {
                     arguments.push("&" + place)
                     values.push(place.copy())
                     lengths.push("")
+                }
+                ty.starts_with?("~") && self.boolean(parameter, "borrowed") -> {
+                    let native = self.c_type(self.ty(self.member(parameter, "buffer")))
+                    let c_length = branch self.string(parameter, "length", true) {
+                        "size" -> "size_t" "i32" -> "int32_t" _ -> "uint32_t"
+                    }
+                    types.push("const " + native + "*")
+                    types.push(c_length.copy())
+                    parse = parse + "const uint8_t *" + place + "_data=NULL; uint64_t " + size + "; if(!foster_borrow || foster_borrow(foster_c_schema()," + self.buffer_kind(parameter).as_string() + ",&" + place + "_data,&" + size + ") || " + size + ">16777216/sizeof(" + native + ")) return 2;\n"
+                    arguments.push("(const " + native + "*)" + place + "_data")
+                    arguments.push("(" + c_length + ")" + size)
                 }
                 ty.starts_with?("~") || ty == "bytes" || ty == "c_string" -> {
                     let element = branch {
@@ -1308,6 +1342,7 @@ impl Contract {
     }
     func c_source(self: Self, schema: String) -> String {
         let output = PREAMBLE.copy()
+        output = output + "#include <stdatomic.h>\ntypedef int32_t (*foster_borrow_fn)(uint64_t,uint32_t,const uint8_t**,uint64_t*);\nstatic _Atomic(foster_borrow_fn) foster_borrow;\nEXPORT int32_t foster_c_buffers_init(uint64_t version,foster_borrow_fn fn) { if(version!=1) return 1; atomic_store(&foster_borrow,fn); return 0; }\n"
         for node in self.array(0, "headers", true) {
             output = output + "#include \"" + self.nodes[node].text + "\"\n"
         }
@@ -1387,6 +1422,7 @@ impl Contract {
                 mode = mode + 256
                 size = 0
             }
+            if self.borrowed_input(node) >= 0 mode = mode + 512
             output = output + ["case ", index.as_string(), ": return ((uint64_t)", kind.as_string(), " << 32) | ((uint64_t)", size.as_string(), " << 16) | ", mode.as_string(), ";\n"].join("")
             index = index + 1
         }
@@ -1507,6 +1543,8 @@ impl Contract {
         let resource_effects = []
         let resource_checks = ""
         let callback_call = ""
+        let borrowed_place = ""
+        let borrowed_method = ""
         let parameter_names = self.array(node, "parameter_names", false)
         let places = []
         let used_places = ["arguments", "value", "bridge", "resource", "packet", "before", "adapter", "payload", "ffi", "bytes", "string", "result", "list"]
@@ -1575,10 +1613,20 @@ impl Contract {
                 ty.starts_with?("~") -> {
                     let output_only = self.boolean(parameter, "output")
                     let raw = self.raw_buffer(parameter)
+                    let borrowed = self.boolean(parameter, "borrowed")
                     parameters.push(place + ": " + branch {
+                        borrowed -> "Buffer<" + branch {
+                            self.buffer_kind(parameter) == 3 -> "Byte" _ -> foster_type(self.ty(self.member(parameter, "buffer")))
+                        } + ">"
                         output_only -> "Int" raw -> "Bytes" _ -> self.value_type(ty)
                     })
                     branch {
+                        borrowed -> {
+                            borrowed_place = place.copy()
+                            borrowed_method = branch self.buffer_kind(parameter) {
+                                1 -> "call_integers" 2 -> "call_floats" _ -> "call_bytes"
+                            }
+                        }
                         output_only || raw -> {
                             arguments = arguments + "    arguments." + branch {
                                 output_only -> "integer" _ -> "bytes"
@@ -1602,7 +1650,10 @@ impl Contract {
                 effects.empty? -> " [" _ -> effects.slice(0, effects.length - 1) + ", "
             } + resource_effects.join(", ") + "]"
         }
-        output = output + self.docs(node, "") + "/// Calls `" + self.string(node, "symbol", true) + "`; pointers are call-scoped copies. Output field numbers match manifest parameter indexes.\npub func " + foster_function_name(name) + generic + "(" + parameters.join(", ") + ") -> Result<" + result_type + ", CError>" + effects + " {\n" + before + arguments + adapter
+        output = output + self.docs(node, "") + "/// Calls `" + self.string(node, "symbol", true) + "`; " + branch {
+            borrowed_place.empty? -> "pointers are call-scoped copies. "
+            _ -> "borrows input storage until C returns; C must not write or retain it. "
+        } + "Output field numbers match manifest parameter indexes.\npub func " + foster_function_name(name) + generic + "(" + parameters.join(", ") + ") -> Result<" + result_type + ", CError>" + effects + " {\n" + before + arguments + adapter
         return output + "    let resource = try " + branch {
             callback_call.empty? -> "bridge().create(" + id.as_string() + ", arguments)" _ -> callback_call.copy()
         } + "\n" + resource_checks + "    Result.Ok(Native" + creates + " { value: move resource })\n}\n\n" if !creates.empty?
@@ -1610,6 +1661,7 @@ impl Contract {
             receiver.empty? -> "bridge()" _ -> "resource.value"
         }
         output = output + "    let packet = try " + branch {
+            !borrowed_place.empty? -> owner + "." + borrowed_method + "(" + id.as_string() + ", arguments, " + borrowed_place + ")"
             callback_call.empty? -> owner + ".call(" + id.as_string() + ", arguments)" _ -> callback_call.copy()
         } + "\n" + resource_checks
         let values = []
@@ -1721,7 +1773,7 @@ impl Contract {
         }
     }
     func foster_source(self: Self, path: String, schema: String) -> String {
-        let type_names = ["Int", "Float", "Bool", "String", "Bytes", "List", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"]
+        let type_names = ["Int", "Float", "Bool", "Byte", "String", "Bytes", "List", "Buffer", "Result", "CError", "CValue", "CArguments", "CBridge", "CResource"]
         for declarations in [self.enums(), self.records()] {
             for node in declarations {
                 let name = foster_type_name(self.string(node, "name", true))
@@ -1745,7 +1797,7 @@ impl Contract {
             assert(!function_names.contains?(name), "duplicate generated Foster value " + name)
             function_names.push(move name)
         }
-        let output = "//! Generated C bindings. Rebuild with the native bridge.\nimport std.ffi.*\nimport core.bytes.Bytes\nimport core.string.String\nimport core.result.Result\nimport core.list.List\n\nfunc bridge() -> CBridge { CBridge.at(" + quoted(path) + ", " + quoted(schema) + ") }\n\n"
+        let output = "//! Generated C bindings. Rebuild with the native bridge.\nimport std.ffi.*\nimport core.buffer.Buffer\nimport core.bytes.Bytes\nimport core.string.String\nimport core.result.Result\nimport core.list.List\n\nfunc bridge() -> CBridge { CBridge.at(" + quoted(path) + ", " + quoted(schema) + ") }\n\n"
         let shared_imports = ""
         for node in self.records() {
             let shared_module = self.string(node, "foster_module", false)

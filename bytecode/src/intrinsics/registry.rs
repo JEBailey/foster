@@ -13,6 +13,8 @@ pub enum IntrinsicType {
     ByteBuffer,
     String,
     ListByte,
+    ListInteger,
+    ListFloat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +81,7 @@ pub enum NativeIntrinsic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeInlineIntrinsic {
+    BufferFilled,
     ListClear,
     CCallbackNew,
     IntegerToCodePoint,
@@ -181,6 +184,9 @@ macro_rules! native_builtin {
     (CExchange) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE)
     };
+    (CExchangeBuffer) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE_BUFFER)
+    };
     (CClose) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_CLOSE)
     };
@@ -255,6 +261,15 @@ macro_rules! native_builtin {
     };
     (Float32Bits) => {
         NativeIntrinsic::Runtime(crate::native::abi::FLOAT32_BITS)
+    };
+    (BufferIntegers) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::BufferFilled)
+    };
+    (BufferFloats) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::BufferFilled)
+    };
+    (BufferBytes) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::BufferFilled)
     };
     (ListClear) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::ListClear)
@@ -433,6 +448,8 @@ builtin_descriptors! {
         execution: Direct, signature: [Read Integer] -> String;
     CExchange = 65, source: None, intrinsic: Some("c.exchange") => Some("std.ffi"),
         execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read Bytes] -> Bytes;
+    CExchangeBuffer = 97, source: None, intrinsic: Some("c.exchange_buffer") => Some("std.ffi"),
+        execution: Direct, signature: [Read String, Read String, Read Integer, Read Bytes, Read Any, Read Integer] -> Bytes;
     CClose = 66, source: None, intrinsic: Some("c.close") => Some("std.ffi"),
         execution: Direct, signature: [Read Integer] -> Bytes;
     CRelease = 67, source: None, intrinsic: Some("c.release") => Some("std.ffi"),
@@ -573,6 +590,12 @@ builtin_descriptors! {
         execution: Host, signature: [Read Integer, Read Integer] -> Any;
     TcpWaitAccept = 64, source: None, intrinsic: Some("tcp.wait_accept") => Some("std.net.tcp"),
         execution: Host, signature: [Read Integer, Read Integer] -> Any;
+    BufferIntegers = 94, source: None, intrinsic: Some("buffer.integers") => Some("core.buffer"),
+        execution: Direct, signature: [Read Integer, Read Integer] -> ListInteger;
+    BufferFloats = 95, source: None, intrinsic: Some("buffer.floats") => Some("core.buffer"),
+        execution: Direct, signature: [Read Integer, Read Float] -> ListFloat;
+    BufferBytes = 96, source: None, intrinsic: Some("buffer.bytes") => Some("core.buffer"),
+        execution: Direct, signature: [Read Integer, Read Byte] -> ListByte;
     ListClear = 93, source: None, intrinsic: None => None,
         execution: Direct, signature: [Read Any] -> Unit;
     IoStdinRead = 92, source: None, intrinsic: Some("io.stdin_read") => Some("std.io"),
@@ -633,6 +656,8 @@ pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Opti
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpcodeIntrinsic {
+    BufferRead,
+    BufferWrite,
     ListClear,
     ValueCanCopy,
     ValueCopy,
@@ -663,6 +688,26 @@ pub struct OpcodeIntrinsicDescriptor {
 }
 
 pub const OPCODE_INTRINSICS: &[OpcodeIntrinsicDescriptor] = &[
+    OpcodeIntrinsicDescriptor {
+        intrinsic: OpcodeIntrinsic::BufferRead,
+        intrinsic_key: "buffer.read",
+        module: "core.buffer",
+        receiver: IntrinsicReceiverMode::Read,
+        signature: IntrinsicSignature {
+            parameters: intrinsic_parameters!([Read Any, Read Integer]),
+            result: IntrinsicType::Any,
+        },
+    },
+    OpcodeIntrinsicDescriptor {
+        intrinsic: OpcodeIntrinsic::BufferWrite,
+        intrinsic_key: "buffer.write",
+        module: "core.buffer",
+        receiver: IntrinsicReceiverMode::Mutate,
+        signature: IntrinsicSignature {
+            parameters: intrinsic_parameters!([Read Any, Read Integer, Read Any]),
+            result: IntrinsicType::Unit,
+        },
+    },
     OpcodeIntrinsicDescriptor {
         intrinsic: OpcodeIntrinsic::ListClear,
         intrinsic_key: "list.clear",
@@ -790,7 +835,10 @@ impl Intrinsic {
         self.opcode().is_some_and(|opcode| {
             !matches!(
                 opcode,
-                OpcodeIntrinsic::ValueCopy | OpcodeIntrinsic::ValueCanCopy
+                OpcodeIntrinsic::ValueCopy
+                    | OpcodeIntrinsic::ValueCanCopy
+                    | OpcodeIntrinsic::BufferRead
+                    | OpcodeIntrinsic::BufferWrite
             )
         })
     }
@@ -936,6 +984,7 @@ mod tests {
                 Builtin::ProcessRelease,
                 Builtin::ProcessWait,
                 Builtin::CExchange,
+                Builtin::CExchangeBuffer,
                 Builtin::CClose,
                 Builtin::CRelease,
                 Builtin::CEncodeInt,
@@ -951,6 +1000,10 @@ mod tests {
                 Builtin::ByteUnchecked,
                 Builtin::BytesFromList,
                 Builtin::BytesToList,
+                Builtin::BufferIntegers,
+                Builtin::BufferFloats,
+                Builtin::BufferBytes,
+                Builtin::ListClear,
             ]
         );
         for descriptor in BUILTINS {

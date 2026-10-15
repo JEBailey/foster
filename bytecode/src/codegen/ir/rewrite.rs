@@ -32,6 +32,16 @@ impl Instruction {
                 *left = rewrite(*left);
                 *right = rewrite(*right);
             }
+            Self::BorrowedFieldIndex {
+                destination,
+                object,
+                index,
+                ..
+            } => {
+                *destination = rewrite(*destination);
+                *object = rewrite(*object);
+                *index = rewrite(*index);
+            }
             Self::Call {
                 destination,
                 arguments,

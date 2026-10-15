@@ -1,0 +1,17 @@
+import core.buffer
+import core.buffer.Buffer
+
+type Holder<Storage> = {
+    pub source: Storage
+}
+
+func main() -> Int {
+    let values = buffer::integers(2, 0)
+    let holder = Holder {
+        source: ref values
+    }
+    Buffer.write(holder.source, 0, 41)
+    Buffer.write(holder.source, 1, 42)
+    assert(values.read(0) == 41)
+    Buffer.read(values, 1)
+}

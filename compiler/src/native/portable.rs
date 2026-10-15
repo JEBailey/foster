@@ -1002,6 +1002,14 @@ pub(super) fn lower_portable_native(
             use crate::intrinsics::{NativeInlineIntrinsic, NativeIntrinsic};
             let lowered = arguments.iter().map(get).collect::<Vec<_>>();
             let result = match builtin.descriptor().native {
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::BufferFilled) => {
+                    let NativeType::Object(layout) = function.value_type(*destination) else {
+                        return Err(native_error("buffer allocation requires a typed layout"));
+                    };
+                    super::buffers::filled_native_buffer(
+                        builder, module, layout, lowered[0], lowered[1], objects,
+                    )?
+                }
                 NativeIntrinsic::Inline(NativeInlineIntrinsic::ListClear) => {
                     let original = lowered[0];
                     let (source, source_type) = native_reference_receiver(
@@ -1347,6 +1355,76 @@ pub(super) fn lower_portable_native(
                     )?;
                     copy_native_bytes(builder, module, data, source_data, length)?;
                     object
+                }
+                NativeIntrinsic::Runtime(helper)
+                    if *builtin == crate::intrinsics::Builtin::CExchangeBuffer =>
+                {
+                    let NativeType::Object(owner_layout) = function.value_type(arguments[4]) else {
+                        return Err(native_error("borrowed C argument requires Buffer storage"));
+                    };
+                    let PhysicalKind::Record { fields, .. } =
+                        &objects.layouts.physical.get(owner_layout).kind
+                    else {
+                        return Err(native_error("borrowed C argument requires Buffer storage"));
+                    };
+                    let storage = fields
+                        .iter()
+                        .find(|field| field.name == "storage")
+                        .ok_or_else(|| native_error("borrowed C buffer has no storage"))?;
+                    let layout = storage
+                        .value
+                        .pointee
+                        .ok_or_else(|| native_error("borrowed C buffer has no element layout"))?;
+                    let (data_offset, length_offset, _, element) =
+                        native_buffer_layout(layout, objects)?;
+                    let kind = match element.semantic {
+                        ValueSemantic::Integer => 1,
+                        ValueSemantic::Float => 2,
+                        ValueSemantic::Byte => 3,
+                        _ => {
+                            return Err(native_error(
+                                "C buffers require Int, Float, or Byte elements",
+                            ));
+                        }
+                    };
+                    let backing = load_physical_value(
+                        builder,
+                        module,
+                        lowered[4],
+                        storage.offset,
+                        storage.value,
+                    );
+                    let word = module.target_config().pointer_type();
+                    let data = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        backing,
+                        data_offset as i32,
+                    );
+                    let length = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        backing,
+                        length_offset as i32,
+                    );
+                    let kind = builder.ins().iconst(types::I64, kind);
+                    let mut parameters = arguments[..4]
+                        .iter()
+                        .map(|value| function.value_type(*value))
+                        .collect::<Vec<_>>();
+                    parameters.extend([NativeType::Opaque, NativeType::Int, NativeType::Int]);
+                    let mut call_arguments = lowered[..4].to_vec();
+                    call_arguments.extend([data, length, kind]);
+                    runtime_call(
+                        builder,
+                        module,
+                        helper,
+                        &ir::Signature {
+                            parameters,
+                            result: function.value_type(*destination),
+                        },
+                        &call_arguments,
+                    )?
                 }
                 NativeIntrinsic::Runtime(helper) => runtime_call(
                     builder,

@@ -16,6 +16,12 @@ pub(super) struct BuiltinInfo {
 
 pub(super) fn info(id: Builtin) -> BuiltinInfo {
     match id {
+        Builtin::BufferIntegers | Builtin::BufferFloats | Builtin::BufferBytes => builtin(
+            "Buffer allocation",
+            "buffer allocation(length, initial)",
+            &["length", "initial"],
+            "Allocates fixed-length typed scalar storage initialized to the supplied value.",
+        ),
         Builtin::ListClear => builtin(
             "List.clear",
             "List.clear(self: Self) -> ()",
@@ -27,6 +33,7 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
         | Builtin::ProcessWait
         | Builtin::ProcessReserve
         | Builtin::CExchange
+        | Builtin::CExchangeBuffer
         | Builtin::CCallbackNew
         | Builtin::CCallbackRelease
         | Builtin::CCallbackPoll

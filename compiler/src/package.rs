@@ -1491,6 +1491,7 @@ pub const EMBEDDED_MODULES: &[(&str, &str)] = &[
         include_str!("../../library/core/ordering.fos"),
     ),
     ("core.list", include_str!("../../library/core/list.fos")),
+    ("core.buffer", include_str!("../../library/core/buffer.fos")),
     (
         "std.sequence",
         include_str!("../../library/std/sequence.fos"),
