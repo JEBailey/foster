@@ -2,6 +2,25 @@
 use foster::{native, vm};
 
 #[test]
+fn list_clear_preserves_reuse_and_runs_element_cleanup() {
+    check_stdout(
+        "list-clear",
+        include_str!("fixtures/programs/list_clear.fos"),
+        "1\n2\n3\n4\n42",
+    );
+}
+
+#[test]
+fn list_clear_cleans_remaining_elements_after_deinit_failure() {
+    check_process_output(
+        "list-clear-failure",
+        include_str!("fixtures/programs/list_clear_failure.fos"),
+        "1\n2",
+        Some("clear cleanup failed"),
+    );
+}
+
+#[test]
 fn borrowed_list_slices_agree_in_both_backends() {
     check(
         "borrowed-list-slices",

@@ -16,6 +16,12 @@ pub(super) struct BuiltinInfo {
 
 pub(super) fn info(id: Builtin) -> BuiltinInfo {
     match id {
+        Builtin::ListClear => builtin(
+            "List.clear",
+            "List.clear(self: Self) -> ()",
+            &["self"],
+            "Removes list elements and runs their cleanup while retaining capacity.",
+        ),
         Builtin::ProcessExchange
         | Builtin::ProcessRelease
         | Builtin::ProcessWait

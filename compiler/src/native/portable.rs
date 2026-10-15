@@ -1002,6 +1002,56 @@ pub(super) fn lower_portable_native(
             use crate::intrinsics::{NativeInlineIntrinsic, NativeIntrinsic};
             let lowered = arguments.iter().map(get).collect::<Vec<_>>();
             let result = match builtin.descriptor().native {
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::ListClear) => {
+                    let original = lowered[0];
+                    let (source, source_type) = native_reference_receiver(
+                        builder,
+                        module,
+                        original,
+                        function.value_type(arguments[0]),
+                        backend,
+                    )?;
+                    let NativeType::Object(layout) = source_type else {
+                        return Err(native_error("List.clear requires a list reference"));
+                    };
+                    if source_type == function.value_type(arguments[0]) {
+                        // An intrinsic method body receives a retained, borrowed
+                        // receiver. It must mutate that receiver rather than detach it.
+                        super::buffers::clear_native_buffer(
+                            builder, module, source, layout, objects,
+                        )?;
+                        propagate_native_failure(builder, module)?;
+                        return Ok(Some(builder.ins().iconst(types::I8, 0)));
+                    }
+                    let physical = objects.layouts.physical.get(layout);
+                    let word = module.target_config().pointer_type();
+                    let count_address = builder
+                        .ins()
+                        .iadd_imm_s(source, i64::from(physical.header.strong_count_offset));
+                    let count =
+                        builder
+                            .ins()
+                            .atomic_load(word, MemFlagsData::trusted(), count_address);
+                    let unique = builder.ins().icmp_imm_s(IntCC::Equal, count, 1);
+                    let detach = builder.create_block();
+                    let ready = builder.create_block();
+                    builder.append_block_param(ready, word);
+                    builder
+                        .ins()
+                        .brif(unique, ready, &[source.into()], detach, &[]);
+                    builder.switch_to_block(detach);
+                    let copied = super::buffers::clone_native_buffer_retaining_capacity(
+                        builder, module, source, layout, objects,
+                    )?;
+                    objects.release(builder, module, source, layout)?;
+                    store_physical_value(builder, original, 0, copied);
+                    builder.ins().jump(ready, &[copied.into()]);
+                    builder.switch_to_block(ready);
+                    let object = builder.block_params(ready)[0];
+                    super::buffers::clear_native_buffer(builder, module, object, layout, objects)?;
+                    propagate_native_failure(builder, module)?;
+                    builder.ins().iconst(types::I8, 0)
+                }
                 NativeIntrinsic::Inline(NativeInlineIntrinsic::CCallbackNew) => {
                     let NativeType::Object(layout) = function.value_type(arguments[0]) else {
                         return Err(native_error("callback requires a concrete closure"));

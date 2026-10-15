@@ -53,7 +53,9 @@ fn opcode_intrinsic_instruction(
             object: receiver,
             value,
         },
-        OpcodeIntrinsic::ListCanCopyAt | OpcodeIntrinsic::ListCopyAt => {
+        OpcodeIntrinsic::ListClear
+        | OpcodeIntrinsic::ListCanCopyAt
+        | OpcodeIntrinsic::ListCopyAt => {
             unreachable!("copy dispatch uses two instructions")
         }
     }
@@ -406,6 +408,19 @@ impl Compiler<'_> {
                 let receiver = lower.locals[&function.parameters[0].local];
                 lower.emit(
                     opcode_intrinsic_instruction(opcode, destination, receiver, receiver),
+                    function.span.clone(),
+                );
+                destination
+            }
+            Some(OpcodeIntrinsic::ListClear) => {
+                let destination = lower.allocate();
+                let receiver = lower.locals[&function.parameters[0].local];
+                lower.emit(
+                    Instruction::Builtin {
+                        destination,
+                        builtin: crate::intrinsics::Builtin::ListClear,
+                        arguments: vec![receiver],
+                    },
                     function.span.clone(),
                 );
                 destination

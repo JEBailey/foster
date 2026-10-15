@@ -11,6 +11,7 @@
 //! Use borrow or slice to access elements by reference without Copy, or remove to
 //! transfer ownership. slice returns a borrowed view; copy_slice returns an independent
 //! list and is available only when the element type satisfies Copy.
+//! clear removes all elements and runs their cleanup while retaining capacity for reuse.
 //!
 //! ```foster
 //! import core.list.List
@@ -64,6 +65,9 @@ pub type List<T> = & Sequence<T> & Collection<T> & {
     // Required public operations; implementations live in impl blocks.
     /// Appends `value` to this list in place.
     pub func push(self: Self, value: T) -> () [reshape self.items]
+    /// Removes all elements, running their required cleanup, while retaining storage capacity.
+    /// Requires no Copy capability. Reshapes the list, invalidating element borrows and slices.
+    pub func clear(self: Self) -> () [reshape self.items]
     /// Returns this list with `value` appended.
     pub func append(self: Self, value: T) -> List<T> [consume self]
     /// Copies the element at a zero-based index without removing it.
@@ -199,6 +203,10 @@ impl List<T & Copy> {
 impl List<T> {
     /// Appends `value` to this list in place.
     pub func push(self: Self, value: T) -> () [reshape self.items] = intrinsic("list.push")
+
+    /// Removes all elements, running their required cleanup, while retaining storage capacity.
+    /// Requires no Copy capability. Reshapes the list, invalidating element borrows and slices.
+    pub func clear(self: Self) -> () [reshape self.items] = intrinsic("list.clear")
 
     /// Returns this list with `value` appended.
     pub func append(self: Self, value: T) -> List<T> [consume self] = intrinsic("list.append")
@@ -522,4 +530,16 @@ test "list algorithms transform and aggregate values" {
     assert([[1, 2], [], [3]].flatten() == [1, 2, 3])
     assert(["λ", "", "🙂"].join("|") == "λ||🙂")
     ()
+}
+
+test "clear empties lists and permits repeated reuse" {
+    let values = [1, 2, 3]
+    values.clear()
+    assert(values.length == 0)
+    values.clear()
+    values.push(42)
+    assert(values.length == 1 && values[0] == 42)
+    let empty = values.take(0)
+    empty.clear()
+    assert(empty.length == 0)
 }

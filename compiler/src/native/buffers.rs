@@ -505,3 +505,76 @@ pub(super) fn push_native_buffer(
     store_physical_value(builder, object, length_offset, new_length);
     Ok(())
 }
+
+/// Drops initialized elements without releasing the backing allocation.
+pub(super) fn clear_native_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    object: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<(), FosterError> {
+    let (data_offset, length_offset, _, element) = native_buffer_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, length_offset as i32);
+    let zero = builder.ins().iconst(word, 0);
+    // Detach the initialized range before releasing children so failure cleanup
+    // cannot release an element twice. Keep data and capacity for subsequent pushes.
+    store_physical_value(builder, object, length_offset, zero);
+    if let Some(pointee) = element.pointee
+        && objects.layouts.is_managed(pointee)
+    {
+        let data = builder
+            .ins()
+            .load(word, MemFlagsData::trusted(), object, data_offset as i32);
+        let next_element = builder.create_block();
+        let release = builder.create_block();
+        let done = builder.create_block();
+        builder.append_block_param(next_element, word);
+        builder.ins().jump(next_element, &[zero.into()]);
+        builder.switch_to_block(next_element);
+        let index = builder.block_params(next_element)[0];
+        let finished = builder
+            .ins()
+            .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+        builder.ins().brif(finished, done, &[], release, &[]);
+        builder.switch_to_block(release);
+        let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+        let address = builder.ins().iadd(data, offset);
+        let value = builder
+            .ins()
+            .load(word, MemFlagsData::trusted(), address, 0);
+        objects.release(builder, module, value, pointee)?;
+        let next = builder.ins().iadd_imm_s(index, 1);
+        builder.ins().jump(next_element, &[next.into()]);
+        builder.switch_to_block(done);
+    }
+    Ok(())
+}
+
+/// Detaches shared list storage while retaining its reserved capacity.
+pub(super) fn clone_native_buffer_retaining_capacity(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (_, length_offset, capacity_offset, _) = native_buffer_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, length_offset as i32);
+    let capacity = builder.ins().load(
+        word,
+        MemFlagsData::trusted(),
+        source,
+        capacity_offset as i32,
+    );
+    let target = allocate_native_buffer_dynamic(builder, module, layout, capacity, objects)?;
+    store_physical_value(builder, target, length_offset, length);
+    copy_native_buffer_elements(builder, module, source, target, layout, true, objects)?;
+    Ok(target)
+}

@@ -1,0 +1,23 @@
+import core.list.List
+import core.drop.Drop
+
+type Item = & Drop & {
+    id: Int
+}
+impl Item {
+    func deinit(self: Self) -> () {
+        println(self.id)
+        if self.id == 1 panic("clear cleanup failed")
+        ()
+    }
+}
+
+func main() -> Int {
+    let items = [Item {
+        id: 1
+    }, Item {
+        id: 2
+    }]
+    items.clear()
+    0
+}

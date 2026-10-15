@@ -1012,11 +1012,22 @@ impl Machine {
                     }
                     let value = match crate::handlers::handler(*builtin) {
                         Some(BuiltinHandler::Direct(handler)) => {
-                            let arguments = arguments
-                                .iter()
-                                .copied()
-                                .map(|argument| read(frame, argument))
-                                .collect::<Result<Vec<_>, _>>()?;
+                            // clear reshapes the referenced storage; reading through
+                            // its handle would instead produce a detached list value.
+                            let arguments = if *builtin == crate::intrinsics::Builtin::ListClear {
+                                arguments
+                                    .iter()
+                                    .map(|argument| {
+                                        Value::Reference(Slot::place(&place(frame, *argument)))
+                                    })
+                                    .collect()
+                            } else {
+                                arguments
+                                    .iter()
+                                    .copied()
+                                    .map(|argument| read(frame, argument))
+                                    .collect::<Result<Vec<_>, _>>()?
+                            };
                             handler(&arguments, self.program.metadata.string_record)?
                         }
                         Some(BuiltinHandler::ConsumeFirst(handler)) => {

@@ -1,0 +1,61 @@
+import core.list.List
+import core.drop.Drop
+
+type Item = & Drop & {
+    id: Int
+}
+impl Item {
+    func deinit(self: Self) -> () {
+        println(self.id)
+    }
+}
+
+type Counter = {
+    value: Int
+}
+impl Counter {
+    func increment(self: Self) -> () [mut self.value] {
+        self.value = self.value + 1
+    }
+}
+
+func clear_borrowed(values: ref[values] List<Int>) -> () [reshape values.items] {
+    values.clear()
+}
+
+func main() -> Int {
+    let values = [1, 2, 3]
+    clear_borrowed(ref values)
+    assert(values.length == 0, "borrowed clear did not empty the caller")
+    values.clear()
+    values.push(42)
+    assert(values.length == 1 && values[0] == 42, "reuse after clear failed")
+    let nested = [[1, 2], [3, 4]]
+    nested[0].clear()
+    assert(nested[0].length == 0 && nested[1].length == 2, "projected clear did not update the nested list")
+    let counters = [Counter {
+        value: 40
+    }, Counter {
+        value: 7
+    }]
+    counters[0].increment()
+    assert(counters[0].value == 41 && counters[1].value == 7)
+    let texts = ["one", "two"]
+    texts.clear()
+    texts.push("again")
+    assert(texts[0] == "again", "cleared text list retained an element")
+    let items = [Item {
+        id: 1
+    }, Item {
+        id: 2
+    }]
+    items.clear()
+    assert(items.length == 0, "noncopy clear retained an element")
+    println(3)
+    items.clear()
+    items.push(Item {
+        id: 4
+    })
+    items.clear()
+    42
+}

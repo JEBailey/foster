@@ -464,17 +464,19 @@ impl FunctionCompiler<'_> {
                         let remote = *remote;
                         let receiver_mode =
                             self.intrinsic(function).and_then(Intrinsic::receiver_mode);
-                        let receiver = if !remote
-                            && (crate::hir::queries::type_exposes_group(
-                                self.hir.functions[function].return_type.as_ref(),
-                                "self",
-                            ) || matches!(
-                                self.hir.functions[function]
-                                    .parameters
-                                    .first()
-                                    .and_then(|parameter| parameter.ty.as_ref()),
-                                Some(crate::ast::TypeExpr::Reference { .. })
-                            )) {
+                        let receiver = if self.intrinsic(function).and_then(Intrinsic::opcode)
+                            == Some(OpcodeIntrinsic::ListClear)
+                            || (!remote
+                                && (crate::hir::queries::type_exposes_group(
+                                    self.hir.functions[function].return_type.as_ref(),
+                                    "self",
+                                ) || matches!(
+                                    self.hir.functions[function]
+                                        .parameters
+                                        .first()
+                                        .and_then(|parameter| parameter.ty.as_ref()),
+                                    Some(crate::ast::TypeExpr::Reference { .. })
+                                ))) {
                             self.reference_expression(*object, span.clone())?
                         } else if remote
                             || matches!(
@@ -618,6 +620,7 @@ impl FunctionCompiler<'_> {
                 let arguments = arguments
                     .iter().enumerate()
                     .map(|(index, argument)| match resolved_function {
+                        Some(function) if index == 0 && self.intrinsic(function).and_then(Intrinsic::opcode) == Some(OpcodeIntrinsic::ListClear) => self.reference_expression(*argument, span.clone()),
                         Some(function) => self.parameter_argument(function, index, *argument, span.clone()),
                         None => {
                             let expects_place = self.types.expression_type(*callee).is_some_and(|ty| {
@@ -1135,6 +1138,17 @@ impl FunctionCompiler<'_> {
     }
 
     fn method_receiver(&mut self, id: ExprId) -> Result<Slot, FosterError> {
+        // Mutating a list element must retain its projected storage identity,
+        // just as the by-reference field load below does for record members.
+        if matches!(self.hir.expressions[id], hir::Expr::Index { .. }) {
+            let span = self
+                .hir
+                .expression_spans
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+            return self.reference_expression(id, span);
+        }
         let hir::Expr::Member { object, name } = &self.hir.expressions[id] else {
             return self.expression(id);
         };
@@ -1166,6 +1180,21 @@ impl FunctionCompiler<'_> {
         destination: Slot,
         span: std::ops::Range<usize>,
     ) -> Result<bool, FosterError> {
+        if self.intrinsic(function).and_then(Intrinsic::opcode) == Some(OpcodeIntrinsic::ListClear)
+        {
+            if !arguments.is_empty() {
+                return Err(self.unsupported("clear intrinsic arity"));
+            }
+            self.emit(
+                Instruction::Builtin {
+                    destination,
+                    builtin: Builtin::ListClear,
+                    arguments: vec![receiver],
+                },
+                span,
+            );
+            return Ok(true);
+        }
         let [value] = arguments else {
             return if self
                 .intrinsic(function)

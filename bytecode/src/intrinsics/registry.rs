@@ -79,6 +79,7 @@ pub enum NativeIntrinsic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeInlineIntrinsic {
+    ListClear,
     CCallbackNew,
     IntegerToCodePoint,
     ByteIsValid,
@@ -254,6 +255,9 @@ macro_rules! native_builtin {
     };
     (Float32Bits) => {
         NativeIntrinsic::Runtime(crate::native::abi::FLOAT32_BITS)
+    };
+    (ListClear) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::ListClear)
     };
     (BytesFromList) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesFromList)
@@ -569,6 +573,8 @@ builtin_descriptors! {
         execution: Host, signature: [Read Integer, Read Integer] -> Any;
     TcpWaitAccept = 64, source: None, intrinsic: Some("tcp.wait_accept") => Some("std.net.tcp"),
         execution: Host, signature: [Read Integer, Read Integer] -> Any;
+    ListClear = 93, source: None, intrinsic: None => None,
+        execution: Direct, signature: [Read Any] -> Unit;
     IoStdinRead = 92, source: None, intrinsic: Some("io.stdin_read") => Some("std.io"),
         execution: Host, signature: [Read Integer] -> Any;
 }
@@ -627,6 +633,7 @@ pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Opti
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpcodeIntrinsic {
+    ListClear,
     ValueCanCopy,
     ValueCopy,
     ListCanCopyAt,
@@ -656,6 +663,16 @@ pub struct OpcodeIntrinsicDescriptor {
 }
 
 pub const OPCODE_INTRINSICS: &[OpcodeIntrinsicDescriptor] = &[
+    OpcodeIntrinsicDescriptor {
+        intrinsic: OpcodeIntrinsic::ListClear,
+        intrinsic_key: "list.clear",
+        module: "core.list",
+        receiver: IntrinsicReceiverMode::Mutate,
+        signature: IntrinsicSignature {
+            parameters: intrinsic_parameters!([Read Any]),
+            result: IntrinsicType::Unit,
+        },
+    },
     OpcodeIntrinsicDescriptor {
         intrinsic: OpcodeIntrinsic::ValueCanCopy,
         intrinsic_key: "value.can_copy",

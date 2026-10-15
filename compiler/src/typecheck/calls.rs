@@ -492,6 +492,7 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
+            Builtin::ListClear => (vec![Ty::Generic("ListStorage".into())], Ty::Unit),
             Builtin::CCallbackNew => (
                 vec![Ty::Generic("F".into()), string.clone(), Ty::Int],
                 string.clone(),

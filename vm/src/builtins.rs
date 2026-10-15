@@ -1063,9 +1063,65 @@ fn optional_os_component(
     }
 }
 
+#[allow(non_snake_case)]
+pub(crate) fn ListClear(
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let [Value::Reference(receiver)] = arguments else {
+        return Err(RuntimeError::runtime(
+            "List.clear requires a list reference",
+        ));
+    };
+    receiver.reshape(|value| {
+        let capacity = value
+            .list_value()
+            .ok_or_else(|| RuntimeError::runtime("List.clear requires a List"))?
+            .capacity();
+        let Some(values) = value.list_value_mut() else {
+            return Err(RuntimeError::runtime("List.clear requires a List"));
+        };
+        // Copy-on-write detachment may clone a Vec with capacity equal to length.
+        if values.capacity() < capacity {
+            values.reserve_exact(capacity - values.len());
+        }
+        values.clear();
+        Ok(())
+    })?;
+    Ok(Value::Unit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn list_clear_reuses_capacity_preserves_snapshots_and_invalidates_elements() {
+        use crate::value::{PlaceHandle, Slot};
+        let mut values = Vec::with_capacity(32);
+        values.push(Value::Integer(42));
+        let pointer = values.as_ptr();
+        let root = Slot::new(Value::list(values));
+        let receiver = Value::Reference(Slot::place(&root));
+        ListClear(std::slice::from_ref(&receiver), None).unwrap();
+        root.reshape(|value| {
+            let values = value.list_value_mut().unwrap();
+            assert!(values.is_empty());
+            assert_eq!(values.capacity(), 32);
+            assert_eq!(values.as_ptr(), pointer);
+            values.push(Value::Integer(7));
+            Ok(())
+        })
+        .unwrap();
+        let element = PlaceHandle::indexed(root.clone(), 0).unwrap();
+        let snapshot = root.read().unwrap();
+        ListClear(&[receiver], None).unwrap();
+        assert!(element.read().is_err());
+        assert_eq!(snapshot.list_value().unwrap(), &[Value::Integer(7)]);
+        let cleared = root.read().unwrap();
+        assert!(cleared.list_value().unwrap().is_empty());
+        assert_eq!(cleared.list_value().unwrap().capacity(), 32);
+    }
 
     struct DeniedHost;
 

@@ -39,6 +39,7 @@ macro_rules! builtin_handler {
 
 pub(crate) fn handler(builtin: crate::intrinsics::Builtin) -> Option<BuiltinHandler> {
     match builtin {
+        crate::intrinsics::Builtin::ListClear => builtin_handler!(Direct, ListClear),
         crate::intrinsics::Builtin::CCallbackNew => builtin_handler!(ConsumeFirst, CCallbackNew),
         crate::intrinsics::Builtin::CCallbackRelease => builtin_handler!(Direct, CCallbackRelease),
         crate::intrinsics::Builtin::CCallbackPoll => builtin_handler!(Direct, CCallbackPoll),
