@@ -9,6 +9,8 @@ import subprocess
 import sys
 import time
 
+from test_suites import SUITES, load_suites, select_targets
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -17,18 +19,28 @@ def main():
     parser.add_argument("--threads", type=int,
                         help="threads per binary (default: CPU count / jobs)")
     parser.add_argument("--test", action="append", help="integration target; repeat to select several")
+    parser.add_argument("--suite", nargs="+", choices=SUITES,
+                        help="component suites; combined with any --test targets")
+    parser.add_argument("--list", action="store_true", help="list selected targets without building")
     parser.add_argument("--target-dir", default="target")
     args = parser.parse_args()
     if args.jobs < 1 or (args.threads is not None and args.threads < 1):
         parser.error("jobs and threads must be positive")
     threads = args.threads or max(1, (os.cpu_count() or 1) // args.jobs)
     root = Path(__file__).resolve().parent.parent
+    try:
+        targets = select_targets(load_suites(root), args.suite, args.test)
+    except ValueError as error:
+        parser.error(str(error))
+    if args.list:
+        print("\n".join(targets))
+        return 0
     target = (root / args.target_dir).resolve()
     logs = target / "integration-logs" / f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
     logs.mkdir(parents=True, exist_ok=True)
     command = ["cargo", "test", "--no-run",
                "--message-format=json-render-diagnostics", "--target-dir", str(target)]
-    for name in args.test or ["*"]:
+    for name in targets:
         command.extend(["--test", name])
     executables = {}
     with subprocess.Popen(command, cwd=root, stdout=subprocess.PIPE, text=True) as build:
@@ -42,14 +54,18 @@ def main():
                 print(message["message"].get("rendered", ""), end="", file=sys.stderr)
             if (message.get("reason") == "compiler-artifact"
                     and message.get("executable")
-                    and "test" in message["target"]["kind"]):
+                    and "test" in message["target"]["kind"]
+                    and message["target"]["name"] in targets
+                    and Path(message["manifest_path"]).parent.resolve() == root):
                 executables[message["executable"]] = (
                     message["target"]["name"], Path(message["manifest_path"]).parent
                 )
         if build.wait():
             return build.returncode
-    if not executables:
-        print("No integration test executables found", file=sys.stderr)
+    found = {name for name, _ in executables.values()}
+    if found != set(targets):
+        print(f"Integration target discovery mismatch: expected {targets}, found {sorted(found)}",
+              file=sys.stderr)
         return 1
 
     def run(index, executable, name, directory):

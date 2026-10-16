@@ -4,7 +4,7 @@ Use this guide when generating or editing `.fos` source. It teaches the common
 forms; [language design](language-design.md) is the full syntax reference and
 [semantics](semantics.md) defines behavior. Every `foster` code block below is a
 complete program that returns `42`, checked by
-[agent documentation tests](../tests/agent_documentation.rs).
+[agent documentation tests](../tests/tooling/agent_documentation.rs).
 
 ## Constrained implementation parameters
 

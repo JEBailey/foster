@@ -65,7 +65,7 @@ clearer.
 
 The examples below share these imports. Place statement snippets inside a function;
 snippets beginning with `func` are module-level declarations. The executable check in
-`tests/documentation_examples.rs` compiles them together and runs the statement examples.
+`tests/tooling/documentation_examples.rs` compiles them together and runs the statement examples.
 Use `move` for existing values passed to consuming constructors, as shown below.
 
 ## Choosing a type

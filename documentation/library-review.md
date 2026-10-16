@@ -5,7 +5,7 @@ for public APIs, structural contracts, and ownership semantics.
 
 ## Verification
 
-`tests/library_contracts.rs` checks explicit public function annotations, required method signatures,
+`tests/library/library_contracts.rs` checks explicit public function annotations, required method signatures,
 single-target aliases, storage-free foundational contracts, and hash-collection composition across
 the source tree. The collection fixture exercises updates through abstract contracts, both storage
 implementations, membership, consuming lookup, key/value extraction, deduplication, and insertion order in the VM and

@@ -31,7 +31,7 @@ than generated resolved reference notation, remain the syntax to copy into progr
 - The time guide contained invalid bare `assert` branch arms, unsupported line breaks
   after call-opening parentheses, and missing `move` markers for consuming arguments.
   Corrected the examples, stated their shared import/function context, and added
-  [an executable guide check](../tests/documentation_examples.rs).
+  [an executable guide check](../tests/tooling/documentation_examples.rs).
 - Twelve required methods on `Int` lacked documentation even though their implementations
   were documented. Added matching summaries, bounds, and ownership-relevant details;
   the existing library documentation coverage test now passes.

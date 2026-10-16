@@ -28,12 +28,12 @@ and predicate-mutation rejection witnesses.
 
 ## Callable result provenance
 
-`tests/callable_provenance.rs` pairs independent-result acceptance with dependent-result rejection
+`tests/language/callable_provenance.rs` pairs independent-result acceptance with dependent-result rejection
 through callable aliases, moves, joins, aggregate storage, explicit reference-group contracts,
 recursive targets, and captured environments. Unknown predecessors never become independent
 summaries, and mutation through a reference must invalidate stale target knowledge. Borrower-free
 result classification inspects generic fields recursively and treats opaque/structural values
-conservatively. `tests/backend_parity.rs` exercises the newly accepted forms in both backends and
+conservatively. `tests/runtime/backend_parity.rs` exercises the newly accepted forms in both backends and
 optimization modes, including native callable storage/return conversion and returned references.
 
 ## Rule witnesses
@@ -42,7 +42,7 @@ The [semantic specification](semantics.md#11-backend-conformance-and-witnesses) 
 `S-` rules to these ownership witnesses and to the other language/backend suites. That crosswalk
 is coverage guidance, not a claim of complete semantic verification.
 
-`tests/ownership_soundness.rs` contains rule-indexed compile-pass and compile-fail programs. New or
+`tests/language/ownership_soundness.rs` contains rule-indexed compile-pass and compile-fail programs. New or
 changed normative rules in `` must add both a smallest accepted witness and a
 smallest rejected witness where both outcomes are meaningful.
 
@@ -93,7 +93,7 @@ input boundary and belongs to defensive verifier tests rather than the semantic 
 
 ## Compound-condition reference checks
 
-`tests/compound_conditions.rs` generates every two-boolean function as a disjunction of truth-table
+`tests/language/compound_conditions.rs` generates every two-boolean function as a disjunction of truth-table
 rows, then checks all 256 mutation/use condition pairs. The independent oracle accepts exactly when
 the two truth masks do not intersect. Paired regressions cover scalar complements, guarded exits,
 alias and call mutation, short-circuit effects, and loop backedges. The existing path-limit unit test

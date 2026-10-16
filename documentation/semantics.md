@@ -513,14 +513,14 @@ Existing witnesses provide regression evidence, not a proof or exhaustive confor
 
 | Rules | Existing witness location |
 | --- | --- |
-| S-03–S-05 | [language tests](../tests/language.rs), [CLI tests](../tests/cli.rs) |
-| S-06–S-08 | [language tests](../tests/language.rs) for stored/computed place behavior and resolved member ownership, [ownership tests](../tests/language_ownership.rs), [backend parity](../tests/backend_parity.rs), [library algorithm fixture](../tests/fixtures/programs/library_algorithms.fos), [library sources/tests](../library/) |
-| S-09–S-10 | [backend parity](../tests/backend_parity.rs) for assignment, call, aggregate, branch, and partial-application ordering; [language tests](../tests/language.rs), [portable tests](../tests/foster/), [control-flow lowering](../compiler/src/control_flow.rs) |
-| S-11–S-16 | [ownership tests](../tests/language_ownership.rs) for accepted and rejected partial capture, moves, loans, and computed results; [rule-indexed witnesses](../tests/ownership_soundness.rs), [reference model](../compiler/src/ownership/model.rs) |
-| S-17–S-18 | [ownership tests](../tests/language_ownership.rs) for reverse cleanup and transfer/failure edges, [backend parity](../tests/backend_parity.rs) for borrowed full-expression temporaries |
-| S-19–S-20 | [remote ownership tests](../tests/language_ownership.rs), [remote lifetime tests](../tests/remote_lifetime.rs), [backend parity tests](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
-| S-21 | [host tests](../tests/core_host.rs), [intrinsic registry](../bytecode/src/intrinsics/registry.rs) |
-| S-22 | [backend parity](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
+| S-03–S-05 | [language tests](../tests/language/language.rs), [CLI tests](../tests/tooling/cli.rs) |
+| S-06–S-08 | [language tests](../tests/language/language.rs) for stored/computed place behavior and resolved member ownership, [ownership tests](../tests/language/language_ownership.rs), [backend parity](../tests/runtime/backend_parity.rs), [library algorithm fixture](../tests/fixtures/programs/library_algorithms.fos), [library sources/tests](../library) |
+| S-09–S-10 | [backend parity](../tests/runtime/backend_parity.rs) for assignment, call, aggregate, branch, and partial-application ordering; [language tests](../tests/language/language.rs), [portable tests](../tests/foster), [control-flow lowering](../compiler/src/control_flow.rs) |
+| S-11–S-16 | [ownership tests](../tests/language/language_ownership.rs) for accepted and rejected partial capture, moves, loans, and computed results; [rule-indexed witnesses](../tests/language/ownership_soundness.rs), [reference model](../compiler/src/ownership/model.rs) |
+| S-17–S-18 | [ownership tests](../tests/language/language_ownership.rs) for reverse cleanup and transfer/failure edges, [backend parity](../tests/runtime/backend_parity.rs) for borrowed full-expression temporaries |
+| S-19–S-20 | [remote ownership tests](../tests/language/language_ownership.rs), [remote lifetime tests](../tests/runtime/remote_lifetime.rs), [backend parity tests](../tests/runtime/backend_parity.rs), [native tests](../tests/runtime/native.rs) |
+| S-21 | [host tests](../tests/runtime/core_host.rs), [intrinsic registry](../bytecode/src/intrinsics/registry.rs) |
+| S-22 | [backend parity](../tests/runtime/backend_parity.rs), [native tests](../tests/runtime/native.rs) |
 
 Every changed semantic rule must keep the smallest applicable set of witnesses: an observable
 side-effect-ordering test, an accepted ownership case, a rejected ownership case, VM/native parity
@@ -530,12 +530,12 @@ ownership rejection for a purely lexical rule. A known backend violation must be
 explicitly rather than hidden by weakening an assertion. See [testing](testing.md) and
 [ownership verification](ownership-verification.md) for execution commands and test organization.
 
-Record destructuring witnesses are in [record tests](../tests/record_destructuring.rs),
+Record destructuring witnesses are in [record tests](../tests/language/record_destructuring.rs),
 [the portable fixture](../tests/fixtures/programs/record_destructuring.fos), and
-[backend parity tests](../tests/backend_parity.rs).
+[backend parity tests](../tests/runtime/backend_parity.rs).
 
 Borrowed enum payload and nested record-pattern origins are covered by
-[enum reference tests](../tests/enum_payload_references.rs) and the corresponding
+[enum reference tests](../tests/language/enum_payload_references.rs) and the corresponding
 VM/native [fixture](../tests/fixtures/programs/enum_payload_references.fos).
 
 ## 12. Open decisions and implementation gaps

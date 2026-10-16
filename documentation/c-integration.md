@@ -347,7 +347,7 @@ source. Stale tokens fail instead of dereferencing released handler memory.
 
 The complete handler and registration example is in
 [`tests/fixtures/c_bridge/callbacks.fos`](../tests/fixtures/c_bridge/callbacks.fos),
-with its matching header and manifest alongside it. `tests/c_callbacks.rs` runs
+with its matching header and manifest alongside it. `tests/cbridge/c_callbacks.rs` runs
 it on the VM and both native optimization modes.
 
 ## Generated scalar call stubs
@@ -390,6 +390,6 @@ bundling, or Linux/macOS. These require additional contracts, rather than exposi
 unchecked pointers through the initial API.
 
 The executable fixture and VM/native parity tests live in
-`tests/fixtures/c_bridge` and `tests/c_integration.rs`. Struct import, nested and
+`tests/fixtures/c_bridge` and `tests/cbridge/c_integration.rs`. Struct import, nested and
 packed layouts, range checks, and both native optimization modes are covered by
-`tests/c_header_tool.rs`.
+`tests/cbridge/c_header_tool.rs`.

@@ -27,6 +27,12 @@ impl BufferHost {
 /// Borrowed elements and views retain the owner's lifetime; no raw address escapes.
 pub type Buffer<T> = {
     storage: List<T>
+
+    /// Returns the number of initialized elements.
+    pub func length(self: Self) -> Int [read self]
+    /// Copies the scalar at index. Fails unless 0 <= index < length().
+    /// Lowers directly to checked indexing without generic Copy dispatch.
+    pub func read(self: Self, index: Int) -> T [read self]
 }
 
 impl Buffer<T> {

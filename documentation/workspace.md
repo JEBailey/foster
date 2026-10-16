@@ -1,7 +1,14 @@
 # Rust workspace
 
-Foster has six Rust packages in one repository. The installed command is still
-`foster`; the other packages expose reusable implementation libraries.
+Foster has six primary Rust packages and a build-host bootstrap compiler in one
+repository. The installed command is `foster`; the other primary packages expose
+reusable implementation libraries.
+
+Each implementation area has a short entry guide: [driver](../src/README.md),
+[compiler](../compiler/README.md), [bytecode](../bytecode/README.md),
+[VM](../vm/README.md), [runtime](../runtime/README.md), and [host](../host/README.md).
+The [repository map](../README.md#working-in-the-repository) also points to optional
+packages, editor integration, component tests, benchmarks, and research.
 
 | Package | Source | Responsibility |
 | --- | --- | --- |
@@ -11,6 +18,7 @@ Foster has six Rust packages in one repository. The installed command is still
 | `foster-bytecode` | `bytecode/src/` | Executable identities and types, instructions, metadata, intrinsic contracts, encoding/decoding, linking, and validation |
 | `foster-native-runtime` | `runtime/src/` | Runtime support linked into native Foster executables |
 | `foster-host` | `host/src/` | Platform services, processes, foreign calls and callbacks, and shared remote lifecycle control |
+| `foster-bootstrap` | `compiler/bootstrap/` | Build-host compiler used to generate the embedded library before the ordinary compiler builds |
 
 ## Dependency boundaries
 
@@ -60,9 +68,15 @@ cargo check -p foster-vm
 cargo check -p foster-bytecode
 cargo test --workspace
 cargo test --test agent_documentation
+python tools/integration_tests.py --suite language runtime --jobs 2
 cargo fmt --all -- --check
 ```
 
 The workspace default members include all six packages. Existing CLI commands,
 Foster package layout, and executable formats are unchanged. Native runtime source
 assembly follows the owning packages when producing its cached standalone runtime.
+
+Integration source is grouped by component while Cargo target names remain
+registered in the root manifest. See [tests](../tests/README.md) for focused runs
+and [CI selection](../tools/ci/README.md) for change-based coverage. Shared
+compiler/runtime/ABI/library changes run the broad correctness gates.

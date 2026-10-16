@@ -14,8 +14,9 @@ references describe implemented behavior; the roadmap describes proposed work.
 | Understand text and Unicode data | [Unicode text](unicode.md) | [Unicode table maintenance](../tools/unicode/README.md) |
 | Build or distribute a program | [Native backend](native.md), [packages](package-format.md) | [Compiled libraries](compiled-libraries.md) |
 | Call C libraries | [C integration](c-integration.md) | [Further integration work](c-integration-plan.md); [host providers](host-providers.md) cover the separate platform-service boundary |
-| Contribute to Foster | [Workspace architecture](workspace.md), [development policy](development-policy.md), [testing](testing.md) | [Documentation standard](../library/DOCUMENTATION.md), [roadmap](roadmap.md) |
-| Investigate compiler behavior | [Diagnostics](diagnostics.md), [VM](vm.md) | [Incremental checking](incremental-checking.md), [ownership verification](ownership-verification.md), [benchmarking](benchmarking.md), [LSP performance](lsp-performance.md) |
+| Contribute to Foster | [Workspace architecture](workspace.md), [development policy](development-policy.md), [testing](testing.md) | [Component tests](../tests/README.md), [CI selection](../tools/ci/README.md), [documentation standard](../library/DOCUMENTATION.md), [roadmap](roadmap.md) |
+| Measure performance or read recorded findings | [Benchmark workloads](../benchmarks/README.md), [measurement guide](benchmarking.md) | [Research and results](../research/README.md) |
+| Investigate compiler behavior | [Diagnostics](diagnostics.md), [VM](vm.md) | [Incremental checking](incremental-checking.md), [ownership verification](ownership-verification.md), [benchmarking](benchmarking.md), [LSP performance](../research/results/lsp-performance.md) |
 
 API comments in `.fos` source are authoritative for individual operations and feed
 the generated reference and editor hovers. Guides supply context and complete

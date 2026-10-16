@@ -2,6 +2,7 @@
 name = "foster"
 version = "0.1.0"
 edition = "2024"
+autotests = false
 description = "The bootstrap implementation of the Foster programming language"
 license = "MIT OR Apache-2.0"
 
@@ -49,6 +50,241 @@ harness = false
 [[bench]]
 name = "runtime"
 harness = false
+
+
+# Integration targets are grouped by component; target names stay usable with --test.
+
+[[test]]
+name = "branch_coverage"
+path = "tests/language/branch_coverage.rs"
+
+[[test]]
+name = "callable_provenance"
+path = "tests/language/callable_provenance.rs"
+
+[[test]]
+name = "capability_contracts"
+path = "tests/language/capability_contracts.rs"
+
+[[test]]
+name = "closure_factories"
+path = "tests/language/closure_factories.rs"
+
+[[test]]
+name = "composition_defaults"
+path = "tests/language/composition_defaults.rs"
+
+[[test]]
+name = "compound_conditions"
+path = "tests/language/compound_conditions.rs"
+
+[[test]]
+name = "deferred_initialization"
+path = "tests/language/deferred_initialization.rs"
+
+[[test]]
+name = "enum_payload_references"
+path = "tests/language/enum_payload_references.rs"
+
+[[test]]
+name = "for_loops"
+path = "tests/language/for_loops.rs"
+
+[[test]]
+name = "impl_blocks"
+path = "tests/language/impl_blocks.rs"
+
+[[test]]
+name = "impl_constraints"
+path = "tests/language/impl_constraints.rs"
+
+[[test]]
+name = "intersection_dispatch"
+path = "tests/language/intersection_dispatch.rs"
+
+[[test]]
+name = "language"
+path = "tests/language/language.rs"
+
+[[test]]
+name = "language_ownership"
+path = "tests/language/language_ownership.rs"
+
+[[test]]
+name = "local_declaration_diagnostics"
+path = "tests/language/local_declaration_diagnostics.rs"
+
+[[test]]
+name = "multiline_method_chains"
+path = "tests/language/multiline_method_chains.rs"
+
+[[test]]
+name = "named_scopes"
+path = "tests/language/named_scopes.rs"
+
+[[test]]
+name = "never"
+path = "tests/language/never.rs"
+
+[[test]]
+name = "ownership_soundness"
+path = "tests/language/ownership_soundness.rs"
+
+[[test]]
+name = "parameter_groups"
+path = "tests/language/parameter_groups.rs"
+
+[[test]]
+name = "record_destructuring"
+path = "tests/language/record_destructuring.rs"
+
+[[test]]
+name = "required_type_contracts"
+path = "tests/language/required_type_contracts.rs"
+
+[[test]]
+name = "selected_try"
+path = "tests/language/selected_try.rs"
+
+[[test]]
+name = "self_type"
+path = "tests/language/self_type.rs"
+
+[[test]]
+name = "semantic_specification"
+path = "tests/language/semantic_specification.rs"
+
+[[test]]
+name = "type_branches"
+path = "tests/language/type_branches.rs"
+
+[[test]]
+name = "while_loops"
+path = "tests/language/while_loops.rs"
+
+[[test]]
+name = "backend_parity"
+path = "tests/runtime/backend_parity.rs"
+
+[[test]]
+name = "core_host"
+path = "tests/runtime/core_host.rs"
+
+[[test]]
+name = "future_process"
+path = "tests/runtime/future_process.rs"
+
+[[test]]
+name = "host_providers"
+path = "tests/runtime/host_providers.rs"
+
+[[test]]
+name = "list_clear"
+path = "tests/runtime/list_clear.rs"
+
+[[test]]
+name = "list_slices"
+path = "tests/runtime/list_slices.rs"
+
+[[test]]
+name = "native"
+path = "tests/runtime/native.rs"
+
+[[test]]
+name = "remote_lifetime"
+path = "tests/runtime/remote_lifetime.rs"
+
+[[test]]
+name = "socket_readiness"
+path = "tests/runtime/socket_readiness.rs"
+
+[[test]]
+name = "typed_buffers"
+path = "tests/runtime/typed_buffers.rs"
+
+[[test]]
+name = "bundled_library"
+path = "tests/library/bundled_library.rs"
+
+[[test]]
+name = "collection_borrow"
+path = "tests/library/collection_borrow.rs"
+
+[[test]]
+name = "foster"
+path = "tests/library/foster.rs"
+
+[[test]]
+name = "json"
+path = "tests/library/json.rs"
+
+[[test]]
+name = "library_contracts"
+path = "tests/library/library_contracts.rs"
+
+[[test]]
+name = "tzdata"
+path = "tests/library/tzdata.rs"
+
+[[test]]
+name = "agent_documentation"
+path = "tests/tooling/agent_documentation.rs"
+
+[[test]]
+name = "cli"
+path = "tests/tooling/cli.rs"
+
+[[test]]
+name = "compiled_libraries"
+path = "tests/tooling/compiled_libraries.rs"
+
+[[test]]
+name = "debugger"
+path = "tests/tooling/debugger.rs"
+
+[[test]]
+name = "documentation_examples"
+path = "tests/tooling/documentation_examples.rs"
+
+[[test]]
+name = "library_documentation"
+path = "tests/tooling/library_documentation.rs"
+
+[[test]]
+name = "standard_input"
+path = "tests/tooling/standard_input.rs"
+
+[[test]]
+name = "workspace"
+path = "tests/tooling/workspace.rs"
+
+[[test]]
+name = "c_borrowed_buffers"
+path = "tests/cbridge/c_borrowed_buffers.rs"
+
+[[test]]
+name = "c_callbacks"
+path = "tests/cbridge/c_callbacks.rs"
+
+[[test]]
+name = "c_header_tool"
+path = "tests/cbridge/c_header_tool.rs"
+
+[[test]]
+name = "c_integration"
+path = "tests/cbridge/c_integration.rs"
+
+[[test]]
+name = "c_pointer_contracts"
+path = "tests/cbridge/c_pointer_contracts.rs"
+
+[[example]]
+name = "profile_compiler"
+path = "tools/profiling/profile_compiler.rs"
+
+[[example]]
+name = "measure_backends"
+path = "tools/profiling/measure_backends.rs"
 
 [workspace]
 members = ["runtime", "host", "bytecode", "vm", "compiler", "compiler/bootstrap"]

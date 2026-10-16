@@ -12,10 +12,29 @@ Coding agents should start with [AGENTS.md](AGENTS.md) and the
 
 ## Implementation
 
-The Rust workspace has six packages: `foster` (the toolchain driver),
+The Rust workspace has six primary packages: `foster` (the toolchain driver),
 `foster-compiler`, `foster-vm`, `foster-bytecode`, `foster-native-runtime`, and
 `foster-host`. See [workspace architecture](documentation/workspace.md) for their responsibilities,
 dependencies, and build commands.
+
+The build-only [bootstrap compiler](compiler/bootstrap/README.md) generates the
+embedded standard library before the ordinary compiler builds.
+
+## Working in the repository
+
+| Area | Start here |
+| --- | --- |
+| Language checking and code generation | [Compiler](compiler/README.md) |
+| Executable formats and shared contracts | [Bytecode](bytecode/README.md) |
+| Execution and platform services | [VM](vm/README.md), [native runtime](runtime/README.md), [host](host/README.md) |
+| Commands, language server, debugger, and documentation | [Driver](src/README.md), [development tools](tools/README.md) |
+| Language and library source | [Standard library](library/README.md), [optional packages](packages/README.md) |
+| Editor integration | [Editors](editors/README.md) |
+| Correctness tests and component CI | [Test suites](tests/README.md), [CI selection](tools/ci/README.md) |
+| Performance workloads and measurements | [Benchmarks](benchmarks/README.md), [research](research/README.md) |
+
+Use `python tools/integration_tests.py --suite tooling --jobs 2` to work on one
+integration suite, or omit `--suite` to run all suites. Python 3.11 or newer is required.
 
 Project creation, manifest and dependency management, formatting policy, and documentation page generation are
 [written in Foster](tools/driver/README.md). The Rust build embeds their compiled

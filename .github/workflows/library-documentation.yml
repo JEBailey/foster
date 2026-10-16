@@ -14,7 +14,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      documentation: ${{ steps.plan.outputs.documentation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Select documentation checks
+        id: plan
+        env:
+          DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python tools/ci/plan.py --base "$DIFF_BASE" --github-output "$GITHUB_OUTPUT"
+
   generate:
+    needs: changes
+    if: needs.changes.outputs.documentation == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

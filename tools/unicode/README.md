@@ -74,7 +74,7 @@ Grapheme segmentation follows [UAX #29 revision 47](https://www.unicode.org/repo
 `GraphemeBreakProperty.txt`, `emoji-data.txt`, and the `InCB` records in
 `DerivedCoreProperties.txt` supply its properties. `GraphemeBreakTest.txt` is the
 official boundary conformance suite, exercised by `grapheme_boundaries_conform_to_unicode_in_both_backends`
-in `tests/backend_parity.rs` with and without optimization. The boundary state machine
+in `tests/runtime/backend_parity.rs` with and without optimization. The boundary state machine
 is Foster code in `core.unicode`; no host Unicode segmentation library is used.
 
 Tables contain fixed-width ASCII hexadecimal records. Category/property records

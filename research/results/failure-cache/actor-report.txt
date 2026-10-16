@@ -1,0 +1,40 @@
+Actor failure-state lookup follow-up
+
+The earlier large actor lookup regression is not present in these measurements.
+The current direct lookup is effectively equal to the original lookup. Repeated
+cached reads remain substantially faster. Acquiring a handle for only one read
+still costs more; the new compiler analysis avoids that pattern in functions
+where at most one reachable check executes per invocation.
+
+Median of four layout medians, ns/check, on an actual May coroutine worker:
+Original direct lookup: 8.5654
+Current direct lookup (path selected for single-check functions): 8.5539
+Repeated cached read: 1.8554
+Acquire a handle plus one read: 9.3790
+
+Current direct versus original: -0.13%.
+Repeated cached read versus original: 78.34% lower.
+Acquire-plus-one-read versus original: +9.50%.
+
+These are runtime-path microbenchmarks, not end-to-end actor application or
+message-throughput measurements. Single-check selection is established by the
+compiler control-flow tests from the previous task; this harness exercises the
+runtime helpers directly, with an external call at each check. Cached-read timing
+excludes its initial acquisition. Acquire-plus-one-read includes acquisition on
+every iteration and represents the setup cost that selective caching avoids.
+Functions with potentially repeated checks still cache conservatively; if their
+actual path performs just one check, that invocation can still pay setup.
+
+96 processes: four variants, four text offsets, one discarded warmup plus five
+measured repetitions. Each process performs 20 million timed checks and a 10,000
+check warmup. All returned checksum zero. The actual coroutine worker pins itself
+to logical CPU 4; the launcher uses above-normal priority. Cases are interleaved
+in seeded shuffled order. No builds or correctness tests ran during timing.
+
+Original helper uses saved runtime d57f5470464cc080. Current direct, cached, and
+acquire-plus-one-read variants share unchanged runtime 3357bf120a56e977. The
+previous experimental direct-TLS implementation remains reverted.
+
+No tracked source was changed in this follow-up. Runtime paths and measurements:
+micro-entry.rs, micro_build.py, micro_measure.py, micro-provenance.json,
+micro-results.json, micro-summary.json, aggregate.json.

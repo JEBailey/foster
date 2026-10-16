@@ -4,6 +4,10 @@ The examples are executable documentation for Foster. Each program focuses on a 
 library capability. Validate examples with `foster check <path>` and run them with
 `foster run <path>`. Dedicated language and library tests live in `tests/foster` and `library`.
 
+Development-only Rust profiling examples live under
+[tools/profiling](../tools/profiling/README.md). Performance workloads and
+application comparisons are indexed in [benchmarks](../benchmarks/README.md).
+
 Use precise effect bounds, grouping repeated sibling paths as `[mut state(left, right)]`.
 Ordinary `let` bindings are mutable; use `ref` to update caller-owned storage and `move`
 to pass an existing owned value to a consuming parameter. Call declared methods with `()`;

@@ -1,0 +1,11 @@
+import core.buffer
+import core.buffer.Buffer
+
+type BufferReadView = & Buffer<Int> & {}
+func inspect(values: BufferReadView) -> Int {
+    values.length() + values.read(1)
+}
+func main() -> Int {
+    let values = buffer::integers(2, 40)
+    inspect(values)
+}

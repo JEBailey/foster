@@ -11,3 +11,7 @@ operations; individual stream operations lock only the selected connection.
 Host operations return errors rather than interpreting Foster values; each backend
 adapts those results to its own representation. See the
 [host-provider guide](../documentation/host-providers.md) for injection and readiness contracts.
+
+From the repository root, run `cargo test -p foster-host --lib` and
+`python tools/integration_tests.py --suite runtime cbridge --jobs 2`.
+Host contracts are shared by both backends, so source changes trigger broad CI checks.

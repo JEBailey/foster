@@ -1,0 +1,50 @@
+Selective native failure-state caching
+
+Implemented control-flow analysis chooses direct status lookup when no reachable
+path executes more than one check. It caches a borrowed handle when checks can
+repeat, placing acquisition in a common dominator outside cycles. Exclusive
+branches use maximum path counts rather than summing their checks. Unreachable
+checks do not justify caching. Branch frequency and loop trip counts remain
+unknown; a zero-trip loop can pay setup in its preheader.
+
+Doom classification: 124 functions use direct lookup; 212 cache a handle.
+Functions without generated status reads are excluded. The profiling counter
+native.failure_cache.guarded counts non-entry placement, including placement
+following unconditional entry jumps; it does not count only bypassable guards.
+
+Generated program .text: 1,563,368 -> 1,556,448 bytes (-6,920, -0.443%).
+
+Doom comparison, ms/frame; positive reduction means faster:
+Padding   Previous  Selective  Reduction
+      0  1.607345  1.652956  -2.84%
+     16  1.670950  1.629499  +2.48%
+     32  1.697074  1.635990  +3.60%
+     64  1.610292  1.627347  -1.06%
+
+Median of four layout medians: 1.640621 -> 1.632745 ms/frame,
+0.48% lower. This is roughly neutral application performance,
+not a demonstrated repeatable overall speedup. Layout results vary in direction.
+
+Baseline is the previous unconditional frame-local cache, not v0.1.0 or the
+original repeated lookup implementation. Both use the same unchanged native
+runtime (cache 3357bf120a56e977), frozen application, bindings, DLLs, assets,
+fixed timestep and seed. Each accepted process completes 1,200 frames and ends
+with two kills. Four unused-text offsets, one discarded warmup and five measured
+runs per variant/offset: 48 runs. The launcher pins the main thread to logical
+CPU 4 at above-normal process priority. Both reserve 64 MiB stacks. Cases are
+interleaved in a seeded shuffled order. No tests or builds ran during timing.
+Results include code-layout effects and do not identify a CPU cache/predictor event.
+
+Validation: 32 native compiler tests passed (one profiling benchmark ignored),
+including ten new control-flow cases. 37 integration tests passed: native 24,
+C callbacks 2, C bridge 6, typed buffers 4, agent documentation 1. Strict Clippy
+passed for foster-compiler, foster-native-runtime and foster-bytecode, all targets
+under the test profile. Rustfmt and diff checks passed. Runtime slot lifetime,
+thread/coroutine isolation and ABI are unchanged from the previously validated
+frame-cache implementation. Source changes remain uncommitted.
+
+Artifacts: classification.json; doom-results.json; doom-summary.json;
+doom-provenance.json (hashes and link arguments); after-program.obj;
+after-entry.rs; after-link.json; build_doom.py; doom_measure.py.
+Logs: ../selective-failure-native-tests.log,
+../selective-failure-integration-tests.log, ../selective-failure-clippy.log.

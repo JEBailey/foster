@@ -24,6 +24,7 @@ cargo check --workspace --all-targets
 cargo clippy --workspace --all-targets
 cargo test -p foster-host -p foster-native-runtime
 cargo test --release --test backend_parity
+python tools/integration_tests.py --suite runtime cbridge --jobs 2
 ```
 
 Native code generation requires Rust, Cargo, and the platform linker. Generated
@@ -34,3 +35,7 @@ worker, and error/cancellation state follows the coroutine. Blocking host work i
 offloaded to temporary OS threads with owned inputs. The executable links May
 statically; a cold runtime build requires its locked dependencies in Cargo's cache
 or access to download them.
+
+Native-runtime and ABI changes trigger broad CI coverage. Keep measurement
+workloads under [benchmarks](../benchmarks/README.md) and diagnostic experiments
+and recorded findings under [research](../research/README.md).

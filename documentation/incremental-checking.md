@@ -199,7 +199,7 @@ Each report has schema version 1 and request-local `analysis` fields:
   Empty bodies, intrinsics, and recovery stubs are counted separately as
   `body.empty_checked`. Cancelled attempts can count as checked without completing.
 
-Use `benchmarks/lsp_latency.py --profile-log <file>` to enable profiling for a
+Use `benchmarks/harnesses/lsp_latency.py --profile-log <file>` to enable profiling for a
 benchmark subprocess and retain the reports. Cancellation reports retain completed
 phases and elapsed time in the interrupted phase. Profiling adds measurement overhead;
 compare performance with profiling disabled when making final latency claims.

@@ -60,7 +60,7 @@ runtime lifetime mechanism. There is no new callable syntax or serialized callab
 Separately compiled or otherwise unknown targets use the checked contract fallback.
 
 Constant-index selection from fixed local lists preserves the selected callable's
-reference-parameter summary. Both `callbacks[0](...)` and assigning `callbacks[0]` to a local
+reference-parameter summary. Both `callbacks[0](.)` and assigning `callbacks[0]` to a local
 retain the selected slot's dependencies, rather than combining all list elements. Replacing a
 slot invalidates its previous summary. Tests distinguish two functions returning references to
 different inputs, reject invalidation of the selected input, and verify VM/native results with

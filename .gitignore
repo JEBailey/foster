@@ -2,6 +2,7 @@
 .foster/
 *.pdb
 node_modules/
+__pycache__/
 .idea/
 docs/
 !/src/documentation/

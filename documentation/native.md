@@ -22,7 +22,7 @@ is the default; `--no-optimize` disables shared SSA, Cranelift, and linker optim
 Optimized native compilation removes redundant scalar copies and block parameters, threads
 jump-only blocks, and reserves addressable stack storage for values used by reference.
 Ownership operations, checked arithmetic, and cancellation behavior remain intact.
-The [31-workload comparison](../benchmarks/results/native_cleanup.md) measured 30.4% less
+The [31-workload comparison](../research/results/native_cleanup.md) measured 30.4% less
 runtime across 14 benchmark families, with native build times roughly unchanged.
 VM bytecode remains unchanged.
 
@@ -361,7 +361,7 @@ substitutions from verified receiver and argument types. Native remote-call sele
 those logical types instead of reconstructing them from scalar/pointer representations, where
 String and Symbol share an ABI.
 
-`tests/backend_parity.rs` runs shared value, failure, ownership, and remote-call cases through the
+`tests/runtime/backend_parity.rs` runs shared value, failure, ownership, and remote-call cases through the
 VM and native executable with optimization both enabled and disabled. CI runs this suite in debug
 and release Rust profiles on Windows and Linux. The broader Foster library
 suite still runs on the VM; checking that a module declares tests is not native execution coverage.

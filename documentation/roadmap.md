@@ -34,7 +34,7 @@ work.
 
 Writing the compiler in Foster is a direction to develop in stages. The Rust compiler remains
 the production and bootstrap implementation, including source scanning. An experimental
-Foster lexer lives in [tools/lexer](../tools/lexer/README.md), separate from the compiler's
+Foster lexer lives in [research/experiments/lexer](../research/experiments/lexer/README.md), separate from the compiler's
 execution path. A fully self-hosted compiler and the arena API below are not implemented.
 
 - Prototype an append-only `Arena<T>` and typed `ArenaId<T>` in Foster using existing list storage.

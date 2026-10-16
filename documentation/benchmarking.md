@@ -1,5 +1,9 @@
 # Optimization testing and benchmarks
 
+Find workload sources and harnesses in [benchmarks](../benchmarks/README.md).
+Keep experiments and recorded evidence in [research](../research/README.md);
+this guide describes the measurement procedures.
+
 Optimization is enabled by default. It can be selected explicitly from the CLI:
 
 ```text
@@ -50,21 +54,8 @@ Each iteration checks once, then builds VM bytecode and a native object first wi
 disabled and then enabled. Compare matching phases and modes, and discard the first iteration
 when assessing warmed runs. Larger existing benchmark source files can replace Fibonacci.
 
-A local Windows debug sample on 2026-09-15 compared the instrumented pipeline before and
-after shared-state reuse and conditional rechecking/cleanup. Allocation requests averaged over
-the final four Fibonacci iterations were:
-
-| Operation | Before | After |
-| --- | ---: | ---: |
-| Frontend checking | 5,124 | 3,814 |
-| Native preparation, optimization disabled | 5,164 | 4,599 |
-| Native preparation, optimization enabled | 6,087 | 5,942 |
-| VM compilation, optimization disabled | 5,482 | 5,493 |
-| VM compilation, optimization enabled | 7,526 | 6,961 |
-
-On that sample, optimized VM CFG cleanup calls fell from four to two and register allocation
-calls from two to one. These are workload-specific allocation and scheduling observations;
-the small instrumented timing sample does not establish a general compiler speedup.
+Recorded compiler allocation and Criterion comparisons are kept in
+[research results](../research/results/compiler-optimizer.md).
 
 ### Scheduling and analysis reuse
 
@@ -102,16 +93,8 @@ cargo bench --bench compiler -- bytecode --save-baseline optimizer-before
 cargo bench --bench compiler -- bytecode --baseline optimizer-before
 ```
 
-A local Windows release run on 2026-09-12 measured these central timing estimates:
-
-| Workload | Before | After |
-| --- | ---: | ---: |
-| Many constants | 13.74 ms | 2.52 ms |
-| Loop liveness | 54.31 ms | 32.37 ms |
-
-Both stress workloads improved significantly in Criterion's comparison. The small Fibonacci
-optimized and unoptimized lowering benchmarks showed no statistically significant change.
-These are local measurements, not timing thresholds enforced by tests.
+See [recorded optimizer measurements](../research/results/compiler-optimizer.md)
+for the local before/after sample.
 
 ## Language-server latency
 
@@ -151,9 +134,8 @@ shrinking-tail strategy on the same 2,048-element input. Both measurements inclu
 construction. Run just that comparison with `cargo bench --bench runtime -- list_fold`; it is a
 diagnostic comparison, not a timing-based correctness gate.
 
-A local Windows release run on 2026-09-04 measured 67.1 ms for the recursive-tail reference and
-2.83 ms for the indexed fold with optimized bytecode (about 24x faster). This compares both
-strategies in the same build, not two historical releases; timings are machine-dependent.
+The [recorded list-fold comparison](../research/results/library-algorithms.md)
+contains the local timing sample and its scope.
 
 ## Foster library algorithms
 
@@ -227,11 +209,11 @@ toolchains, hardware, and power settings.
 ## Taker runtime comparison
 
 With Java 21+, a Windows release Foster compiler, and sibling `taker/taker` and
-`taker_foster` repositories, run `node benchmarks/taker_runtime.cjs`. It compiles both
+`taker_foster` repositories, run `node benchmarks/harnesses/taker_runtime.cjs`. It compiles both
 libraries from current source, uses matching parser workloads with checked results, and
 reports in-process parse latency across three independent processes per backend. Java
 gets an explicit JIT warmup; Foster runs prebuilt optimized bytecode. Native compilation
-is attempted and failures are recorded separately. See the [measured results and scope](../benchmarks/results/taker-runtime.md).
+is attempted and failures are recorded separately. See the [measured results and scope](../research/results/taker-runtime.md).
 
 ## Shared scalar CSE measurements
 
@@ -246,20 +228,20 @@ Compilation measurements include shared construction and optimization, but exclu
 checking and native linking. Native runtime includes process startup and shutdown; small native
 differences need cautious interpretation. Use `FOSTER_NATIVE_CACHE_DIR` for a writable runtime
 cache. The `shared.cse` compiler-profile phase separately measures pass time and allocations.
-See the [recorded CSE results and limitations](../benchmarks/results/scalar-cse.md).
+See the [recorded CSE results and limitations](../research/results/scalar-cse.md).
 
 ## Native runtime profiling
 
-The [recorded baseline](../benchmarks/results/native-runtime-profile.md) includes
+The [recorded baseline](../research/results/native-runtime-profile.md) includes
 per-workload timings, allocation counts, polling counts, and interpretation limits.
-The [cancellation-status reuse follow-up](../benchmarks/results/native-poll-status-reuse.md)
+The [cancellation-status reuse follow-up](../research/results/native-poll-status-reuse.md)
 records paired before/after execution measurements and the full validation outcome.
 
 Run the opt-in profiler alone, using release compilation:
 
 ```powershell
 $env:FOSTER_NATIVE_CACHE_DIR = Join-Path (Get-Location) 'target/optimizer-test-cache'
-cargo test --release -p foster --lib native::runtime::profiling::profile_native_runtime -- --ignored --exact --nocapture
+cargo test --release -p foster-compiler --lib native::runtime::profiling::profile_native_runtime -- --ignored --exact --nocapture
 ```
 
 It builds the fixtures in `benchmarks/native_runtime/`, verifies reduced inputs on the VM,
@@ -286,11 +268,11 @@ with later bypass timings.
 
 ### Bundled library comparison
 
-The [October 2026 comparison](../benchmarks/results/bundled-library.md) records
+The [October 2026 comparison](../research/results/bundled-library.md) records
 the source-based baseline, bundled implementation, raw samples, and compiler/LSP profiles.
 
 ```text
-node benchmarks/bundled_library.cjs path/to/foster.exe target/bundled-library/results.json 7
+node benchmarks/harnesses/bundled_library.cjs path/to/foster.exe target/bundled-library/results.json 7
 ```
 
 Run the same harness against saved before/after release executables. It measures process startup,
@@ -305,10 +287,10 @@ and range. Run measurements without concurrent builds or tests. This warms the f
 it does not claim cold-disk performance or isolate operating-system process-launch overhead.
 
 ```text
-python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos
-python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --outline
-python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --interrupt
-python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --profile-log target/lsp-profile.log
+python benchmarks/harnesses/lsp_latency.py target/release/foster.exe path/to/module.fos
+python benchmarks/harnesses/lsp_latency.py target/release/foster.exe path/to/module.fos --outline
+python benchmarks/harnesses/lsp_latency.py target/release/foster.exe path/to/module.fos --interrupt
+python benchmarks/harnesses/lsp_latency.py target/release/foster.exe path/to/module.fos --profile-log target/lsp-profile.log
 ```
 
 Use a release `foster lsp` process and the real project root. Measure cold semantic
@@ -322,7 +304,7 @@ The implementation boundaries are documented in [interactive checking](increment
 To measure semantic requests while checking a real project, run:
 
 ```text
-node benchmarks/lsp_snapshots.cjs target/release/foster.exe path/to/src/main.fos target/lsp-snapshots.json
+node benchmarks/harnesses/lsp_snapshots.cjs target/release/foster.exe path/to/src/main.fos target/lsp-snapshots.json
 ```
 
 This harness waits for initial diagnostics, edits a separate probe function, then
@@ -337,12 +319,12 @@ measure initial diagnostics separately from request responsiveness.
 With `taker_foster` beside this repository and a current Windows release compiler, run:
 
 ```text
-node benchmarks/lsp_libraries.cjs 7
+node benchmarks/harnesses/lsp_libraries.cjs 7
 ```
 
 Set `FOSTER_BENCH_EXE` to an alternate compiler executable to compare builds
 against the same current consumer sources without replacing the default compiler.
-The [cache and capture-mode comparison](../benchmarks/results/lsp-cache-capture.md)
+The [cache and capture-mode comparison](../research/results/lsp-cache-capture.md)
 records a same-commit baseline, optimized measurements, and phase profiles.
 
 This builds Taker into a `.flib` and compares its calculator and Unicode consumers using
@@ -362,8 +344,8 @@ profiling overhead to the timed samples.
 
 ### Formatter latency and cancellation
 
-Run `node benchmarks/formatter.cjs <foster-executable> <source.fos> <results.json>`
+Run `node benchmarks/harnesses/formatter.cjs <foster-executable> <source.fos> <results.json>`
 to measure document formatting and cancellation through a real LSP connection.
 Use a large file for the cancellation measurement. The server uses an editor
 overlay and the source file is not changed. See the
-[formatter comparison](../benchmarks/results/formatter.md) for the recorded results.
+[formatter comparison](../research/results/formatter.md) for the recorded results.

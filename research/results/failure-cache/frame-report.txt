@@ -1,0 +1,67 @@
+# Frame-local failure-state handles
+
+The implementation is retained. Native functions resolve their execution-state slot once when needed and reuse an opaque borrowed handle for later checks. On this machine, repeated checks improve by about 77–78% on ordinary threads and actors, and the frozen Doom benchmark improves by 4.8–12.5% across four code layouts. Setup is not free: acquiring a handle for every single read is about 8–11% slower than the original lookup microbenchmark. This is not a guarantee that every actor or application workload becomes faster.
+
+## Implementation and lifetime
+
+The new private runtime ABI helpers are foster_rt_v5_failure_state() and foster_rt_v5_failure_pending_in(handle). The getter resolves the existing FOSTER_EXECUTION May local and returns its boxed RefCell address as an opaque borrowed handle. The read helper checks that same slot without another context or hash-map lookup. Ordinary threads and coroutine actors both use May's existing storage selection; the earlier experimental direct-TLS branch is not part of this implementation.
+
+NativeBuilder caches one SSA handle per generated function. The first emitted check triggers an acquisition that is moved into the entry block so it dominates sibling branches and loops. Functions that emit no such checks acquire nothing. The handle is not passed through Foster values or retained in an object, and no TLS pointer cache is used. No Rust reference or RefCell borrow remains live across calls or coroutine suspension. A coroutine's native frame carries the handle when it moves between workers.
+
+May 0.3.51 is pinned in the runtime manifests. Its LocalKey implementation stores each value in a Box and does not remove it during the owning context's lifetime. Hash-map growth moves the box entry, not its allocation. The slot is destroyed only when the owning ordinary thread or coroutine exits, after its native invocations have ended. This implementation relies on that address/lifetime contract; a dependency upgrade must review it. The coroutine executes on one worker at a time, and each status read creates only a temporary borrow.
+
+Callback and embedded-execution save/restore, failure recording, and nested cleanup continue using the original slot. A cached handle therefore observes their updates. No failure checks are removed on successful calls. Cancellation polls still return their own failure status without an additional generated query.
+
+The FAIL helper always records a failure, so lowering now propagates that known status directly. Re-querying after FAIL would otherwise force a state acquisition onto successful arithmetic merely because a cold overflow branch contains a failure check. Runtime arithmetic fault behavior and cleanup remain covered by tests.
+
+## Lookup measurements
+
+All values below are medians of four layout-specific medians, in nanoseconds per check. Each layout has one discarded warmup plus five measured runs, with 20 million checks per process and a 10,000-check warmup. All 144 runs completed with checksum zero. The executing thread was pinned to logical CPU 4, including the actual worker in coroutine cases.
+
+| Context | Original lookup | Reused handle | Acquire + one read |
+|---|---:|---:|---:|
+| Ordinary thread | 8.2369 ns | 1.8558 ns | 9.1094 ns |
+| Coroutine actor | 8.5987 ns | 1.8605 ns | 9.2662 ns |
+
+The reused-handle loop excludes its one initial acquisition from timing. The acquire-plus-read loop acquires inside every iteration, exposing the setup tradeoff; it is not a complete native function throughput benchmark. It costs about 10.6% more on ordinary threads and 7.8% more in actors in this experiment. Reuse is valuable for functions that execute several checks, especially loops. No complete actor application was benchmarked; the actor results above describe status checking only.
+
+Unused text offsets 0, 16, 32, and 64 were tested with each variant. Order was shuffled with seed 823731. No instrumentation is present in the runtime functions. Timing surrounds the repeated calls, and the native slot getter/read functions remain external calls. micro-entry.rs contains the measurement shim; micro-results.json and micro-summary.json contain the raw and summarized results.
+
+## Doom comparison
+
+The updated compiler rebuilt the same frozen scalar-binding Doom application and dependency sources used in the previous investigations. Application source, bindings, DLLs, assets, fixed timestep, scene, frame count, and seed remain unchanged. The baseline uses the saved original program object/runtime; the new object contains the frame-local lowering and known-failure propagation changes. These two objects necessarily differ. Both were relinked at four unused-text offsets before program.obj.
+
+| Padding | Original ms/frame | Cached-handle ms/frame | Reduction |
+|---:|---:|---:|---:|
+| 0 | 1.8339 | 1.6378 | 10.69% |
+| 16 | 1.7363 | 1.6533 | 4.78% |
+| 32 | 1.9032 | 1.6662 | 12.45% |
+| 64 | 1.8384 | 1.6217 | 11.79% |
+
+Each combination has one discarded warmup and five measured runs: 48 runs total, shuffled with seed 991720. Every accepted run verifies 1,200 frames and final kill count 2. The main thread was pinned to logical CPU 4 at above-normal process priority; stacks reserve 64 MiB. No builds, correctness tests, or other benchmark batches ran concurrently with timing. Existing frame output is emitted after the timed workload. Results are in doom-results.json and doom-summary.json.
+
+Generated program .text grew from 1,511,160 to 1,563,368 bytes: 52,208 bytes, about 3.45%. Holding a handle live and supplying it to status reads adds instructions/register pressure, so code size is another tradeoff. The frame-time results include all effects of the change, including altered code placement; they do not isolate a particular CPU cache or prediction event. Hardware-counter access remains unavailable in this session. Results apply to this machine and workload, not all CPUs.
+
+## Correctness and verification
+
+71 relevant tests passed on the final implementation:
+
+- 10 native runtime unit tests. Cached handles are checked across map growth, nested execution, cleanup, and repeated coroutine yields, alongside existing panic restoration and context-isolation coverage.
+- 22 native compiler tests. New structural tests verify entry-block dominance across sibling branches and no acquisition on successful arithmetic with failure-only branches. Existing tests cover native cleanup/reclamation, cancellation, actor shutdown, virtual-thread suspension, provider integration, and native preparation/caching.
+- 37 integration tests: native execution (24), C callbacks (2), C integration/scalar bridges (6), typed buffers (4), and checked agent documentation (1).
+- 2 runtime ABI contract tests.
+
+The opt-in native profiling benchmark was ignored as intended in the compiler suite. Strict all-targets Clippy passed for foster-compiler, foster-native-runtime, and foster-bytecode. Rust formatting, explicit included-runtime source formatting checks, and git diff checks passed. Incremental-cache hard-link fallback warnings are toolchain diagnostics, not Clippy findings.
+
+The implementation remains uncommitted. Earlier scalar-stub changes are preserved. The previous direct-TLS candidate remains reverted.
+
+## Artifacts and reproduction
+
+- micro_build.py / micro_measure.py: baseline, cached, and acquire-each-check variants for ordinary threads and actors.
+- micro-provenance.json: exact linker/compiler arguments and binary hashes.
+- build_doom.py: builds the updated frozen app, then relinks baseline and updated objects at each offset.
+- capture.rs / capture.py: capture the new object and entry shim while passing all calls through to the actual Rust compiler. The wrapper is named rustc.exe and placed in PATH only for this build; the default cache identity/toolchain is preserved. It performs no runtime/source instrumentation.
+- after-program.obj, after-entry.rs, after-link.json: updated native object, shim, and link arguments.
+- doom-provenance.json: binary/input hashes and exact link arguments. The baseline object/shim remain in ../scalar-doom-profile/layout/; the original runtime cache is d57f5470464cc080 and updated runtime cache is 3357bf120a56e977.
+- doom_measure.py: shuffled, CPU-pinned Doom runs, checksum/frame validation, and summaries. Interrupted workloads would be saved separately and excluded; all 48 runs in this batch were valid.
+- Parent-directory logs: frame-failure-runtime-tests.log, frame-failure-compiler-final.log, frame-failure-integration-tests.log, frame-failure-abi-tests.log, and frame-failure-clippy.log.

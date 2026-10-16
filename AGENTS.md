@@ -7,7 +7,7 @@ and the standard library are written in `.fos` files.
 ## Before writing Foster
 
 1. Read [Writing Foster](documentation/writing-foster.md). Its complete examples are checked
-   by `tests/agent_documentation.rs`.
+   by `tests/tooling/agent_documentation.rs`.
 2. Find a nearby `.fos` example and read the declarations of the library methods
    you plan to use. Search `library/` for the exact method and its effects.
 3. Consult [language design](documentation/language-design.md) for syntax and
