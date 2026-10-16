@@ -237,12 +237,36 @@ pub(super) fn runtime_call(
     source_signature: &ir::Signature,
     arguments: &[ClifValue],
 ) -> Result<ClifValue, FosterError> {
-    let contract = abi::verify_call(name, source_signature).map_err(native_error)?;
     if arguments.len() != source_signature.parameters.len() {
         return Err(native_error(format!(
             "runtime helper `{name}` has inconsistent argument count"
         )));
     }
+    let reference = runtime_reference(builder, module, name, source_signature)?;
+    let call = builder.ins().call(reference, arguments);
+    let result = builder.inst_results(call)[0];
+    if name == abi::CANCELLATION_POINT {
+        // The poll already queried failure after handling cooperative scheduling.
+        propagate_native_failure_status(builder, module, result);
+    } else if name == abi::FAIL {
+        // FAIL always records a failure. Re-querying it would also force a
+        // frame-state acquisition onto successful arithmetic paths merely
+        // because their cold overflow branch can fail.
+        let pending = builder.ins().iconst(types::I8, 1);
+        propagate_native_failure_status(builder, module, pending);
+    } else if matches!(name, abi::ASSERT | abi::STRING_GET | abi::PARSE_FLOAT) {
+        propagate_native_failure(builder, module)?;
+    }
+    Ok(result)
+}
+
+fn runtime_reference(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    name: &str,
+    source_signature: &ir::Signature,
+) -> Result<cranelift_codegen::ir::FuncRef, FosterError> {
+    let contract = abi::verify_call(name, source_signature).map_err(native_error)?;
     let pointer_type = module.target_config().pointer_type();
     let mut signature = module.make_signature();
     signature
@@ -264,19 +288,7 @@ pub(super) fn runtime_call(
         .map_err(|error| {
             native_error(format!("cannot declare native runtime `{name}`: {error}"))
         })?;
-    let reference = module.declare_func_in_func(function, builder.func);
-    let call = builder.ins().call(reference, arguments);
-    let result = builder.inst_results(call)[0];
-    if name == abi::CANCELLATION_POINT {
-        // The poll already queried failure after handling cooperative scheduling.
-        propagate_native_failure_status(builder, module, result);
-    } else if matches!(
-        name,
-        abi::ASSERT | abi::FAIL | abi::STRING_GET | abi::PARSE_FLOAT
-    ) {
-        propagate_native_failure(builder, module)?;
-    }
-    Ok(result)
+    Ok(module.declare_func_in_func(function, builder.func))
 }
 
 /// Generated frames return normally on failure: no unwinding through Cranelift frames.
@@ -285,16 +297,66 @@ pub(super) fn propagate_native_failure(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
 ) -> Result<(), FosterError> {
+    let state = if let Some(state) = builder.failure_state {
+        state
+    } else {
+        let state = runtime_call(
+            builder,
+            module,
+            abi::FAILURE_STATE,
+            &ir::Signature {
+                parameters: vec![],
+                result: NativeType::Opaque,
+            },
+            &[],
+        )?;
+        let cranelift_codegen::ir::ValueDef::Result(acquire, _) = builder.func.dfg.value_def(state)
+        else {
+            unreachable!("runtime call produces an instruction result")
+        };
+        // The first emitted check can be inside either arm of a branch or a
+        // loop. Provisionally define its handle before entry instructions so
+        // it dominates every use during lowering. Finalization removes it or
+        // chooses a dominating block outside cycles. The getter takes no
+        // arguments and cannot raise a language failure.
+        builder.func.layout.remove_inst(acquire);
+        let entry = builder
+            .func
+            .layout
+            .entry_block()
+            .expect("native entry block");
+        if let Some(first) = builder.func.layout.first_inst(entry) {
+            builder.func.layout.insert_inst(acquire, first);
+        } else {
+            builder.func.layout.append_inst(acquire, entry);
+        }
+        builder.failure_state = Some(state);
+        builder.uncached_failure = Some(runtime_reference(
+            builder,
+            module,
+            abi::FAILURE_PENDING,
+            &ir::Signature {
+                parameters: vec![],
+                result: NativeType::Bool,
+            },
+        )?);
+        state
+    };
     let pending = runtime_call(
         builder,
         module,
-        abi::FAILURE_PENDING,
+        abi::FAILURE_PENDING_IN,
         &ir::Signature {
-            parameters: vec![],
+            parameters: vec![NativeType::Opaque],
             result: NativeType::Bool,
         },
-        &[],
+        &[state],
     )?;
+    let cranelift_codegen::ir::ValueDef::Result(read, _) = builder.func.dfg.value_def(pending)
+    else {
+        unreachable!("failure status is returned by a call")
+    };
+    builder.failure_reads.push(read);
     propagate_native_failure_status(builder, module, pending);
     Ok(())
 }
@@ -448,4 +510,125 @@ fn float_comparison(
     right: ClifValue,
 ) -> ClifValue {
     builder.ins().fcmp(condition, left, right)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::FunctionBuilderContext;
+
+    fn test_module() -> ObjectModule {
+        let isa = cranelift_native::builder()
+            .unwrap()
+            .finish(cranelift_codegen::settings::Flags::new(
+                cranelift_codegen::settings::builder(),
+            ))
+            .unwrap();
+        ObjectModule::new(
+            cranelift_object::ObjectBuilder::new(
+                isa,
+                "failure-state-test",
+                cranelift_module::default_libcall_names(),
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn failure_state_acquisition_dominates_checks_in_sibling_branches() {
+        let mut module = test_module();
+        let mut context = module.make_context();
+        context.func.signature = module.make_signature();
+        context
+            .func
+            .signature
+            .params
+            .push(cranelift_codegen::ir::AbiParam::new(types::I8));
+        context
+            .func
+            .signature
+            .returns
+            .push(cranelift_codegen::ir::AbiParam::new(types::I64));
+        let id = module
+            .declare_function("branches", Linkage::Local, &context.func.signature)
+            .unwrap();
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let entry = builder.create_block();
+            let left = builder.create_block();
+            let right = builder.create_block();
+            let join = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let condition = builder.block_params(entry)[0];
+            builder.ins().brif(condition, left, &[], right, &[]);
+            for branch in [left, right] {
+                builder.switch_to_block(branch);
+                propagate_native_failure(&mut builder, &mut module).unwrap();
+                builder.ins().jump(join, &[]);
+            }
+            builder.switch_to_block(join);
+            propagate_native_failure(&mut builder, &mut module).unwrap();
+            let result = builder.ins().iconst(types::I64, 42);
+            builder.ins().return_(&[result]);
+            let state = builder.failure_state.unwrap();
+            let cranelift_codegen::ir::ValueDef::Result(acquire, _) =
+                builder.func.dfg.value_def(state)
+            else {
+                panic!("expected acquired state")
+            };
+            assert_eq!(builder.func.layout.first_inst(entry), Some(acquire));
+            let calls = builder
+                .func
+                .layout
+                .blocks()
+                .flat_map(|block| builder.func.layout.block_insts(block))
+                .filter(|inst| {
+                    builder.func.dfg.insts[*inst].opcode() == cranelift_codegen::ir::Opcode::Call
+                })
+                .count();
+            assert_eq!(calls, 4, "one acquisition and three status reads");
+            builder.seal_all_blocks();
+            builder.finalize(module.target_config());
+        }
+        // This rejects a cached value defined only in the first sibling branch.
+        module.define_function(id, &mut context).unwrap();
+    }
+
+    #[test]
+    fn failure_only_branches_do_not_add_state_lookups_to_successful_arithmetic() {
+        let mut module = test_module();
+        let mut context = module.make_context();
+        context.func.signature = module.make_signature();
+        context
+            .func
+            .signature
+            .params
+            .push(cranelift_codegen::ir::AbiParam::new(types::I8));
+        context
+            .func
+            .signature
+            .returns
+            .push(cranelift_codegen::ir::AbiParam::new(types::I64));
+        let id = module
+            .declare_function("arithmetic", Linkage::Local, &context.func.signature)
+            .unwrap();
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let overflow = builder.block_params(entry)[0];
+            let detail = builder.ins().iconst(types::I64, 0);
+            fail_if(&mut builder, &mut module, overflow, 1, detail, detail).unwrap();
+            let value = builder.ins().iconst(types::I64, 42);
+            builder.ins().return_(&[value]);
+            assert!(builder.failure_state.is_none());
+            builder.seal_all_blocks();
+            builder.finalize(module.target_config());
+        }
+        module.define_function(id, &mut context).unwrap();
+    }
 }

@@ -206,3 +206,89 @@ pub(super) fn lower(
     }
     Ok(builder.ins().iconst(types::I8, 0))
 }
+
+/// Materialize only primitive words in an aligned, call-scoped scalar frame.
+/// Managed record layout never crosses the C ABI boundary.
+pub(super) fn lower_scalars(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    context: NativeLowering<'_, '_>,
+    destination: ir::Value,
+    arguments: &[ir::Value],
+    lowered: &[ClifValue],
+) -> Result<ClifValue, FosterError> {
+    let objects = context.backend.objects;
+    let function = context.function;
+    let fields = match function.value_type(arguments[3]) {
+        NativeType::Unit => Some(Vec::new()),
+        NativeType::Object(layout) => match &objects.layouts.physical.get(layout).kind {
+            PhysicalKind::Record { fields, .. } => {
+                let mut fields = fields.iter().collect::<Vec<_>>();
+                fields.sort_by_key(|field| &field.name);
+                Some(fields)
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    let valid = fields.as_ref().is_some_and(|fields| {
+        fields.len() <= 256
+            && fields.iter().all(|field| {
+                field.value.pointee.is_none()
+                    && matches!(
+                        field.value.semantic,
+                        ValueSemantic::Integer | ValueSemantic::Float | ValueSemantic::Bool
+                    )
+            })
+    });
+    let word = module.target_config().pointer_type();
+    let (data, count) = if valid {
+        let fields = fields.unwrap();
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            (fields.len() as u32 * 16).max(16),
+            3,
+        ));
+        for (index, field) in fields.iter().enumerate() {
+            let value = load_physical_value(builder, module, lowered[3], field.offset, field.value);
+            let (bits, kind) = match field.value.semantic {
+                ValueSemantic::Integer => (value, 1),
+                ValueSemantic::Float => (
+                    builder
+                        .ins()
+                        .bitcast(types::I64, MemFlagsData::new(), value),
+                    2,
+                ),
+                ValueSemantic::Bool => (builder.ins().uextend(types::I64, value), 3),
+                _ => unreachable!(),
+            };
+            let kind = builder.ins().iconst(types::I64, kind);
+            builder
+                .ins()
+                .stack_store(word, bits, slot, (index * 16) as i32);
+            builder
+                .ins()
+                .stack_store(word, kind, slot, (index * 16 + 8) as i32);
+        }
+        (builder.ins().stack_addr(word, slot, 0), fields.len() as i64)
+    } else {
+        (builder.ins().iconst(word, 0), -1)
+    };
+    let count = builder.ins().iconst(types::I64, count);
+    runtime_call(
+        builder,
+        module,
+        abi::C_EXCHANGE_SCALARS,
+        &ir::Signature {
+            parameters: vec![
+                function.value_type(arguments[0]),
+                function.value_type(arguments[1]),
+                NativeType::Int,
+                NativeType::Opaque,
+                NativeType::Int,
+            ],
+            result: function.value_type(destination),
+        },
+        &[lowered[0], lowered[1], lowered[2], data, count],
+    )
+}

@@ -47,6 +47,166 @@ fn cancellation_is_discovered_at_cleanup_safe_polls() {
     FOSTER_EXECUTION.with(|slot| slot.borrow_mut().take());
 }
 
+#[test]
+fn nested_execution_restores_failure_state_after_errors_and_panics() {
+    let result = embedded_execution(
+        || false,
+        || {
+            foster_execution_failure("outer".into());
+            assert_eq!(embedded_execution(|| false, || 7), Ok(7));
+            assert_eq!(foster_rt_v5_failure_pending(), 1);
+            assert_eq!(
+                embedded_execution(|| false, || foster_execution_failure("inner".into())),
+                Err("inner".into())
+            );
+            let panic = std::panic::catch_unwind(|| {
+                embedded_execution(
+                    || false,
+                    || {
+                        foster_execution_failure("unwound".into());
+                        panic!("embedded work panicked");
+                    },
+                )
+            });
+            assert!(panic.is_err());
+            FOSTER_EXECUTION.with(|slot| assert_eq!(slot.borrow().as_deref(), Some("outer")));
+        },
+    );
+    assert_eq!(result, Err("outer".into()));
+    assert_eq!(foster_rt_v5_failure_pending(), 0);
+}
+
+#[test]
+fn cleanup_preserves_the_first_failure_through_nested_scopes() {
+    let result = embedded_execution(
+        || false,
+        || {
+            foster_execution_failure("first".into());
+            foster_execution_failure("ignored".into());
+            foster_rt_v5_begin_cleanup();
+            assert_eq!(foster_rt_v5_failure_pending(), 0);
+            foster_execution_failure("cleanup".into());
+            foster_rt_v5_begin_cleanup();
+            assert_eq!(foster_rt_v5_failure_pending(), 0);
+            foster_execution_failure("nested cleanup".into());
+            foster_rt_v5_end_cleanup();
+            FOSTER_EXECUTION.with(|slot| assert_eq!(slot.borrow().as_deref(), Some("cleanup")));
+            foster_rt_v5_end_cleanup();
+        },
+    );
+    assert_eq!(result, Err("first".into()));
+    assert_eq!(foster_rt_v5_failure_pending(), 0);
+}
+
+#[test]
+fn ordinary_threads_have_independent_failure_state() {
+    let result = embedded_execution(
+        || false,
+        || {
+            foster_execution_failure("caller".into());
+            let other = std::thread::spawn(|| {
+                assert_eq!(foster_rt_v5_failure_pending(), 0);
+                let result = embedded_execution(
+                    || false,
+                    || foster_execution_failure("other thread".into()),
+                );
+                assert_eq!(foster_rt_v5_failure_pending(), 0);
+                result
+            });
+            assert_eq!(other.join().unwrap(), Err("other thread".into()));
+        },
+    );
+    assert_eq!(result, Err("caller".into()));
+}
+
+#[test]
+fn coroutine_failures_survive_yields_without_leaking_to_other_contexts() {
+    let result = embedded_execution(
+        || false,
+        || {
+            foster_execution_failure("ordinary thread".into());
+            let workers: Vec<_> = (0..32)
+                .map(|index| {
+                    may::go!(move || {
+                        assert!(may::coroutine::is_coroutine());
+                        let state = foster_rt_v5_failure_state();
+                        assert_eq!(foster_rt_v5_failure_pending(), 0);
+                        assert_eq!(foster_rt_v5_failure_pending_in(state), 0);
+                        let expected = format!("actor {index}");
+                        foster_execution_failure(expected.clone());
+                        for _ in 0..32 {
+                            may::coroutine::yield_now();
+                            assert_eq!(foster_rt_v5_failure_pending_in(state), 1);
+                            assert_eq!(foster_rt_v5_failure_state(), state);
+                            FOSTER_EXECUTION.with(|slot| {
+                                assert_eq!(slot.borrow().as_deref(), Some(expected.as_str()));
+                            });
+                        }
+                        foster_rt_v5_begin_cleanup();
+                        may::coroutine::yield_now();
+                        assert_eq!(foster_rt_v5_failure_pending(), 0);
+                        assert_eq!(foster_rt_v5_failure_pending_in(state), 0);
+                        foster_execution_failure("cleanup".into());
+                        foster_rt_v5_end_cleanup();
+                        assert_eq!(foster_rt_v5_failure_pending_in(state), 1);
+                        assert_eq!(
+                            FOSTER_EXECUTION.with(|slot| slot.borrow_mut().take()),
+                            Some(expected)
+                        );
+                    })
+                })
+                .collect();
+            for worker in workers {
+                worker.join().unwrap();
+            }
+            may::go!(|| assert_eq!(foster_rt_v5_failure_pending(), 0))
+                .join()
+                .unwrap();
+        },
+    );
+    assert_eq!(result, Err("ordinary thread".into()));
+    assert_eq!(foster_rt_v5_failure_pending(), 0);
+}
+
+#[test]
+fn cached_failure_state_survives_map_growth_and_nested_execution() {
+    std::thread::spawn(|| {
+        // Start with a fresh ordinary-thread local map. Adding the other keys
+        // grows May's map while the acquired boxed slot must stay in place.
+        let state = foster_rt_v5_failure_state();
+        FOSTER_CANCELLATION.with(|_| ());
+        FOSTER_CLEANUP_FAILURES.with(|_| ());
+        FOSTER_SCHEDULING_BUDGET.with(|_| ());
+        assert_eq!(foster_rt_v5_failure_state(), state);
+        assert_eq!(foster_rt_v5_failure_pending_in(state), 0);
+        let result = embedded_execution(
+            || false,
+            || {
+                foster_execution_failure("outer".into());
+                assert_eq!(foster_rt_v5_failure_pending_in(state), 1);
+                let inner = embedded_execution(
+                    || false,
+                    || {
+                        assert_eq!(foster_rt_v5_failure_pending_in(state), 0);
+                        foster_execution_failure("inner".into());
+                        assert_eq!(foster_rt_v5_failure_pending_in(state), 1);
+                    },
+                );
+                assert_eq!(inner, Err("inner".into()));
+                assert_eq!(foster_rt_v5_failure_pending_in(state), 1);
+                foster_rt_v5_begin_cleanup();
+                assert_eq!(foster_rt_v5_failure_pending_in(state), 0);
+                foster_execution_failure("cleanup".into());
+                foster_rt_v5_end_cleanup();
+            },
+        );
+        assert_eq!(result, Err("outer".into()));
+        assert_eq!(foster_rt_v5_failure_pending_in(state), 0);
+    })
+    .join()
+    .unwrap();
+}
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn foster_native_string(data: usize, length: i64) -> usize {
     // The runtime passes validated UTF-8 and an in-bounds byte count.

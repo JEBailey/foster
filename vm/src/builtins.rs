@@ -74,6 +74,7 @@ direct_builtin_handlers!(
     ProcessReserve,
     CExchange,
     CExchangeBuffer,
+    CExchangeScalars,
     CClose,
     CRelease,
     CEncodeInt,
@@ -305,6 +306,45 @@ fn dispatch_core(
                 payload
                     .bytes_value()
                     .ok_or_else(|| RuntimeError::runtime("C payload requires Bytes"))?,
+            )))
+        }
+        (Builtin::CExchangeScalars, [path, schema, Value::Integer(operation), values]) => {
+            if may::coroutine::is_coroutine() {
+                return Ok(Value::bytes(crate::foreign::runtime::remote_error()));
+            }
+            let mut cells = [crate::foreign::runtime::Scalar { bits: 0, kind: 0 }; 256];
+            let fields = match values {
+                Value::Unit => Vec::new(),
+                Value::Record { fields, .. } => {
+                    let mut fields = fields.iter().collect::<Vec<_>>();
+                    fields.sort_by_key(|(name, _)| *name);
+                    fields
+                }
+                _ => return Ok(Value::bytes(crate::foreign::runtime::response(Err(
+                    "C scalar arguments require a record of at most 256 Int, Float or Bool fields"
+                        .into(),
+                )))),
+            };
+            if fields.len() > cells.len() {
+                return Ok(Value::bytes(crate::foreign::runtime::response(Err(
+                    "C scalar arguments require a record of at most 256 Int, Float or Bool fields"
+                        .into(),
+                ))));
+            }
+            for (cell, (_, value)) in cells.iter_mut().zip(&fields) {
+                let (bits, kind) = match value {
+                    Value::Integer(value) => (*value as u64, 1),
+                    Value::Float(value) => (value.to_bits(), 2),
+                    Value::Bool(value) => (u64::from(*value), 3),
+                    _ => return Ok(Value::bytes(crate::foreign::runtime::response(Err("C scalar arguments require a record of at most 256 Int, Float or Bool fields".into())))),
+                };
+                *cell = crate::foreign::runtime::Scalar { bits, kind };
+            }
+            Ok(Value::bytes(crate::foreign::runtime::exchange_scalars(
+                path.string_text()?,
+                schema.string_text()?,
+                *operation,
+                &cells[..fields.len()],
             )))
         }
         (

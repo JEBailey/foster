@@ -457,12 +457,30 @@ and deliver `Result<T, RemoteError>` through futures. Failure is terminal for th
 when the failing future is discarded. Queued and later calls receive the original failure without
 invoking their methods; rejected messages release transferred arguments.
 
-Generated calls check a coroutine-local failure flag before using their results and release live
+Generated calls check the current execution context's failure state before using their results and release live
 managed values as they return through generated frames. Main-thread failures follow the same
 cleanup path before the entry shim reports a diagnostic and exits. This avoids unwinding through
 Cranelift frames or treating placeholder return values as owned results. Allocation-census tests
 exercise successful exits and failures in both optimization modes, checking for leaks and duplicate
 deallocation, including opaque host response buffers.
+
+The compiler analyzes the completed control-flow graph before choosing failure-state caching.
+Functions with at most one reachable post-call check per invocation use a direct lookup.
+Exclusive branches do not add their check counts together; loops that revisit a check do justify
+caching. Functions with potentially repeated checks acquire a borrowed, opaque failure-state
+handle once and reuse it rather than resolving May's local map again. Acquisition occurs in the
+nearest common dominator of the checks outside cycles, allowing an outer guard to skip setup.
+This analysis is conservative: it does not predict branch frequency or loop trip counts, and a
+zero-trip loop can still pay for acquisition in its preheader.
+The boxed slot remains stable for the thread or coroutine's lifetime; the handle stays in
+the native invocation and follows a coroutine's stack across suspension and worker changes.
+This depends on the pinned May implementation retaining each boxed local until its owning
+thread or coroutine exits; dependency upgrades must preserve that address and lifetime contract.
+Each status read borrows the slot only for that read; no Rust borrow is held across a call.
+The handle cannot escape into
+Foster values or another execution context. Callback and embedded-execution save/restore and
+cleanup continue to update the same slot. Functions without post-call checks acquire no handle.
+Cancellation polls continue to return their own failure status, avoiding a duplicate query.
 
 `deinit(self: Self) -> ()` runs once at ownership end before child values are
 released. Compiler-owned Copy/Drop dispatch slots select concrete implementations, and generated

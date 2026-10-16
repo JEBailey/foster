@@ -1,0 +1,79 @@
+{
+  "abi": 1,
+  "headers": [
+    "scalars.h"
+  ],
+  "sources": [
+    "scalars.c"
+  ],
+  "operations": [
+    {
+      "name": "scalar_mix",
+      "symbol": "scalar_mix",
+      "parameters": [
+        "i32",
+        "f32",
+        "bool",
+        "u64"
+      ],
+      "result": "f64"
+    },
+    {
+      "name": "scalar_signed",
+      "symbol": "scalar_signed",
+      "parameters": [
+        "i64"
+      ],
+      "result": "i64"
+    },
+    {
+      "name": "scalar_unsigned",
+      "symbol": "scalar_unsigned",
+      "parameters": [
+        "u64"
+      ],
+      "result": "u64"
+    },
+    {
+      "name": "scalar_float",
+      "symbol": "scalar_float",
+      "parameters": [
+        "f64"
+      ],
+      "result": "f64"
+    },
+    {
+      "name": "scalar_byte",
+      "symbol": "scalar_byte",
+      "parameters": [
+        "u8"
+      ],
+      "result": "u8"
+    },
+    {
+      "name": "scalar_void",
+      "symbol": "scalar_void",
+      "parameters": [],
+      "result": "void"
+    },
+    {
+      "name": "scalar_many",
+      "symbol": "scalar_many",
+      "parameters": [
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "result": "i64"
+    }
+  ]
+}

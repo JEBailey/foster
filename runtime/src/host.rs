@@ -618,6 +618,24 @@ extern "C" fn foster_rt_v5_failure_pending() -> u8 {
     FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
 }
 
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v5_failure_state() -> usize {
+    // May boxes each local value, so map growth does not move this slot. The
+    // slot lives until the ordinary thread or coroutine exits. Generated code
+    // keeps this borrowed handle only in its current native invocation: never
+    // in an object, another execution context, or scheduler-thread TLS.
+    FOSTER_EXECUTION.with(|execution| std::ptr::from_ref(execution) as usize)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v5_failure_pending_in(state: usize) -> u8 {
+    // Compiler-only ABI: state was acquired in this invocation's context and
+    // remains live across calls and coroutine suspension. No RefCell borrow is
+    // held across a call; callbacks and cleanup can update the same slot.
+    let execution = unsafe { &*(state as *const std::cell::RefCell<Option<String>>) };
+    u8::from(execution.borrow().is_some())
+}
+
 fn foster_poll_cancellation() {
     let cleaning = FOSTER_CLEANUP_FAILURES.with(|failures| !failures.borrow().is_empty());
     if !cleaning && EMBEDDING_CANCELLATION.with(|slot| slot.get().is_some_and(|probe| probe())) {

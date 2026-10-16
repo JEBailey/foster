@@ -1367,6 +1367,18 @@ pub(super) fn lower_portable_native(
                     copy_native_bytes(builder, module, data, source_data, length)?;
                     object
                 }
+                NativeIntrinsic::Runtime(_)
+                    if *builtin == crate::intrinsics::Builtin::CExchangeScalars =>
+                {
+                    super::c_arguments::lower_scalars(
+                        builder,
+                        module,
+                        context,
+                        *destination,
+                        arguments,
+                        &lowered,
+                    )?
+                }
                 NativeIntrinsic::Runtime(helper)
                     if *builtin == crate::intrinsics::Builtin::CExchangeBuffer =>
                 {

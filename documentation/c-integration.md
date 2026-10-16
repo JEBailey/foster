@@ -350,6 +350,28 @@ The complete handler and registration example is in
 with its matching header and manifest alongside it. `tests/c_callbacks.rs` runs
 it on the VM and both native optimization modes.
 
+## Generated scalar call stubs
+
+Regenerating a bridge selects scalar stubs automatically for operations with up to
+256 scalar or enum inputs and a scalar or void result. Constructors, resource
+receivers, records, arrays, strings, buffers, output parameters and callbacks use
+the ordinary packet path. No Foster syntax changes are needed.
+
+Native lowering places scalar bits and kind tags in an aligned stack frame. The
+versioned `foster_c_scalars_v1` entry checks argument counts, kinds and C ranges,
+then calls the C symbol through its generated C signature. This avoids building,
+growing and snapshotting a `CArguments` byte buffer. The compiler still constructs
+the generated argument record, and results retain the checked response envelope;
+this is not an allocation-free call or an exposed arbitrary function pointer.
+The VM stages the same scalar cells and uses the same checked stub.
+
+Handwritten bindings can use `CBridge.call_scalars(operation, values)`, where
+`values` is `()` or a record containing at most 256 `Int`, `Float` or `Bool`
+fields in lexical field-name order. Generated bindings use sortable slot names to
+preserve manifest parameter order. Wrong shapes, counts, kinds and ranges return
+`CError`. Libraries lacking scalar stubs must be regenerated and rebuilt before
+using this method. Schema checking and rejection inside remote tasks still apply.
+
 ## Scope and limitations
 
 Use generated bindings for ordinary application code. `std.ffi.CBridge`,

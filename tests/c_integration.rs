@@ -119,6 +119,10 @@ fn generated_c_bridge_runs_on_vm_and_native_with_exact_cleanup() {
     assert!(runtime::exchange(path, &schema, 9999, 0, false, &[]).starts_with(&[1]));
     let oversized = [i64::MAX.to_le_bytes(), 1i64.to_le_bytes()].concat();
     assert!(runtime::exchange(path, &schema, 0, 0, false, &oversized).starts_with(&[1]));
+    // The stub entry cannot bypass constructor, receiver or copied-buffer modes.
+    for operation in [1, 2, 5] {
+        assert!(runtime::exchange_scalars(path, &schema, operation, &[]).starts_with(&[1]));
+    }
     // Constructors cannot be invoked as scalar calls to extract their tokens.
     assert!(runtime::exchange(path, &schema, 1, 0, false, &42i64.to_le_bytes()).starts_with(&[1]));
     let adopted = runtime::exchange(path, &schema, 1, 0, true, &42i64.to_le_bytes());
@@ -237,4 +241,85 @@ func main(arguments: Arguments) -> Result<(), CError> {
         .expect_err("native generic resource transfer must fail")
         .to_string();
     assert!(error.contains("C resources cannot cross"), "{error}");
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+#[test]
+fn generated_scalar_stubs_check_types_ranges_and_backend_parity() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let directory = root.join("target/scalar-stubs-test");
+    std::fs::create_dir_all(&directory).unwrap();
+    let manifest_path = root.join("tests/fixtures/c_bridge/scalars.json");
+    let path = directory.join("scalars.dll");
+    foster::foreign::build(
+        &manifest_path,
+        &path,
+        std::path::Path::new("clang"),
+        &path.to_string_lossy().replace('\\', "/"),
+    )
+    .unwrap();
+    let generated = std::fs::read_to_string(path.with_extension("fos")).unwrap();
+    assert!(generated.contains(".call_scalars("));
+    assert!(!generated.contains("CArguments.with_capacity"));
+    let source = generated.replace("import std.ffi.*", "import std.ffi.*\nimport core.float")
+        + include_str!("fixtures/c_bridge/scalars.fos");
+    let compilation = foster::compile(&source).unwrap();
+    for optimize in [false, true] {
+        let program =
+            foster::vm::compile_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap();
+        let binary = foster::vm::encode_program(&program).unwrap();
+        let program = foster::vm::decode_program(&binary)
+            .unwrap()
+            .into_verified()
+            .unwrap();
+        assert_eq!(
+            foster::vm::Machine::new(&program)
+                .run_main()
+                .unwrap()
+                .to_string(),
+            "Result.Ok(42)"
+        );
+        let executable = directory.join(format!("scalar-{optimize}.exe"));
+        foster::native::build_executable(
+            &compilation,
+            &executable,
+            foster::native::CompileOptions { optimize },
+        )
+        .unwrap();
+        let output = std::process::Command::new(executable).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "Result.Ok(42)"
+        );
+    }
+    let schema = Manifest::parse(&std::fs::read_to_string(manifest_path).unwrap())
+        .unwrap()
+        .identity();
+    assert!(runtime::exchange_scalars(path.to_str().unwrap(), "stale", 5, &[]).starts_with(&[1]));
+    assert!(runtime::exchange_scalars(path.to_str().unwrap(), &schema, -1, &[]).starts_with(&[1]));
+    assert!(
+        runtime::exchange_scalars(path.to_str().unwrap(), &schema, 9999, &[]).starts_with(&[1])
+    );
+    let too_many = vec![runtime::Scalar { bits: 0, kind: 1 }; 257];
+    assert!(
+        runtime::exchange_scalars(path.to_str().unwrap(), &schema, 5, &too_many).starts_with(&[1])
+    );
+    // Bool slots are checked independently of the generated Foster wrapper.
+    let invalid_bool = [
+        runtime::Scalar { bits: 0, kind: 1 },
+        runtime::Scalar { bits: 0, kind: 2 },
+        runtime::Scalar { bits: 2, kind: 3 },
+        runtime::Scalar { bits: 0, kind: 1 },
+    ];
+    assert!(
+        runtime::exchange_scalars(path.to_str().unwrap(), &schema, 0, &invalid_bool)
+            .starts_with(&[1])
+    );
 }

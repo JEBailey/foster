@@ -111,6 +111,7 @@ mod copy;
 mod dispatch;
 use cleanup::{FailureCleanup, NativeBuilder as FunctionBuilder};
 mod emission;
+mod failure_cache;
 mod text_boundary;
 use emission::{emit_object, ordered_entries};
 mod ownership;

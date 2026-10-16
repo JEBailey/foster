@@ -185,6 +185,9 @@ macro_rules! native_builtin {
     (CExchange) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE)
     };
+    (CExchangeScalars) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE_SCALARS)
+    };
     (CExchangeBuffer) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE_BUFFER)
     };
@@ -466,6 +469,8 @@ builtin_descriptors! {
         execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read Bytes] -> Bytes;
     CExchangeBuffer = 97, source: None, intrinsic: Some("c.exchange_buffer") => Some("std.ffi"),
         execution: Direct, signature: [Read String, Read String, Read Integer, Read Bytes, Read Any, Read Integer] -> Bytes;
+    CExchangeScalars = 103, source: None, intrinsic: Some("c.exchange_scalars") => Some("std.ffi"),
+        execution: Direct, signature: [Read String, Read String, Read Integer, Read Any] -> Bytes;
     CArgumentsReserve = 98, source: None, intrinsic: Some("c.arguments_reserve") => Some("std.ffi"),
         execution: Direct, signature: [Read Any, Read Integer] -> Unit;
     CArgumentsInteger = 99, source: None, intrinsic: Some("c.arguments_integer") => Some("std.ffi"),
@@ -1011,6 +1016,7 @@ mod tests {
                 Builtin::ProcessWait,
                 Builtin::CExchange,
                 Builtin::CExchangeBuffer,
+                Builtin::CExchangeScalars,
                 Builtin::CArgumentsReserve,
                 Builtin::CArgumentsInteger,
                 Builtin::CArgumentsFloat,

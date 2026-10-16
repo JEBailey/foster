@@ -295,6 +295,19 @@ impl Contract {
         return "CArguments.empty()" if count == 0
         "CArguments.with_capacity(" + (count * 8).as_string() + ")"
     }
+    // Only primitive values cross this path; C owns conversion and ABI lowering.
+    func scalar_stub(self: Self, node: Int) -> Bool {
+        return false if self.extended(node) || !self.string(node, "receiver", false).empty? || !self.string(node, "creates", false).empty?
+        let result = self.ty(self.member(node, "result"))
+        return false if result == "bytes" || result == "c_string" || result.starts_with?("@") || result.starts_with?("[")
+        let parameters = self.array(node, "parameters", false)
+        return false if parameters.length > 256
+        for parameter in parameters {
+            let ty = self.ty(parameter)
+            return false if ty == "bytes" || ty == "c_string" || ty.starts_with?("@") || ty.starts_with?("[")
+        }
+        true
+    }
     func extended(self: Self, node: Int) -> Bool {
         return true if self.ty(self.member(node, "result")) == "c_string" || self.boolean(node, "borrowed_result") || !self.string(node, "length_type", false).empty?
         for parameter in self.array(node, "parameters", false) {
@@ -1156,49 +1169,51 @@ impl Contract {
                 }
                 move output
             }
-            _ -> {
-                let output = "{ uint64_t w; if(!read64(&input,&remaining,&w)) return 2;\n"
-                branch {
-                    ty.starts_with?("$") -> {
-                        let c_type = self.c_type(ty)
-                        output = output + "int64_t s; memcpy(&s,&w,8); " + c_type + " v=(" + c_type + ")w;\n"
-                        output = output + "if ((" + c_type + ")-1 < (" + c_type + ")0) { if ((int64_t)v != s) return 3; } else { if ((uint64_t)v != w) return 3; }\n" + place + "=v;\n"
-                    }
-                    ty == "char" -> {
-                        output = output + "if(w > 255) return 3; { unsigned char b=(unsigned char)w; memcpy(&" + place + ",&b,1); }\n"
-                    }
-                    ty == "long" -> {
-                        output = output + "int64_t s; memcpy(&s,&w,8); if(s < LONG_MIN || s > LONG_MAX) return 3; " + place + "=(long)s;\n"
-                    }
-                    ty == "ulong" -> {
-                        output = output + "if(w > ULONG_MAX) return 3; " + place + "=(unsigned long)w;\n"
-                    }
-                    ty == "f32" || ty == "f64" -> {
-                        output = output + "double d; memcpy(&d,&w,8);\n"
-                        if ty == "f32" {
-                            output = output + "if(isfinite(d) && (d > FLT_MAX || d < -FLT_MAX)) return 3;\n"
-                        }
-                        output = output + place + "=(" + self.c_type(ty) + ")d;\n"
-                    }
-                    ty.starts_with?("i") -> {
-                        output = output + "int64_t s; memcpy(&s,&w,8);\n"
-                        if ty != "i64" {
-                            let width = ty.slice(1, ty.length)
-                            output = output + "if(s < INT" + width + "_MIN || s > INT" + width + "_MAX) return 3;\n"
-                        }
-                        output = output + place + "=(" + self.c_type(ty) + ")s;\n"
-                    }
-                    _ -> {
-                        let maximum = branch {
-                            ty == "bool" -> "1"
-                            _ -> "UINT" + ty.slice(1, ty.length) + "_MAX"
-                        }
-                        output = output + ["if(w > ", maximum.copy(), ") return 3; ", place.copy(), "=(", self.c_type(ty), ")w;\n"].join("")
-                    }
+            _ -> self.c_scalar_read(ty, place, "uint64_t w; if(!read64(&input,&remaining,&w)) return 2;")
+        }
+    }
+    // Both call paths share all C narrowing and bit-preservation checks.
+    func c_scalar_read(self: Self, ty: String, place: String, load_code: String) -> String {
+        let output = "{ " + load_code + "\n"
+        branch {
+            ty.starts_with?("$") -> {
+                let c_type = self.c_type(ty)
+                output = output + "int64_t s; memcpy(&s,&w,8); " + c_type + " v=(" + c_type + ")w;\n"
+                output = output + "if ((" + c_type + ")-1 < (" + c_type + ")0) { if ((int64_t)v != s) return 3; } else { if ((uint64_t)v != w) return 3; }\n" + place + "=v;\n"
+            }
+            ty == "char" -> {
+                output = output + "if(w > 255) return 3; { unsigned char b=(unsigned char)w; memcpy(&" + place + ",&b,1); }\n"
+            }
+            ty == "long" -> {
+                output = output + "int64_t s; memcpy(&s,&w,8); if(s < LONG_MIN || s > LONG_MAX) return 3; " + place + "=(long)s;\n"
+            }
+            ty == "ulong" -> {
+                output = output + "if(w > ULONG_MAX) return 3; " + place + "=(unsigned long)w;\n"
+            }
+            ty == "f32" || ty == "f64" -> {
+                output = output + "double d; memcpy(&d,&w,8);\n"
+                if ty == "f32" {
+                    output = output + "if(isfinite(d) && (d > FLT_MAX || d < -FLT_MAX)) return 3;\n"
                 }
-                output + "}\n"
+                output = output + place + "=(" + self.c_type(ty) + ")d;\n"
+            }
+            ty.starts_with?("i") -> {
+                output = output + "int64_t s; memcpy(&s,&w,8);\n"
+                if ty != "i64" {
+                    let width = ty.slice(1, ty.length)
+                    output = output + "if(s < INT" + width + "_MIN || s > INT" + width + "_MAX) return 3;\n"
+                }
+                output = output + place + "=(" + self.c_type(ty) + ")s;\n"
+            }
+            _ -> {
+                let maximum = branch {
+                    ty == "bool" -> "1"
+                    _ -> "UINT" + ty.slice(1, ty.length) + "_MAX"
+                }
+                output = output + ["if(w > ", maximum.copy(), ") return 3; ", place.copy(), "=(", self.c_type(ty), ")w;\n"].join("")
             }
         }
+        output + "}\n"
     }
     func c_write(self: Self, ty: String, place: String, index: Int) -> String {
         branch {
@@ -1231,7 +1246,7 @@ impl Contract {
             }
         }
     }
-    func c_operation(self: Self, node: Int, index: Int) -> String {
+    func c_operation(self: Self, node: Int, index: Int, scalar: Bool) -> String {
         return self.c_extended(node, index) if self.extended(node)
         let output = "case " + index.as_string() + ": {\n"
         let types = []
@@ -1288,7 +1303,15 @@ impl Contract {
                     output = output + "input += " + size + "; remaining -= " + size + ";\n"
                 }
                 _ -> {
-                    output = output + self.c_type(ty) + " " + place + " = {0};\n" + self.c_read(ty, place)
+                    output = output + self.c_type(ty) + " " + place + " = {0};\n" + branch {
+                        scalar -> {
+                            let kind = branch {
+                                ty == "bool" -> 3 ty == "f32" || ty == "f64" -> 2 _ -> 1
+                            }
+                            self.c_scalar_read(ty, place, "if(cursor >= count || values[cursor].kind != " + kind.as_string() + ") return 2; uint64_t w=values[cursor++].bits;")
+                        }
+                        _ -> self.c_read(ty, place)
+                    }
                 }
             }
             arguments.push(place.copy())
@@ -1297,7 +1320,9 @@ impl Contract {
             }
             number = number + 1
         }
-        output = output + "if(remaining != 0) return 2;\n"
+        output = output + branch {
+            scalar -> "if(cursor != count) return 2;\n" _ -> "if(remaining != 0) return 2;\n"
+        }
         if result_type == "bytes" {
             output = output + "size_t size=0;\n"
             arguments.push("&size")
@@ -1472,7 +1497,13 @@ impl Contract {
         output = output + "default: *consumed=0; return -1; } }\nEXPORT int32_t foster_c_call(uint32_t op, void *resource, const uint8_t *input, uint64_t remaining, uint8_t *out, uint64_t capacity, uint64_t *length, void **created) {\n*length=0; *created=NULL; if(capacity < 8) return 1; switch(op) {\n"
         index = 0
         for node in self.operations() {
-            output = output + self.c_operation(node, index)
+            output = output + self.c_operation(node, index, false)
+            index = index + 1
+        }
+        output = output + "default: return 6; } }\ntypedef struct { uint64_t bits; uint64_t kind; } foster_scalar_v1;\nEXPORT int32_t foster_c_scalars_v1(uint32_t op, const foster_scalar_v1 *values, uint64_t count, uint8_t *out, uint64_t *length) {\n*length=0; if(count > 256 || (count && !values)) return 2; uint64_t cursor=0; switch(op) {\n"
+        index = 0
+        for node in self.operations() {
+            if self.scalar_stub(node) output = output + self.c_operation(node, index, true)
             index = index + 1
         }
         output + "default: return 6; } }\n"
@@ -1888,6 +1919,8 @@ impl Contract {
             }
             let index = 0
             let argument_source = ""
+            let scalar_fields = []
+            let scalar_values = []
             let parameter_names = self.array(node, "parameter_names", false)
             let used_names = ["arguments", "value", "bridge", "resource", "ffi", "bytes", "string", "result", "list"]
             if result_type.starts_with?("@") {
@@ -1907,13 +1940,27 @@ impl Contract {
                 used_names.push(place.copy())
                 parameters.push(place + ": " + foster_type(ty))
                 argument_source = argument_source + self.foster_argument(ty, place)
+                let slot = "slot" + (100000 + index).as_string()
+                scalar_fields.push(slot + ": " + foster_type(ty))
+                scalar_values.push(slot + ": " + place)
                 index = index + 1
             }
             let result_name = branch {
                 !creates.empty? -> "Native" + creates
                 _ -> foster_type(result_type)
             }
-            output = output + self.docs(node, "") + ["/// Calls the C symbol `", self.string(node, "symbol", true), "`.\npub func ", foster_function_name(self.string(node, "name", true)), "(", parameters.join(", "), ") -> Result<", result_name.copy(), ", CError> {\n    let arguments = ", self.argument_builder(node), "\n", argument_source.copy()].join("")
+            let scalar = self.scalar_stub(node)
+            let scalar_name = "FosterScalarArguments_" + schema + "_" + id.as_string()
+            if scalar && !scalar_fields.empty? {
+                output = output + "type " + scalar_name + " = { " + scalar_fields.join(", ") + " }\n"
+            }
+            output = output + self.docs(node, "") + ["/// Calls the C symbol `", self.string(node, "symbol", true), "`.\npub func ", foster_function_name(self.string(node, "name", true)), "(", parameters.join(", "), ") -> Result<", result_name.copy(), ", CError> {\n    let arguments = ", branch {
+                scalar && scalar_fields.empty? -> "()"
+                scalar -> scalar_name + " { " + scalar_values.join(", ") + " }"
+                _ -> self.argument_builder(node)
+            }, "\n", branch {
+                scalar -> "" _ -> argument_source.copy()
+            }].join("")
             branch {
                 !creates.empty? -> {
                     output = output + "    let value = try bridge().create(" + id.as_string() + ", arguments)\n    Result.Ok(Native" + creates + " { value: move value })\n"
@@ -1923,7 +1970,9 @@ impl Contract {
                         !receiver.empty? -> "resource.value"
                         _ -> "bridge()"
                     }
-                    output = output + "    let value = try " + owner + ".call(" + id.as_string() + ", arguments)\n"
+                    output = output + "    let value = try " + owner + branch {
+                        scalar -> ".call_scalars(" _ -> ".call("
+                    } + id.as_string() + ", arguments)\n"
                     output = output + branch {
                         result_type.starts_with?("@") -> {
                             let statements = []

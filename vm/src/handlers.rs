@@ -63,6 +63,7 @@ pub(crate) fn handler(builtin: crate::intrinsics::Builtin) -> Option<BuiltinHand
         crate::intrinsics::Builtin::ProcessRelease => builtin_handler!(Direct, ProcessRelease),
         crate::intrinsics::Builtin::ProcessWait => builtin_handler!(Direct, ProcessWait),
         crate::intrinsics::Builtin::CExchange => builtin_handler!(Direct, CExchange),
+        crate::intrinsics::Builtin::CExchangeScalars => builtin_handler!(Direct, CExchangeScalars),
         crate::intrinsics::Builtin::CExchangeBuffer => builtin_handler!(Direct, CExchangeBuffer),
         crate::intrinsics::Builtin::CClose => builtin_handler!(Direct, CClose),
         crate::intrinsics::Builtin::CRelease => builtin_handler!(Direct, CRelease),

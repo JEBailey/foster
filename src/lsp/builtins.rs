@@ -41,6 +41,7 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
         | Builtin::CClose
         | Builtin::CRelease
         | Builtin::CEncodeInt
+        | Builtin::CExchangeScalars
         | Builtin::CArgumentsReserve
         | Builtin::CArgumentsInteger
         | Builtin::CArgumentsFloat

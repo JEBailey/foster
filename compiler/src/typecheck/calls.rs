@@ -550,6 +550,15 @@ impl Checker<'_> {
                 string.clone(),
             ),
             Builtin::CClose | Builtin::CEncodeInt => (vec![Ty::Int], string.clone()),
+            Builtin::CExchangeScalars => (
+                vec![
+                    string.clone(),
+                    string.clone(),
+                    Ty::Int,
+                    Ty::Generic("ScalarArguments".into()),
+                ],
+                string.clone(),
+            ),
             Builtin::CExchangeBuffer => (
                 vec![
                     string.clone(),

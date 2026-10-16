@@ -13,6 +13,15 @@ pub const LIMIT: usize = 16 * 1024 * 1024;
 type Describe = unsafe extern "C" fn(u32) -> u64;
 type Call =
     unsafe extern "C" fn(u32, *mut u8, *const u8, u64, *mut u8, u64, *mut u64, *mut *mut u8) -> i32;
+// Versioned scalar stub ABI: native words, never serialized argument packets.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Scalar {
+    pub bits: u64,
+    pub kind: u64, // 1 = Int, 2 = Float, 3 = Bool
+}
+type Scalars = unsafe extern "C" fn(u32, *const Scalar, u64, *mut u8, *mut u64) -> i32;
+
 type Destroy = unsafe extern "C" fn(u32, *mut u8);
 type Close = unsafe extern "C" fn(u32, *mut u8, *mut u8) -> i64;
 type Forget = unsafe extern "C" fn(u32, *mut u8);
@@ -38,6 +47,7 @@ struct Library {
     schema: String,
     describe: Describe,
     call: Call,
+    scalars: Option<Scalars>,
     destroy: Destroy,
     close: Close,
     forget: Option<Forget>,
@@ -319,6 +329,62 @@ pub fn exchange(
     payload: &[u8],
 ) -> Vec<u8> {
     exchange_inner(path, schema, operation, token, create, payload, None)
+}
+
+/// Scalar-only calls cannot acquire resources, register callbacks or borrow buffers.
+pub fn exchange_scalars(path: &str, schema: &str, operation: i64, values: &[Scalar]) -> Vec<u8> {
+    response((|| {
+        if values.len() > 256 {
+            return Err("C scalar calls support at most 256 arguments".into());
+        }
+        let operation = u32::try_from(operation).map_err(|_| "C operation is outside u32")?;
+        let library = STATE.with(|state| {
+            let mut state = state
+                .try_borrow_mut()
+                .map_err(|_| "C bridge registry is already in use")?;
+            let State {
+                libraries, paths, ..
+            } = &mut *state;
+            let resolved = paths.resolve(path, resolve_bridge)?;
+            if let Some(library) = libraries.get(resolved) {
+                return Ok::<_, String>(library.clone());
+            }
+            let library = Rc::new(Library::load(resolved)?);
+            libraries.insert(resolved.to_owned(), library.clone());
+            Ok(library)
+        })?;
+        if schema != library.schema {
+            return Err(
+                "C bridge binding schema mismatch; rebuild the bindings and program together"
+                    .into(),
+            );
+        }
+        let metadata = unsafe { (library.describe)(operation) };
+        if metadata & 0xffff != 1 || metadata >> 32 != 0 || (metadata >> 16) & 0xffff > 8 {
+            return Err("C operation does not support a scalar call".into());
+        }
+        let call = library
+            .scalars
+            .ok_or("C bridge has no scalar stubs; regenerate and rebuild the bridge")?;
+        let mut output = [0; 8];
+        let mut length = 0;
+        let status = unsafe {
+            call(
+                operation,
+                values.as_ptr(),
+                values.len() as u64,
+                output.as_mut_ptr(),
+                &mut length,
+            )
+        };
+        if status != 0 {
+            return Err(format!("C bridge operation {operation} failed ({status})"));
+        }
+        if length != 0 && length != 8 {
+            return Err("C scalar stub returned an invalid output length".into());
+        }
+        Ok(output[..length as usize].to_vec())
+    })())
 }
 
 pub fn exchange_buffer(
@@ -636,6 +702,10 @@ impl Library {
             let schema: unsafe extern "C" fn() -> u64 =
                 std::mem::transmute(module.symbol(b"foster_c_schema\0")?);
             Ok(Self {
+                scalars: module
+                    .symbol(b"foster_c_scalars_v1\0")
+                    .ok()
+                    .map(|symbol| std::mem::transmute::<*mut std::ffi::c_void, Scalars>(symbol)),
                 buffers,
                 schema: format!("{:016x}", schema()),
                 describe: std::mem::transmute::<*mut std::ffi::c_void, Describe>(

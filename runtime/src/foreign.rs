@@ -1,4 +1,34 @@
 #[unsafe(no_mangle)]
+extern "C" fn foster_rt_v5_c_exchange_scalars(
+    path: usize,
+    schema: usize,
+    operation: i64,
+    data: usize,
+    count: i64,
+) -> usize {
+    if may::coroutine::is_coroutine() {
+        return owned_bytes(&c_bridge::remote_error());
+    }
+    if !(0..=256).contains(&count) || (count != 0 && (data == 0 || !data.is_multiple_of(8))) {
+        return owned_bytes(&c_bridge::response(Err(
+            "C scalar arguments require a record of at most 256 Int, Float or Bool fields".into(),
+        )));
+    }
+    // Lowering supplies initialized repr(C) cells in a call-scoped stack frame.
+    let values = if count == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(data as *const c_bridge::Scalar, count as usize) }
+    };
+    owned_bytes(&c_bridge::exchange_scalars(
+        unsafe { string_value(path) },
+        unsafe { string_value(schema) },
+        operation,
+        values,
+    ))
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn foster_rt_v5_c_exchange(
     path: usize,
     schema: usize,

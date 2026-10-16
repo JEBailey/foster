@@ -45,6 +45,8 @@ impl CHost {
     func callback_error(token: Int) -> Bytes = intrinsic("c.callback_error")
     /// Executes a validated operation; resource construction is a separate mode.
     func exchange(path: String, schema: String, operation: Int, token: Int, create: Bool, payload: Bytes) -> Bytes = intrinsic("c.exchange")
+    /// Passes scalar fields in lexical name order to a generated call stub.
+    func exchange_scalars<T>(path: String, schema: String, operation: Int, values: T) -> Bytes = intrinsic("c.exchange_scalars")
     /// Borrows one exact-layout scalar buffer for a synchronous input-only call.
     func exchange_buffer<T>(path: String, schema: String, operation: Int, payload: Bytes, values: Buffer<T>, kind: Int) -> Bytes = intrinsic("c.exchange_buffer")
     /// Returns the consumed flag and native close status.
@@ -272,6 +274,11 @@ pub type CBridge = {
     /// poll_callbacks; direct callbacks run only on the registering thread.
     /// The native destructor must unregister and quiesce before returning.
     pub func subscribe<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback]
+    /// Calls a generated scalar stub without constructing an argument byte packet.
+    /// Values must be a record of at most 256 Int, Float or Bool fields in lexical order,
+    /// or () for no arguments. Only scalar-input, scalar-or-void-result operations
+    /// apply. Schema, argument kinds, counts and C ranges are checked.
+    pub func call_scalars<T>(self: Self, operation: Int, values: T) -> Result<CValue, CError> [read self, read values]
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self: Self, operation: Int, arguments: CArguments) -> Result<CValue, CError> [read self, read arguments]
     /// Borrows initialized scalar storage until C returns. C must not write or
@@ -336,6 +343,14 @@ impl CBridge {
             path: move path, schema: move schema
         }
     }
+    /// Calls a generated scalar stub without constructing an argument byte packet.
+    /// Values must be a record of at most 256 Int, Float or Bool fields in lexical order,
+    /// or () for no arguments. Only scalar-input, scalar-or-void-result operations
+    /// apply. Schema, argument kinds, counts and C ranges are checked.
+    pub func call_scalars<T>(self: Self, operation: Int, values: T) -> Result<CValue, CError> {
+        decode_response(CHost.exchange_scalars(self.path, self.schema, operation, values))
+    }
+
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self: Self, operation: Int, arguments: CArguments) -> Result<CValue, CError> {
         decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, CHost.arguments_snapshot(arguments.payload)))

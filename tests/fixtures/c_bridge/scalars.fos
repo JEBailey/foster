@@ -1,0 +1,37 @@
+// Appended to generated bindings by the integration test.
+type WrongKind = {
+    value: Float
+}
+type WrongCount = {
+    a: Int, b: Int
+}
+type InvalidField = {
+    value: String
+}
+func main() -> Result<Int, CError> {
+    assert((try scalar_mix(20, 1.5, true, 19)) == 41.5)
+    let minimum = -9223372036854775807 - 1
+    assert((try scalar_signed(minimum)) == minimum)
+    assert((try scalar_signed(9223372036854775807)) == 9223372036854775807)
+    assert((try scalar_unsigned(-1)) == -1)
+    assert((try scalar_float(-0.0)).bytes.hex() == "0000000000000080")
+    assert((try scalar_byte(255)) == 255)
+    assert(scalar_byte(256).error?())
+    assert(scalar_byte(-1).error?())
+    assert(scalar_mix(2147483648, 1.0, true, 0).error?())
+    assert(scalar_mix(0, 1.0e100, true, 0).error?())
+    try scalar_void()
+    assert((try scalar_many(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)) == 650)
+    assert(bridge().call_scalars(1, WrongKind {
+        value: 42.0
+    }).error?())
+    assert(bridge().call_scalars(1, WrongCount {
+        a: 1, b: 2
+    }).error?())
+    assert(bridge().call_scalars(1, ()).error?())
+    assert(bridge().call_scalars(1, InvalidField {
+        value: "invalid"
+    }).error?())
+    assert(bridge().call_scalars(9999, ()).error?())
+    Result.Ok(42)
+}
