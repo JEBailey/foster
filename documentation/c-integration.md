@@ -199,7 +199,11 @@ graphics UI with a click counter, color slider, and animated rectangle.
 
 Foster's private runtime intrinsics transport these packets as immutable `Bytes`
 in both the VM and native backend. `CArguments` builds packets with `ByteBuffer`;
-callbacks also accept and return binary packets. The C-facing ABI uses byte pointers
+callbacks also accept and return binary packets. Scalar argument slots append in one bulk operation,
+and snapshots copy only initialized bytes. Generated bindings reserve the known
+wire size once for fixed scalar and value-record inputs. Dynamic inputs use the
+same growable builder; `CArguments.with_capacity(bytes)` also supports handwritten
+bindings. Reservation does not add padding or change the wire contract. The C-facing ABI uses byte pointers
 and lengths, with no hexadecimal conversion. Error responses carry copied UTF-8 messages. Close responses
 also carry an explicit consumed flag and signed status; ownership never depends
 on guessing from the sign of an error code.

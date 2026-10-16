@@ -45,6 +45,26 @@ fn bridge_dependencies_resolve_beside_forward_slash_paths() {
 }
 
 #[test]
+fn generated_arguments_reserve_fixed_packets_without_changing_schema() {
+    let manifest = foster::foreign::Manifest::parse(r#"{"abi":1,"headers":[],"records":[{"name":"Pair","c_type":"Pair","fields":[{"name":"x","type":"f32"},{"name":"y","type":"i32"}]}],"operations":[{"name":"fixed","symbol":"fixed","parameters":["i64",{"record":"Pair"}],"result":"void"},{"name":"dynamic","symbol":"dynamic","parameters":["c_string"],"result":"void"}]}"#).unwrap();
+    let bindings = manifest
+        .foster_source(std::path::Path::new("unused.dll"))
+        .unwrap();
+    let fixed = bindings
+        .split("pub func fixed(")
+        .nth(1)
+        .unwrap()
+        .split("pub func dynamic(")
+        .next()
+        .unwrap();
+    assert!(fixed.contains("CArguments.with_capacity(24)"), "{fixed}");
+    let dynamic = bindings.split("pub func dynamic(").nth(1).unwrap();
+    assert!(dynamic.contains("CArguments.empty()"), "{dynamic}");
+    assert!(bindings.contains(&manifest.identity()));
+    foster::compile(&(bindings + "\nfunc main() -> Int { 42 }\n")).unwrap();
+}
+
+#[test]
 fn c_resources_are_private_and_cannot_cross_remote_boundaries() {
     for source in [
         "import std.ffi\nimport std.ffi.*\nimport static std.ffi.*\nfunc main() -> CResource { CResource { token: 1 } }",

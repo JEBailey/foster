@@ -1044,6 +1044,24 @@ impl Machine {
                                         Value::Reference(Slot::place(&place(frame, *argument)))
                                     })
                                     .collect()
+                            } else if matches!(
+                                *builtin,
+                                crate::intrinsics::Builtin::CArgumentsReserve
+                                    | crate::intrinsics::Builtin::CArgumentsInteger
+                                    | crate::intrinsics::Builtin::CArgumentsFloat
+                                    | crate::intrinsics::Builtin::CArgumentsBytes
+                            ) {
+                                arguments
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(index, argument)| {
+                                        if index == 0 {
+                                            Ok(bind(frame, *argument))
+                                        } else {
+                                            read(frame, *argument)
+                                        }
+                                    })
+                                    .collect::<Result<Vec<_>, RuntimeError>>()?
                             } else {
                                 arguments
                                     .iter()

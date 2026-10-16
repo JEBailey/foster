@@ -1,0 +1,46 @@
+import std.ffi.CArguments
+import core.bytes.Bytes
+import core.float
+
+type Holder = {
+    packet: CArguments
+}
+
+func append(packet: ref[packet] CArguments) -> () {
+    packet.integer(42)
+}
+
+func main() -> Int {
+    let holder = Holder {
+        packet: CArguments.with_capacity(1)
+    }
+    append(ref holder.packet)
+    assert(holder.packet.reply().hex() == "002a00000000000000")
+    for capacity in [0, 1, 7, 8, 136, 4096] {
+        let packet = CArguments.with_capacity(capacity)
+        assert(packet.reply().hex() == "00")
+        packet.integer(-9223372036854775807 - 1)
+        let first = packet.reply()
+        assert(first.hex() == "000000000000000080")
+        packet.integer(-1)
+        packet.integer(9223372036854775807)
+        packet.floating(-0.0)
+        packet.floating(1.5)
+        assert(first.hex() == "000000000000000080")
+        assert(packet.reply().hex() == "000000000000000080ffffffffffffffffffffffffffffff7f0000000000000080000000000000f83f")
+        // A zero byte terminator makes the next scalar store unaligned.
+        let mixed = CArguments.with_capacity(capacity)
+        mixed.c_string("")
+        mixed.integer(42)
+        mixed.bytes(Bytes.empty())
+        assert(mixed.reply().hex() == "000100000000000000002a000000000000000000000000000000")
+        mixed.floating(-0.0)
+        assert(mixed.reply().slice(26, 34).hex() == "0000000000000080")
+        for index in 0.range(64) {
+            mixed.integer(index)
+        }
+        assert(mixed.reply().length == 546)
+        assert(first.hex() == "000000000000000080")
+    }
+    42
+}

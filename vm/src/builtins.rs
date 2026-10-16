@@ -57,6 +57,11 @@ macro_rules! direct_builtin_handlers {
 }
 
 direct_builtin_handlers!(
+    CArgumentsReserve,
+    CArgumentsInteger,
+    CArgumentsFloat,
+    CArgumentsBytes,
+    CArgumentsSnapshot,
     BufferIntegers,
     BufferFloats,
     BufferBytes,
@@ -393,6 +398,66 @@ fn dispatch_core(
         }
         (Builtin::CRelease, [Value::Integer(token)]) => {
             crate::foreign::runtime::release(*token).map_err(RuntimeError::runtime)?;
+            Ok(Value::Unit)
+        }
+        (Builtin::CArgumentsSnapshot, [value]) => {
+            let values = value
+                .byte_buffer_list_value()
+                .ok_or_else(|| RuntimeError::runtime("C arguments require ByteBuffer"))?;
+            let data = values
+                .iter()
+                .map(|value| match value {
+                    Value::Byte(byte) => Ok(*byte),
+                    _ => Err(RuntimeError::runtime("C argument storage requires bytes")),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::bytes(data))
+        }
+        (
+            Builtin::CArgumentsReserve
+            | Builtin::CArgumentsInteger
+            | Builtin::CArgumentsFloat
+            | Builtin::CArgumentsBytes,
+            [Value::Reference(reference), value],
+        ) => {
+            let scalar = match (builtin, value) {
+                (Builtin::CArgumentsInteger, Value::Integer(value)) => value.to_le_bytes(),
+                (Builtin::CArgumentsFloat, Value::Float(value)) => value.to_le_bytes(),
+                (Builtin::CArgumentsBytes, _) | (Builtin::CArgumentsReserve, Value::Integer(_)) => {
+                    [0; 8]
+                }
+                _ => return Err(RuntimeError::runtime("invalid C argument append")),
+            };
+            let data: &[u8] = match (builtin, value) {
+                (Builtin::CArgumentsInteger | Builtin::CArgumentsFloat, _) => &scalar,
+                (Builtin::CArgumentsBytes, value) => value
+                    .bytes_value()
+                    .ok_or_else(|| RuntimeError::runtime("C argument extension requires Bytes"))?,
+                (Builtin::CArgumentsReserve, Value::Integer(_)) => &[],
+                _ => return Err(RuntimeError::runtime("invalid C argument append")),
+            };
+            reference.reshape(|packet| {
+                let values = packet
+                    .byte_buffer_list_value_mut()
+                    .ok_or_else(|| RuntimeError::runtime("C arguments require ByteBuffer"))?;
+                let amount = if builtin == Builtin::CArgumentsReserve {
+                    let Value::Integer(capacity) = value else {
+                        unreachable!()
+                    };
+                    usize::try_from(*capacity)
+                        .map_err(|_| {
+                            RuntimeError::runtime("C argument capacity cannot be negative")
+                        })?
+                        .saturating_sub(values.len())
+                } else {
+                    data.len()
+                };
+                values
+                    .try_reserve(amount)
+                    .map_err(|_| RuntimeError::runtime("C argument capacity is too large"))?;
+                values.extend(data.iter().copied().map(Value::Byte));
+                Ok(())
+            })?;
             Ok(Value::Unit)
         }
         (Builtin::CEncodeInt, [Value::Integer(value)]) => {

@@ -1002,6 +1002,17 @@ pub(super) fn lower_portable_native(
             use crate::intrinsics::{NativeInlineIntrinsic, NativeIntrinsic};
             let lowered = arguments.iter().map(get).collect::<Vec<_>>();
             let result = match builtin.descriptor().native {
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::CArguments) => {
+                    super::c_arguments::lower(
+                        builder,
+                        module,
+                        context,
+                        *builtin,
+                        *destination,
+                        arguments,
+                        &lowered,
+                    )?
+                }
                 NativeIntrinsic::Inline(NativeInlineIntrinsic::BufferFilled) => {
                     let NativeType::Object(layout) = function.value_type(*destination) else {
                         return Err(native_error("buffer allocation requires a typed layout"));

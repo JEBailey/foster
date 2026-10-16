@@ -274,6 +274,27 @@ impl Contract {
         assert(number > 0 && number <= maximum, "invalid " + key)
         number
     }
+    // Reserve exact wire space for fixed scalar/record packets. Dynamic contracts
+    // retain the same checked growable builder and wire representation.
+    func argument_builder(self: Self, node: Int) -> String {
+        let count = 0
+        for parameter in self.array(node, "parameters", false) {
+            let ty = self.ty(parameter)
+            return "CArguments.empty()" if ty == "bytes" || ty == "c_string" || ty.starts_with?("^")
+            if ty.starts_with?("~") {
+                return "CArguments.empty()" if !self.boolean(parameter, "borrowed")
+                continue
+            }
+            if ty.starts_with?("&") continue
+            count = count + branch {
+                ty.starts_with?("%") -> 1
+                ty.starts_with?("!") -> self.slots(ty.slice(1, ty.length), [])
+                _ -> self.slots(ty, [])
+            }
+        }
+        return "CArguments.empty()" if count == 0
+        "CArguments.with_capacity(" + (count * 8).as_string() + ")"
+    }
     func extended(self: Self, node: Int) -> Bool {
         return true if self.ty(self.member(node, "result")) == "c_string" || self.boolean(node, "borrowed_result") || !self.string(node, "length_type", false).empty?
         for parameter in self.array(node, "parameters", false) {
@@ -1535,7 +1556,7 @@ impl Contract {
         if !receiver.empty? {
             parameters.push("resource: Native" + receiver)
         }
-        let arguments = "    let arguments = CArguments.empty()\n"
+        let arguments = "    let arguments = " + self.argument_builder(node) + "\n"
         let before = ""
         let adapter = ""
         let generic = ""
@@ -1892,7 +1913,7 @@ impl Contract {
                 !creates.empty? -> "Native" + creates
                 _ -> foster_type(result_type)
             }
-            output = output + self.docs(node, "") + ["/// Calls the C symbol `", self.string(node, "symbol", true), "`.\npub func ", foster_function_name(self.string(node, "name", true)), "(", parameters.join(", "), ") -> Result<", result_name.copy(), ", CError> {\n    let arguments = CArguments.empty()\n", argument_source.copy()].join("")
+            output = output + self.docs(node, "") + ["/// Calls the C symbol `", self.string(node, "symbol", true), "`.\npub func ", foster_function_name(self.string(node, "name", true)), "(", parameters.join(", "), ") -> Result<", result_name.copy(), ", CError> {\n    let arguments = ", self.argument_builder(node), "\n", argument_source.copy()].join("")
             branch {
                 !creates.empty? -> {
                     output = output + "    let value = try bridge().create(" + id.as_string() + ", arguments)\n    Result.Ok(Native" + creates + " { value: move value })\n"

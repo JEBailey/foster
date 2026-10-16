@@ -492,6 +492,28 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
+            Builtin::CArgumentsReserve | Builtin::CArgumentsInteger => (
+                vec![
+                    Ty::Reference("payload".into(), Box::new(self.byte_buffer_type())),
+                    Ty::Int,
+                ],
+                Ty::Unit,
+            ),
+            Builtin::CArgumentsFloat => (
+                vec![
+                    Ty::Reference("payload".into(), Box::new(self.byte_buffer_type())),
+                    Ty::Float,
+                ],
+                Ty::Unit,
+            ),
+            Builtin::CArgumentsBytes => (
+                vec![
+                    Ty::Reference("payload".into(), Box::new(self.byte_buffer_type())),
+                    bytes.clone(),
+                ],
+                Ty::Unit,
+            ),
+            Builtin::CArgumentsSnapshot => (vec![self.byte_buffer_type()], bytes.clone()),
             Builtin::BufferIntegers => (vec![Ty::Int, Ty::Int], self.list_type(Ty::Int)),
             Builtin::BufferFloats => (vec![Ty::Int, Ty::Float], self.list_type(Ty::Float)),
             Builtin::BufferBytes => (vec![Ty::Int, Ty::Byte], self.list_type(Ty::Byte)),

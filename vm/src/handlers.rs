@@ -39,6 +39,17 @@ macro_rules! builtin_handler {
 
 pub(crate) fn handler(builtin: crate::intrinsics::Builtin) -> Option<BuiltinHandler> {
     match builtin {
+        crate::intrinsics::Builtin::CArgumentsReserve => {
+            builtin_handler!(Direct, CArgumentsReserve)
+        }
+        crate::intrinsics::Builtin::CArgumentsInteger => {
+            builtin_handler!(Direct, CArgumentsInteger)
+        }
+        crate::intrinsics::Builtin::CArgumentsFloat => builtin_handler!(Direct, CArgumentsFloat),
+        crate::intrinsics::Builtin::CArgumentsBytes => builtin_handler!(Direct, CArgumentsBytes),
+        crate::intrinsics::Builtin::CArgumentsSnapshot => {
+            builtin_handler!(Direct, CArgumentsSnapshot)
+        }
         crate::intrinsics::Builtin::BufferIntegers => builtin_handler!(Direct, BufferIntegers),
         crate::intrinsics::Builtin::BufferFloats => builtin_handler!(Direct, BufferFloats),
         crate::intrinsics::Builtin::BufferBytes => builtin_handler!(Direct, BufferBytes),

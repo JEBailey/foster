@@ -25,6 +25,16 @@ import core.string.String
 /// Private access to the shared VM/native bridge runtime.
 type CHost = {}
 impl CHost {
+    /// Reserves contiguous packet storage without changing its initialized length.
+    func arguments_reserve(payload: ref[payload] ByteBuffer, capacity: Int) -> () [reshape payload.value.items] = intrinsic("c.arguments_reserve")
+    /// Appends one little-endian slot directly to packet storage.
+    func arguments_integer(payload: ref[payload] ByteBuffer, value: Int) -> () [reshape payload.value.items] = intrinsic("c.arguments_integer")
+    /// Appends one binary64 slot directly to packet storage.
+    func arguments_float(payload: ref[payload] ByteBuffer, value: Float) -> () [reshape payload.value.items] = intrinsic("c.arguments_float")
+    /// Extends packet storage in one checked bulk operation.
+    func arguments_bytes(payload: ref[payload] ByteBuffer, value: Bytes) -> () [reshape payload.value.items] = intrinsic("c.arguments_bytes")
+    /// Copies only initialized packet bytes into an independent immutable snapshot.
+    func arguments_snapshot(payload: ByteBuffer) -> Bytes [read payload.value] = intrinsic("c.arguments_snapshot")
     /// Transfers an adapter into the owner-thread callback registry.
     func callback_new<F>(callback: F, signature: String, mode: Int) -> Bytes [consume callback] = intrinsic("c.callback_new")
     /// Releases an unregistered callback and its owned captures.
@@ -84,7 +94,7 @@ pub type CArguments = {
 impl CArguments {
     /// Encodes a successful callback reply; generated adapters validate its shape.
     pub func reply(self: Self) -> Bytes {
-        envelope(Byte.unchecked(0), self.payload.snapshot())
+        envelope(Byte.unchecked(0), CHost.arguments_snapshot(self.payload))
     }
     /// Starts an empty argument list.
     pub func empty() -> CArguments {
@@ -92,27 +102,39 @@ impl CArguments {
             payload: ByteBuffer.empty()
         }
     }
+    /// Starts an empty packet with space for at least capacity bytes.
+    /// Asserts for a negative capacity. Later appends may grow the allocation;
+    /// reserved bytes are not included in replies or C calls until initialized.
+    pub func with_capacity(capacity: Int) -> CArguments {
+        assert(capacity >= 0, "C argument capacity cannot be negative")
+        let payload = ByteBuffer.empty()
+        if capacity > 0 CHost.arguments_reserve(ref payload, capacity)
+        CArguments {
+            payload: move payload
+        }
+    }
     /// Appends one exact integer slot. U64 interprets its bits as unsigned.
     pub func integer(self: Self, value: Int) -> () [reshape self.payload.value.items] {
-        self.payload.extend(CHost.encode_int(value))
+        CHost.arguments_integer(ref self.payload, value)
         ()
     }
     /// Appends one binary64 slot. C float narrows with an overflow check.
     pub func floating(self: Self, value: Float) -> () [reshape self.payload.value.items] {
-        self.payload.extend(CHost.encode_float(value))
+        CHost.arguments_float(ref self.payload, value)
         ()
     }
     /// Copies a length-delimited buffer, including embedded zero bytes.
     pub func bytes(self: Self, value: Bytes) -> () [reshape self.payload.value.items] {
-        self.payload.extend(CHost.encode_int(value.length))
-        self.payload.extend(value)
+        CHost.arguments_integer(ref self.payload, value.length)
+        CHost.arguments_bytes(ref self.payload, value)
         ()
     }
     /// Copies UTF-8 and appends one NUL terminator. The bridge rejects interior
     /// NUL bytes before calling C; C must not retain this temporary pointer.
     pub func c_string(self: Self, value: String) -> () [reshape self.payload.value.items] {
-        self.payload.extend(CHost.encode_int(value.bytes.length + 1))
-        self.payload.extend(value.bytes)
+        let bytes = value.bytes
+        CHost.arguments_integer(ref self.payload, bytes.length + 1)
+        CHost.arguments_bytes(ref self.payload, bytes)
         self.payload.push(Byte.unchecked(0))
         ()
     }
@@ -244,12 +266,12 @@ pub type CBridge = {
     /// Calls C with a callback borrowed for this call only. The adapter is consumed
     /// and released before return; its borrowed captures must remain live throughout.
     /// One callback/context pair is inserted between the two argument packets.
-    pub func call_with<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String) -> Result<CValue, CError> [read self.path, read self.schema, read before.payload.value, read after.payload.value, read signature, consume callback]
+    pub func call_with<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String) -> Result<CValue, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback]
     /// Creates a native registration owning its callback. Retained captures must
     /// contain no borrowed references. Queued notifications are delivered by
     /// poll_callbacks; direct callbacks run only on the registering thread.
     /// The native destructor must unregister and quiesce before returning.
-    pub func subscribe<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload.value, read after.payload.value, read signature, consume callback]
+    pub func subscribe<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback]
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self: Self, operation: Int, arguments: CArguments) -> Result<CValue, CError> [read self, read arguments]
     /// Borrows initialized scalar storage until C returns. C must not write or
@@ -268,15 +290,15 @@ impl CBridge {
     /// Calls C with a callback borrowed for this call only. The adapter is consumed
     /// and released before return; its borrowed captures must remain live throughout.
     /// One callback/context pair is inserted between the two argument packets.
-    pub func call_with<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String) -> Result<CValue, CError> [read self.path, read self.schema, read before.payload.value, read after.payload.value, read signature, consume callback] {
+    pub func call_with<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String) -> Result<CValue, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback] {
         let token = try (try decode_response(CHost.callback_new(move callback, signature, 0))).integer()
         let lease = CCallbackLease {
             token
         }
         let packet = ByteBuffer.empty()
-        packet.extend(before.payload.snapshot())
+        packet.extend(CHost.arguments_snapshot(before.payload))
         packet.extend(CHost.encode_int(token))
-        packet.extend(after.payload.snapshot())
+        packet.extend(CHost.arguments_snapshot(after.payload))
         let payload = (move packet).freeze()
         let response = CHost.exchange(self.path, self.schema, operation, 0, false, payload)
         try decode_response(CHost.callback_error(token))
@@ -286,7 +308,7 @@ impl CBridge {
     /// contain no borrowed references. Queued notifications are delivered by
     /// poll_callbacks; direct callbacks run only on the registering thread.
     /// The native destructor must unregister and quiesce before returning.
-    pub func subscribe<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload.value, read after.payload.value, read signature, consume callback] {
+    pub func subscribe<F>(self: Self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback] {
         let mode = branch {
             queued -> 2 _ -> 1
         }
@@ -295,9 +317,9 @@ impl CBridge {
             token
         }
         let packet = ByteBuffer.empty()
-        packet.extend(before.payload.snapshot())
+        packet.extend(CHost.arguments_snapshot(before.payload))
         packet.extend(CHost.encode_int(token))
-        packet.extend(after.payload.snapshot())
+        packet.extend(CHost.arguments_snapshot(after.payload))
         let payload = (move packet).freeze()
         let value = try decode_response(CHost.exchange(self.path, self.schema, operation, 0, true, payload))
         let resource = CResource {
@@ -316,26 +338,26 @@ impl CBridge {
     }
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self: Self, operation: Int, arguments: CArguments) -> Result<CValue, CError> {
-        decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, arguments.payload.snapshot()))
+        decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, CHost.arguments_snapshot(arguments.payload)))
     }
     /// Borrows initialized scalar storage until C returns. C must not write or
     /// retain it. Native calls avoid copying elements; VM calls stage a C array.
     /// Only reviewed input-buffer operations with matching element layouts apply.
     pub func call_integers(self: Self, operation: Int, arguments: CArguments, values: Buffer<Int>) -> Result<CValue, CError> {
-        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, arguments.payload.snapshot(), values, 1))
+        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, CHost.arguments_snapshot(arguments.payload), values, 1))
     }
     /// Borrows binary64 storage for an input-only C call; C cannot write or retain it.
     pub func call_floats(self: Self, operation: Int, arguments: CArguments, values: Buffer<Float>) -> Result<CValue, CError> {
-        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, arguments.payload.snapshot(), values, 2))
+        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, CHost.arguments_snapshot(arguments.payload), values, 2))
     }
     /// Borrows byte storage for an input-only C call; C cannot write or retain it.
     pub func call_bytes(self: Self, operation: Int, arguments: CArguments, values: Buffer<Byte>) -> Result<CValue, CError> {
-        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, arguments.payload.snapshot(), values, 3))
+        decode_response(CHost.exchange_buffer(self.path, self.schema, operation, CHost.arguments_snapshot(arguments.payload), values, 3))
     }
     /// Adopts exactly one non-null C allocation, or returns an error without
     /// leaking a partial result. Only constructor operations are accepted.
     pub func create(self: Self, operation: Int, arguments: CArguments) -> Result<CResource, CError> {
-        let value = try decode_response(CHost.exchange(self.path, self.schema, operation, 0, true, arguments.payload.snapshot()))
+        let value = try decode_response(CHost.exchange(self.path, self.schema, operation, 0, true, CHost.arguments_snapshot(arguments.payload)))
         let token = try value.integer()
         Result.Ok(CResource {
             token, callback: 0
@@ -394,7 +416,7 @@ impl CResource {
         }) if self.token == 0
         // Native state changes must participate in the slot's mutation effect.
         self.token = self.token
-        let response = CHost.exchange("", "", operation, self.token, false, arguments.payload.snapshot())
+        let response = CHost.exchange("", "", operation, self.token, false, CHost.arguments_snapshot(arguments.payload))
         try self.check_callbacks()
         decode_response(response)
     }

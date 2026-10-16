@@ -41,6 +41,7 @@ use crate::vm;
 
 pub mod abi;
 mod buffers;
+mod c_arguments;
 use buffers::{
     allocate_native_buffer, allocate_native_buffer_dynamic, allocate_native_byte_buffer,
     allocate_native_bytes, append_native_buffer, clone_native_buffer, copy_native_bytes,

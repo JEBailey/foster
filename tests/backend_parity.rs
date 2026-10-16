@@ -2,6 +2,24 @@
 use foster::{native, vm};
 
 #[test]
+fn c_argument_packets_preserve_layout_growth_and_snapshots() {
+    check(
+        "c-argument-packets",
+        include_str!("fixtures/programs/c_argument_packets.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn c_argument_capacity_rejects_negative_lengths() {
+    check(
+        "c-argument-capacity",
+        "import std.ffi.CArguments\nfunc main() -> Int { let packet = CArguments.with_capacity(-1)\n42 }",
+        Err("C argument capacity cannot be negative"),
+    );
+}
+
+#[test]
 fn typed_buffers_agree_in_both_backends() {
     check(
         "typed-buffers",

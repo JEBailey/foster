@@ -81,6 +81,7 @@ pub enum NativeIntrinsic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeInlineIntrinsic {
+    CArguments,
     BufferFilled,
     ListClear,
     CCallbackNew,
@@ -195,6 +196,21 @@ macro_rules! native_builtin {
     };
     (CEncodeInt) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_ENCODE_INT)
+    };
+    (CArgumentsReserve) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::CArguments)
+    };
+    (CArgumentsInteger) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::CArguments)
+    };
+    (CArgumentsFloat) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::CArguments)
+    };
+    (CArgumentsBytes) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::CArguments)
+    };
+    (CArgumentsSnapshot) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::CArguments)
     };
     (CEncodeFloat) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_ENCODE_FLOAT)
@@ -450,6 +466,16 @@ builtin_descriptors! {
         execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read Bytes] -> Bytes;
     CExchangeBuffer = 97, source: None, intrinsic: Some("c.exchange_buffer") => Some("std.ffi"),
         execution: Direct, signature: [Read String, Read String, Read Integer, Read Bytes, Read Any, Read Integer] -> Bytes;
+    CArgumentsReserve = 98, source: None, intrinsic: Some("c.arguments_reserve") => Some("std.ffi"),
+        execution: Direct, signature: [Read Any, Read Integer] -> Unit;
+    CArgumentsInteger = 99, source: None, intrinsic: Some("c.arguments_integer") => Some("std.ffi"),
+        execution: Direct, signature: [Read Any, Read Integer] -> Unit;
+    CArgumentsFloat = 100, source: None, intrinsic: Some("c.arguments_float") => Some("std.ffi"),
+        execution: Direct, signature: [Read Any, Read Float] -> Unit;
+    CArgumentsBytes = 101, source: None, intrinsic: Some("c.arguments_bytes") => Some("std.ffi"),
+        execution: Direct, signature: [Read Any, Read Bytes] -> Unit;
+    CArgumentsSnapshot = 102, source: None, intrinsic: Some("c.arguments_snapshot") => Some("std.ffi"),
+        execution: Direct, signature: [Read Any] -> Bytes;
     CClose = 66, source: None, intrinsic: Some("c.close") => Some("std.ffi"),
         execution: Direct, signature: [Read Integer] -> Bytes;
     CRelease = 67, source: None, intrinsic: Some("c.release") => Some("std.ffi"),
@@ -985,6 +1011,11 @@ mod tests {
                 Builtin::ProcessWait,
                 Builtin::CExchange,
                 Builtin::CExchangeBuffer,
+                Builtin::CArgumentsReserve,
+                Builtin::CArgumentsInteger,
+                Builtin::CArgumentsFloat,
+                Builtin::CArgumentsBytes,
+                Builtin::CArgumentsSnapshot,
                 Builtin::CClose,
                 Builtin::CRelease,
                 Builtin::CEncodeInt,
