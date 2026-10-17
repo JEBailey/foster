@@ -63,7 +63,7 @@ pub type Int = & Copy & {
     /// `divisor` must be nonzero and the division must be representable in `Int`.
     pub func modulo(self: Self, divisor: Int) -> Int [read self, read divisor]
     /// Materializes consecutive integers in the half-open range `[self, end)`.
-    /// Returns an empty list when `end <= self`; storage grows with the result length.
+    /// Returns an empty list when `end <= self`; construction takes linear time and constant stack space.
     pub func range(self: Self, end: Int) -> List<Int> [read self, read end]
     /// Formats an integer as decimal text.
     pub func as_string(self: Self) -> String [read self]
@@ -232,9 +232,15 @@ impl Int {
     }
 
     /// Materializes consecutive integers in the half-open range `[self, end)`.
-    /// Returns an empty list when `end <= self`; storage grows with the result length.
+    /// Returns an empty list when `end <= self`; construction takes linear time and constant stack space.
     pub func range(self: Self, end: Int) -> List<Int> {
-        range_into(self, end, [])
+        let result = []
+        let value = self
+        while value < end {
+            result.push(value)
+            value = value + 1
+        }
+        result
     }
 
     /// Formats an integer as decimal text.
@@ -251,14 +257,6 @@ func power_of(base: Int, exponent: Int) -> Int {
     branch {
         exponent <= 0 -> 1
         _ -> base * power_of(base, exponent - 1)
-    }
-}
-
-/// Appends consecutive integers to the range accumulator.
-func range_into(value: Int, end: Int, result: List<Int>) -> List<Int> [consume result] {
-    branch {
-        value >= end -> result
-        _ -> range_into(value + 1, end, result.append(value))
     }
 }
 
@@ -306,4 +304,30 @@ test "checked float conversion truncates and reports invalid input" {
             panic("out-of-range conversion succeeded")
         }
     }
+}
+
+test "integer ranges preserve bounds and signed endpoints" {
+    assert(3.range(3).length == 0)
+    assert(4.range(2).length == 0)
+    let crossing = (-2).range(3)
+    assert(crossing.length == 5)
+    assert(crossing[0] == -2 && crossing[2] == 0 && crossing[4] == 2)
+    let high = 9223372036854775806.range(9223372036854775807)
+    assert(high.length == 1 && high[0] == 9223372036854775806)
+    let low = (-9223372036854775807 - 1).range(-9223372036854775806)
+    assert(low.length == 2 && low[1] == -9223372036854775807)
+    ()
+}
+
+test "large integer ranges construct and iterate without recursion" {
+    let values = 0.range(100000)
+    assert(values.length == 100000)
+    let expected = 0
+    assert(values[0] == 0 && values[50000] == 50000 && values[99999] == 99999)
+    for value in 0.range(128) {
+        assert(value == expected)
+        expected = expected + 1
+    }
+    assert(expected == 128)
+    ()
 }

@@ -1627,7 +1627,7 @@ impl Contract {
                     resource_checks = resource_checks + "    try " + place + ".value.check_callbacks()\n"
                     resource_effects.push(branch {
                         self.boolean(parameter, "consume") -> "consume " + place
-                        _ -> "read " + place + ".value.token, mut " + place + ".value.callback"
+                        _ -> "mut " + place + ".value.callback"
                     })
                 }
                 ty.starts_with?("^") -> {

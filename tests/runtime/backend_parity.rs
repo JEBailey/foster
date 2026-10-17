@@ -2,6 +2,35 @@
 use foster::{native, vm};
 
 #[test]
+fn integer_ranges_handle_large_results_and_signed_boundaries() {
+    check(
+        "integer-ranges",
+        r#"
+import core.int
+func main() -> Int {
+    assert(3.range(3).length == 0)
+    assert(4.range(2).length == 0)
+    let high = 9223372036854775806.range(9223372036854775807)
+    assert(high.length == 1 && high[0] == 9223372036854775806)
+    let low = (-9223372036854775807 - 1).range(-9223372036854775806)
+    assert(low.length == 2 && low[1] == -9223372036854775807)
+    let values = (-50000).range(50000)
+    assert(values.length == 100000)
+    let expected = -50000
+    assert(values[0] == -50000 && values[50000] == 0 && values[99999] == 49999)
+    for value in (-50000).range(-49872) {
+        assert(value == expected)
+        expected = expected + 1
+    }
+    assert(expected == -49872)
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn buffer_read_requirements_are_callable_through_a_composed_view() {
     check(
         "buffer-composed-read",
